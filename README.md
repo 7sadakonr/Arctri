@@ -1,9 +1,9 @@
-# AgentDock
+# Arctri
 
 A Windows-first terminal built around AI coding agents. It is a real terminal (PTY + ConPTY), not a console
 simulation, with Warp-style command blocks, autocomplete, WSL2 support and first-class Thai input. It is not an IDE.
 
-Status: MVP 1, v0.1.0. Windows 10 22H2 and Windows 11 (x64). WSL2 is optional.
+Status: MVP 1, v0.1.2. Windows 10 22H2 and Windows 11 (x64). WSL2 is optional.
 
 ## Features
 
@@ -48,18 +48,18 @@ npm run dist                             # installer in release/
 npm run test:smoke                       # start the unpacked build and wait for a shell prompt
 ```
 
-Environment variables for tests: `AGENTDOCK_USER_DATA` (isolated profile), `AGENTDOCK_E2E=1` (read-only test hook),
-`AGENTDOCK_FAKE_WSL=missing` (simulate no WSL), `AGENTDOCK_SKIP_WSL=1` (skip WSL integration tests).
+Environment variables for tests: `ARCTRI_USER_DATA` (isolated profile), `ARCTRI_E2E=1` (read-only test hook),
+`ARCTRI_FAKE_WSL=missing` (simulate no WSL), `ARCTRI_SKIP_WSL=1` (skip WSL integration tests).
 
 ## Notes for contributors
 
 - Terminal processes run in worker threads (`src/main/pty`), one per session, so a slow `CreateProcess` never freezes the window (ADR-008).
 - The bundled `conpty.dll` is the default; the Windows 10 inbox ConPTY loses Thai marks in PowerShell 5.1 and reorders OSC sequences (ADR-001, 003).
-- Integration tests use real shells. WSL tests expect a distribution named `Ubuntu`; set `AGENTDOCK_SKIP_WSL=1` to skip them.
+- Integration tests use real shells. WSL tests expect a distribution named `Ubuntu`; set `ARCTRI_SKIP_WSL=1` to skip them.
 - The end-to-end suite drives real windows. Run it on an idle machine and leave the mouse and keyboard alone: input from a person while it runs
   can move focus or click menus (twice an unexpected extra agent tab appeared in a test window while the machine was in use, and not in three clean runs
   afterwards; failed tests now keep a screenshot, the session state and the page console in `test-results/`).
-- To run the real agent CLIs without sending prompts: `set AGENTDOCK_REAL_AGENTS=1 && npx playwright test tests/e2e/real-agents.spec.ts`.
+- To run the real agent CLIs without sending prompts: `set ARCTRI_REAL_AGENTS=1 && npx playwright test tests/e2e/real-agents.spec.ts`.
 
 ## Layout
 
@@ -70,8 +70,6 @@ src/preload    typed, validated bridge (contextIsolation, sandbox, no Node in th
 src/renderer   React UI: tabs, block list, editor, toolbar, settings
 resources/shell-integration   scripts loaded by PowerShell, bash, zsh and the WSL helper
 tests          integration (real PTYs) and e2e (Playwright)
-docs           ADRs (docs/decisions), manual test checklist, release notes
 ```
 
-How blocks work next to a real PTY is explained in `docs/decisions/ADR-002-block-lifecycle.md`; the plan and the
-reasoning behind each choice are in `PLAN.md`.
+The plan and the reasoning behind each choice are in `PLAN.md`.

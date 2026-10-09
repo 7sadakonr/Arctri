@@ -46,9 +46,18 @@ export const requestSchemas = {
     requestId: z.number().int(), sessionId: id, line: z.string().max(10_000), cursor: z.number().int().min(0).max(10_000)
   }),
   'agents:detect': z.object({ refresh: z.boolean().optional() }).optional(),
+  'git:status': z.object({ sessionId: id }),
+  'fs:read': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
+  'fs:write': z.object({
+    sessionId: id, rel: z.string().min(1).max(4096), text: z.string().max(5_500_000),
+    eol: z.enum(['lf', 'crlf']), bom: z.boolean(), expectMtimeMs: z.number().optional()
+  }),
+  'fs:stat': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
   'git:changes': z.object({ sessionId: id }),
   'fs:list': z.object({ sessionId: id, rel: z.string().max(4096) }),
   'app:pickFiles': z.object({ sessionId: id }),
+  'app:pickFolder': z.undefined().or(z.null()),
+  'git:headText': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
   'agents:codexNotifications': z.object({ sessionId: id, action: z.enum(['status', 'enable']) }),
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),

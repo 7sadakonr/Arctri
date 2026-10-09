@@ -15,6 +15,8 @@ const shape = {
   defaultProfile: z.string().max(200).optional(),
   defaultPresentation: z.enum(['blocks', 'classic']),
   fontSize: z.number().int().min(9).max(28),
+  uiScale: z.number().min(0.8).max(1.5),
+  filePanelWidth: z.number().int().min(200).max(600),
   scrollback: z.number().int().min(1000).max(200000),
   restoreTabs: z.boolean(),
   conptyMode: z.enum(['bundled', 'inbox']),
@@ -23,6 +25,16 @@ const shape = {
   agentPaths: z.record(z.string().max(100), z.string().max(1000)),
   agentNotifications: z.boolean(),
   dismissedHints: z.array(z.string().max(100)).max(50),
+  recentProjects: z
+    .array(
+      z.object({
+        env: z.enum(['windows', 'wsl']),
+        distro: z.string().max(200).optional(),
+        path: z.string().max(4096),
+        openedAt: z.number()
+      })
+    )
+    .max(20),
   window: z.object(windowShape)
 };
 
@@ -32,6 +44,8 @@ export const prefsSchema = z.object({
   defaultProfile: shape.defaultProfile,
   defaultPresentation: shape.defaultPresentation.default('blocks'),
   fontSize: shape.fontSize.default(14),
+  uiScale: shape.uiScale.default(1.1),
+  filePanelWidth: shape.filePanelWidth.default(280),
   scrollback: shape.scrollback.default(10000),
   restoreTabs: shape.restoreTabs.default(true),
   conptyMode: shape.conptyMode.default('bundled'),
@@ -40,6 +54,7 @@ export const prefsSchema = z.object({
   agentPaths: shape.agentPaths.default({}),
   agentNotifications: shape.agentNotifications.default(true),
   dismissedHints: shape.dismissedHints.default([]),
+  recentProjects: shape.recentProjects.default([]),
   window: z
     .object({
       ...windowShape,

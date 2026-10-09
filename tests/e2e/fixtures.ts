@@ -13,11 +13,11 @@ export interface AppFixture {
 }
 
 export async function launch(extraEnv: Record<string, string> = {}, userData?: string): Promise<AppFixture> {
-  const dir = userData ?? mkdtempSync(join(tmpdir(), 'agentdock-e2e-'));
+  const dir = userData ?? mkdtempSync(join(tmpdir(), 'arctri-e2e-'));
   const app = await electron.launch({
     args: ['.'],
     cwd: process.cwd(),
-    env: { ...process.env, AGENTDOCK_USER_DATA: dir, AGENTDOCK_E2E: '1', ...extraEnv } as Record<string, string>
+    env: { ...process.env, ARCTRI_USER_DATA: dir, ARCTRI_E2E: '1', ...extraEnv } as Record<string, string>
   });
   const page = await app.firstWindow();
   const lines: string[] = [];
@@ -34,7 +34,7 @@ async function attachEvidence(f: AppFixture, outDir: (name: string) => string): 
     writeFileSync(outDir('console.log'), (consoleLog.get(f.page) ?? []).join('\n'));
     await f.page.screenshot({ path: outDir('failure.png') });
     const state = await f.page.evaluate(() => {
-      const t = (window as unknown as { __agentdockTest?: { sessions(): unknown[]; activeId(): string } }).__agentdockTest;
+      const t = (window as unknown as { __arctriTest?: { sessions(): unknown[]; activeId(): string } }).__arctriTest;
       return { active: t?.activeId(), sessions: t?.sessions() };
     });
     writeFileSync(outDir('state.json'), JSON.stringify(state, null, 2));
@@ -67,7 +67,7 @@ export async function waitForEditor(page: Page, timeout = 40_000): Promise<void>
     .poll(
       () =>
         page.evaluate(() => {
-          const t = (window as unknown as { __agentdockTest?: { activeId(): string; sessions(): Array<{ id: string; phase: string; cwd?: unknown }> } }).__agentdockTest;
+          const t = (window as unknown as { __arctriTest?: { activeId(): string; sessions(): Array<{ id: string; phase: string; cwd?: unknown }> } }).__arctriTest;
           const s = t?.sessions().find((x) => x.id === t.activeId());
           return !!s && (s.phase === 'editing' || s.phase === 'prompt') && !!s.cwd;
         }),
@@ -115,7 +115,7 @@ function ensureFakeAgentExe(): string {
 
 /** Starts the app with `codex` on Windows pointing at the fake full-screen agent. */
 export async function launchWithFakeAgent(kind: 'exe' | 'cmd' = 'exe'): Promise<AppFixture> {
-  const dir = mkdtempSync(join(tmpdir(), 'agentdock-e2e-'));
+  const dir = mkdtempSync(join(tmpdir(), 'arctri-e2e-'));
   mkdirSync(dir, { recursive: true });
   const fake = kind === 'exe' ? ensureFakeAgentExe() : join(process.cwd(), 'tests', 'fixtures', 'fake-codex.cmd');
   writeFileSync(join(dir, 'preferences.json'), JSON.stringify({ prefs: { agentPaths: { 'codex:windows': fake } } }));

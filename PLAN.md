@@ -1,4 +1,4 @@
-# AgentDock — MVP 1 (v0.1.0) Development Plan
+# Arctri — MVP 1 (v0.1.0) Development Plan
 
 > สถานะ: **อนุมัติแล้ว (2026-10-09)** ขั้นถัดไปคือ Phase 0 (bootstrap และ PoCs)
 > ภาษา: ใช้ภาษาไทยเป็นหลัก ส่วนศัพท์เทคนิค ชื่อไฟล์ และโค้ดคงเป็นภาษาอังกฤษ
@@ -7,7 +7,7 @@
 
 ## 0. Context และผลการตรวจสภาพแวดล้อม
 
-AgentDock คือ terminal สำหรับ Windows ที่ออกแบบรอบการใช้ AI coding agent (Codex CLI, Claude Code) โดยมี command blocks แบบ Warp, autocomplete, รองรับ WSL2 และภาษาไทยเต็มรูปแบบ terminal ต้องเป็นพื้นที่ทำงานหลัก ไม่ใช่ IDE
+Arctri คือ terminal สำหรับ Windows ที่ออกแบบรอบการใช้ AI coding agent (Codex CLI, Claude Code) โดยมี command blocks แบบ Warp, autocomplete, รองรับ WSL2 และภาษาไทยเต็มรูปแบบ terminal ต้องเป็นพื้นที่ทำงานหลัก ไม่ใช่ IDE
 
 ผลการตรวจ repo และเครื่องพัฒนา (2026-10-09):
 
@@ -33,7 +33,7 @@ AgentDock คือ terminal สำหรับ Windows ที่ออกแบ
 - Command blocks สำหรับ **WSL bash** และ **PowerShell 5.1/7** (command, output, status, exit code, duration, cwd, shell, timestamp, copy/rerun/collapse/navigate)
 - Command blocks สำหรับ **WSL zsh** (priority 3 แต่ยังอยู่ใน fully supported ถ้า PoC ผ่าน)
 - Classic (raw) mode อัตโนมัติเมื่อ shell integration ใช้งานไม่ได้
-- Autocomplete ใน command editor ของ AgentDock: history, คำสั่งจาก PATH, cmdlets/builtins, file/dir, git subcommand/branch, npm/pnpm scripts แยกตาม environment
+- Autocomplete ใน command editor ของ Arctri: history, คำสั่งจาก PATH, cmdlets/builtins, file/dir, git subcommand/branch, npm/pnpm scripts แยกตาม environment
 - WSL detection, รายชื่อ distro, เปิด shell ใน distro ที่เลือก, จัดการกรณีไม่มี WSL/distro หาย/distro หยุด
 - Agent adapters สำหรับ Codex CLI และ Claude Code: detect แยก Windows/WSL, launch แบบ native TUI, หลาย session, แสดงตัวตน agent, จัดการ process จบ, error ที่เข้าใจง่าย
 - Bottom toolbar ที่เปลี่ยนตามประเภท session โดยแสดงเฉพาะ control ที่ทำงานได้จริง
@@ -50,8 +50,8 @@ AgentDock คือ terminal สำหรับ Windows ที่ออกแบ
 
 ### 1.3 Technical limitations (บอกผู้ใช้ตรงๆ)
 - process ที่รันอยู่ไม่รอดเมื่อปิดแอป ตอนเปิดใหม่จะคืนได้แค่ tab layout, cwd และ metadata
-- ใน block mode ผู้ใช้จะไม่เห็น prompt ที่ shell วาดเอง (เช่น oh-my-posh/starship) เพราะ AgentDock แสดง cwd/branch ใน toolbar แทน ถ้าต้องการ prompt เดิมให้ใช้ classic mode
-- Autocomplete ทำงานใน command editor ของ AgentDock เท่านั้น ใน classic mode และขณะที่โปรแกรม interactive ทำงานอยู่ ปุ่ม Tab จะส่งให้ shell/โปรแกรมตามปกติ
+- ใน block mode ผู้ใช้จะไม่เห็น prompt ที่ shell วาดเอง (เช่น oh-my-posh/starship) เพราะ Arctri แสดง cwd/branch ใน toolbar แทน ถ้าต้องการ prompt เดิมให้ใช้ classic mode
+- Autocomplete ทำงานใน command editor ของ Arctri เท่านั้น ใน classic mode และขณะที่โปรแกรม interactive ทำงานอยู่ ปุ่ม Tab จะส่งให้ shell/โปรแกรมตามปกติ
 - ยังไม่รองรับ programmable completion ของ shell (bash-completion specs, PowerShell argument completers) ใน MVP 1
 - Output ของ block เก็บได้ไม่เกิน scrollback limit ถ้าเกินจะแสดงป้าย "truncated"
 - Output ของ block ไม่บันทึกลงดิสก์ บันทึกเฉพาะ metadata และ command
@@ -96,7 +96,7 @@ AgentDock คือ terminal สำหรับ Windows ที่ออกแบ
 └──────────────────────────────────────┬─────────────────────────────┬────────────┘
                         ipcRenderer.invoke/on (control)      MessagePort (PTY bytes)
 ┌──────────────────────── Preload (contextBridge) ───────────────────────────────┐
-│ window.agentdock = { sessions, wsl, agents, completion, history, prefs, … }     │
+│ window.arctri = { sessions, wsl, agents, completion, history, prefs, … }     │
 └──────────────────────────────────────┬─────────────────────────────────────────┘
 ┌──────────────────────── Renderer (React) ──────────────────────────────────────┐
 │ TitleBar+Tabs │ SessionView = BlockList (finished) + LiveTerminal (xterm.js)    │
@@ -132,10 +132,10 @@ D:\Desktop\Arctri\                 (repo root)
 ├─ electron-builder.yml            # NSIS, asarUnpack, extraResources
 ├─ vitest.config.ts  playwright.config.ts  components.json (shadcn)
 ├─ resources/
-│  ├─ icons/                       # ไอคอนของ AgentDock เอง
+│  ├─ icons/                       # ไอคอนของ Arctri เอง
 │  └─ shell-integration/
-│     ├─ agentdock.ps1             # PowerShell 5.1 + 7
-│     ├─ agentdock.bash            # bash ≥ 4.4 (ใช้ PS0)
+│     ├─ arctri.ps1             # PowerShell 5.1 + 7
+│     ├─ arctri.bash            # bash ≥ 4.4 (ใช้ PS0)
 │     ├─ zsh/.zshenv .zshrc .zprofile .zlogin   # ZDOTDIR shim
 │     ├─ cmd-prompt.txt            # template PROMPT สำหรับ cwd
 │     └─ wsl-helper.sh             # helper POSIX sh สำหรับ query ใน WSL
@@ -252,7 +252,7 @@ export interface PtyBackend {            // แยกไว้เพื่อ fa
 
 // ── shared/osc/protocol.ts ──────────────────────────────────────────
 // OSC 133;A|B|C|D[;exit]  (มาตรฐาน FinalTerm)
-// OSC 6973;<key>=<value>;n=<nonce>    (ของ AgentDock ค่า value เข้ารหัส base64url)
+// OSC 6973;<key>=<value>;n=<nonce>    (ของ Arctri ค่า value เข้ารหัส base64url)
 //   keys: hello (shell,version,blocks), cmd (id,text), cwd (path), env (distro)
 export type ShellEvent =
   | { t: 'hello'; shell: ShellKind; version: string; blocks: boolean }
@@ -427,17 +427,17 @@ export interface PersistenceService { prefs: PrefsStore; history: HistoryRepo; s
 ### 6.5 Classic mode
 - xterm เต็มพื้นที่ input ไปตรงที่ PTY เหมือน terminal ทั่วไป
 - ถ้า integration ยังทำงาน จะวาด decoration บางๆ ที่ gutter ตาม marker (สีตาม exit code) และรองรับ navigate/copy command/copy output/rerun ได้ **แต่ไม่รองรับ collapse** (บอกใน tooltip)
-- Presentation เลือกตอนสร้าง tab (ค่าเริ่มต้นตาม profile) การสลับต้องเปิด tab ใหม่ เพราะ hook ที่ clear หน้าจอถูกตั้งตั้งแต่ตอน spawn ผ่าน env `AGENTDOCK_BLOCKS=1`
+- Presentation เลือกตอนสร้าง tab (ค่าเริ่มต้นตาม profile) การสลับต้องเปิด tab ใหม่ เพราะ hook ที่ clear หน้าจอถูกตั้งตั้งแต่ตอน spawn ผ่าน env `ARCTRI_BLOCKS=1`
 
 ### 6.6 Shell integration แต่ละ shell
 - **ฉีดสคริปต์โดยไม่แก้ไฟล์ของผู้ใช้** และโหลด rc เดิมของผู้ใช้ก่อนเสมอ
-  - pwsh/powershell: `-NoLogo -NoExit -Command ". '<resources>\agentdock.ps1'"` สคริปต์ห่อฟังก์ชัน `prompt` เดิม ส่ง D (exit จาก `$?` + `$LASTEXITCODE`) แล้ว A … B ใช้ `Set-PSReadLineKeyHandler -Chord Enter` เพื่อส่ง E/C ก่อน `AcceptLine` ถ้าไม่มี PSReadLine ให้ทำงานแค่ cwd-only
-  - bash ใน WSL: `wsl.exe -d <distro> --cd <path> -- bash --rcfile <posix path ของ agentdock.bash> -i` สคริปต์ source `~/.bashrc` ก่อน แล้วใช้ `PS0` สำหรับ C, `PROMPT_COMMAND` (ต่อท้ายของเดิม รองรับแบบ array ของ bash 5.1) สำหรับ D/A และต่อท้าย `PS1` ด้วย B ใช้ร่วมกับ bash-preexec ได้
+  - pwsh/powershell: `-NoLogo -NoExit -Command ". '<resources>\arctri.ps1'"` สคริปต์ห่อฟังก์ชัน `prompt` เดิม ส่ง D (exit จาก `$?` + `$LASTEXITCODE`) แล้ว A … B ใช้ `Set-PSReadLineKeyHandler -Chord Enter` เพื่อส่ง E/C ก่อน `AcceptLine` ถ้าไม่มี PSReadLine ให้ทำงานแค่ cwd-only
+  - bash ใน WSL: `wsl.exe -d <distro> --cd <path> -- bash --rcfile <posix path ของ arctri.bash> -i` สคริปต์ source `~/.bashrc` ก่อน แล้วใช้ `PS0` สำหรับ C, `PROMPT_COMMAND` (ต่อท้ายของเดิม รองรับแบบ array ของ bash 5.1) สำหรับ D/A และต่อท้าย `PS1` ด้วย B ใช้ร่วมกับ bash-preexec ได้
   - zsh ใน WSL: ตั้ง `ZDOTDIR` ไปที่ shim ของเรา (ส่งผ่าน `env ZDOTDIR=… USER_ZDOTDIR=…` ใน argv ของ wsl.exe) shim source ไฟล์เดิมของผู้ใช้ทั้ง 4 ไฟล์ แล้วเพิ่ม `precmd`/`preexec` ผ่าน `add-zsh-hook`
   - cmd: ตั้ง `PROMPT` ให้ส่ง cwd ด้วย `$e]6973;cwd=$P…$e\` ก่อน prompt เดิม (cwd-only)
-- Path ของสคริปต์ใน WSL แปลงด้วย `wslpath -u` (รองรับกรณีผู้ใช้เปลี่ยน automount root) ถ้า distro ปิด automount ไว้ จะส่งเนื้อหาสคริปต์ผ่าน env (`WSLENV`) แล้วใช้ `bash --rcfile <(printf %s "$AGENTDOCK_RC")`
-- **Nonce**: main สร้าง nonce สุ่มต่อ session ส่งผ่าน env `AGENTDOCK_NONCE` property ใน `OSC 6973` ที่ nonce ไม่ตรงจะถูกทิ้ง ป้องกันไฟล์ที่ถูก `cat` ปลอม command text (ซึ่งจะส่งผลต่อปุ่ม Rerun) หรือปลอม cwd
-- สคริปต์ integration ต้อง idempotent (ถ้าโหลดซ้ำต้องไม่ซ้อน hook) และไม่ส่ง sequence ใดๆ เมื่อ `AGENTDOCK_NONCE` ไม่มีค่า (กรณีผู้ใช้ copy สคริปต์ไปใช้ที่อื่น)
+- Path ของสคริปต์ใน WSL แปลงด้วย `wslpath -u` (รองรับกรณีผู้ใช้เปลี่ยน automount root) ถ้า distro ปิด automount ไว้ จะส่งเนื้อหาสคริปต์ผ่าน env (`WSLENV`) แล้วใช้ `bash --rcfile <(printf %s "$ARCTRI_RC")`
+- **Nonce**: main สร้าง nonce สุ่มต่อ session ส่งผ่าน env `ARCTRI_NONCE` property ใน `OSC 6973` ที่ nonce ไม่ตรงจะถูกทิ้ง ป้องกันไฟล์ที่ถูก `cat` ปลอม command text (ซึ่งจะส่งผลต่อปุ่ม Rerun) หรือปลอม cwd
+- สคริปต์ integration ต้อง idempotent (ถ้าโหลดซ้ำต้องไม่ซ้อน hook) และไม่ส่ง sequence ใดๆ เมื่อ `ARCTRI_NONCE` ไม่มีค่า (กรณีผู้ใช้ copy สคริปต์ไปใช้ที่อื่น)
 
 ### 6.7 State machine (ใน `shared/shell/state-machine.ts`)
 ```
@@ -499,9 +499,9 @@ any     --exit of PTY--> closed  [running block -> interrupted]
   4. ซ่อน `docker-desktop*` และ distro ที่เป็น WSL1 (แสดงใน "Other" พร้อมคำอธิบาย)
   5. ถ้าไม่มี WSL เลยหรือคำสั่งล้มเหลว ให้คืน `available:false` UI จะซ่อนกลุ่ม WSL และแสดงข้อความสั้นๆ ใน launcher ไม่มี error dialog
 - **เปิด session**: `wsl.exe -d <name> --cd <posix cwd> -- <shell> …` ถ้า distro เป็น Stopped จะแสดงสถานะ "Starting Ubuntu…" ใน tab ถ้า wsl.exe exit code ≠ 0 ภายใน 10 วินาทีแรกและไม่เคยได้ hello จะแสดง error card ที่อ่าน stderr/ข้อความจาก wsl.exe (เช่น distro ไม่พบ) พร้อมปุ่ม "เลือก distro อื่น"
-- **Lifecycle**: ปิด tab → `pty.kill()` → ConPTY ปิด console → `wsl.exe` จบ → shell ใน Linux ได้ SIGHUP ตรวจด้วย helper ว่าไม่มี process ที่มี `AGENTDOCK_SESSION=<id>` ใน environ เหลืออยู่ ถ้ามีให้ส่ง `kill -TERM` แล้ว `-KILL` ตาม process group (ข้อนี้เป็น best-effort ทำผ่าน helper ที่ฝั่ง distro เท่านั้น)
+- **Lifecycle**: ปิด tab → `pty.kill()` → ConPTY ปิด console → `wsl.exe` จบ → shell ใน Linux ได้ SIGHUP ตรวจด้วย helper ว่าไม่มี process ที่มี `ARCTRI_SESSION=<id>` ใน environ เหลืออยู่ ถ้ามีให้ส่ง `kill -TERM` แล้ว `-KILL` ตาม process group (ข้อนี้เป็น best-effort ทำผ่าน helper ที่ฝั่ง distro เท่านั้น)
 - **WSL helper** (`wsl-helper.sh`): process `sh` ที่อยู่ยาวหนึ่งตัวต่อ distro (สร้างเมื่อมี session ของ distro นั้น) protocol แบบบรรทัด `<id>\t<op>\t<base64 args…>` ตอบเป็นบล็อกที่มีตัวคั่น op ที่มีคือ `ls`, `cat-small`, `git-branches`, `path-exec`, `wslpath`, `which`, `reap` สคริปต์ decode args ด้วย `base64 -d` แล้วใช้เป็นอาร์กิวเมนต์เท่านั้น ไม่ `eval`
-- **Environment**: env ของ Windows ไม่ไหลเข้า WSL ยกเว้นตัวที่ระบุใน `WSLENV` (`AGENTDOCK_NONCE`, `AGENTDOCK_SESSION`, `AGENTDOCK_BLOCKS`, `TERM_PROGRAM=AgentDock`) ฝั่ง Windows จะตั้ง `TERM_PROGRAM`, `COLORTERM=truecolor` และคง PATH ของผู้ใช้
+- **Environment**: env ของ Windows ไม่ไหลเข้า WSL ยกเว้นตัวที่ระบุใน `WSLENV` (`ARCTRI_NONCE`, `ARCTRI_SESSION`, `ARCTRI_BLOCKS`, `TERM_PROGRAM=Arctri`) ฝั่ง Windows จะตั้ง `TERM_PROGRAM`, `COLORTERM=truecolor` และคง PATH ของผู้ใช้
 - **Agent detection แยก environment** ดู §9
 
 ---
@@ -519,7 +519,7 @@ any     --exit of PTY--> closed  [running block -> interrupted]
 
 ### 9.2 Launch
 - Agent session คือ PTY ที่รัน agent ตรงๆ ใน classic presentation (ไม่มี shell integration) Windows: spawn `codex.exe` โดยตรง ถ้าเป็น `.cmd` shim ใช้ `cmd.exe /d /s /c` พร้อม argv ที่ escape แล้ว WSL: `wsl.exe -d <d> --cd <cwd> -- bash -lic 'exec "$0" "$@"' <agent> <args…>` เพื่อให้ได้ PATH/env เดียวกับที่ผู้ใช้ใช้ปกติ โดยค่าทุกตัวเป็นอาร์กิวเมนต์ ไม่ต่อ string
-- การยืนยันตัวตนเป็นหน้าที่ของ CLI เอง AgentDock ไม่อ่านไม่เก็บ token หรือ API key ใดๆ
+- การยืนยันตัวตนเป็นหน้าที่ของ CLI เอง Arctri ไม่อ่านไม่เก็บ token หรือ API key ใดๆ
 - เมื่อ agent จบ tab จะแสดงแถบ "Claude Code exited (code 0)" พร้อมปุ่ม Restart / Resume / Open shell here / Close
 - ไม่ส่ง flag ที่ข้ามการขออนุญาต (เช่น `--dangerously-skip-permissions`, `--yolo`) จาก UI ใดๆ ถ้าผู้ใช้ใส่เองใน `extraArgs` จะแสดงคำเตือนสีแดงใน toolbar ตลอด session
 
@@ -538,7 +538,7 @@ any     --exit of PTY--> closed  [running block -> interrupted]
 Capability matrix ถูก gate ตามเวอร์ชันที่ detect ได้ ถ้า flag ไม่มีใน `--help` ของเวอร์ชันนั้น control จะถูกซ่อน
 
 ### 9.4 ข้อจำกัดที่ประกาศชัด
-- AgentDock **ไม่ parse ข้อความบนหน้าจอ** ของ agent เพื่อเดาสถานะ ถ้าไม่ได้เปิด hooks สถานะจะมีแค่ Running / Exited
+- Arctri **ไม่ parse ข้อความบนหน้าจอ** ของ agent เพื่อเดาสถานะ ถ้าไม่ได้เปิด hooks สถานะจะมีแค่ Running / Exited
 - ปุ่ม native command ระบุชัดว่า "ส่ง `/model` ไปยัง Claude Code" การเปลี่ยนเกิดใน UI ของ CLI เอง
 - ปุ่มลัดทั้งหมดใช้ได้เฉพาะตอน TUI รอ input ถ้าผู้ใช้กดตอน agent กำลังทำงาน ข้อความจะถูกส่งเหมือนผู้ใช้พิมพ์เอง (เขียนไว้ใน tooltip)
 - **Prompt composer** (กล่องพิมพ์หลายบรรทัดใน toolbar ของ agent) ส่งข้อความด้วย bracketed paste เข้า TUI ทำให้พิมพ์ไทยยาวๆ ได้ใน textarea ปกติ ไม่ส่ง Enter ให้อัตโนมัติ ผู้ใช้ต้องยืนยันใน TUI เอง
@@ -568,7 +568,7 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 
 ### 10.2 Design direction
 - Dark-first ใช้ CSS variables ผ่าน Tailwind v4 `@theme` มี light theme แบบพื้นฐาน
-- Accent ของ AgentDock เอง (ไม่ใช้สี/ไอคอน/โลโก้ของ Warp) ใช้ไอคอน Lucide
+- Accent ของ Arctri เอง (ไม่ใช้สี/ไอคอน/โลโก้ของ Warp) ใช้ไอคอน Lucide
 - Animation สั้น (≤120 ms) เฉพาะตอน expand/collapse, เปิด overlay และสลับ tab เคารพ `prefers-reduced-motion`
 - shadcn/ui ใช้เฉพาะ Dialog, DropdownMenu, Tooltip, Tabs (settings), Input, Switch, ScrollArea, Command (palette ภายหลัง)
 - รองรับ display scaling 100–200% (ทดสอบ 100/125/150/175) ความละเอียดขั้นต่ำ 1280×720
@@ -606,9 +606,9 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 - CSP: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'` (ใน dev อนุญาต Vite HMR เท่านั้น)
 - บล็อก navigation และ `window.open` ทั้งหมด ลิงก์จาก terminal (web-links addon) เปิดด้วย `shell.openExternal` เฉพาะ `http(s):` หลังผู้ใช้ Ctrl+Click
 - IPC: ตรวจ schema ทุก channel (zod) ตรวจ sender และไม่มี API ที่รัน string เป็นคำสั่ง `session:create` รับเฉพาะ `profileId`/`adapterId` ที่ main รู้จัก ไม่รับ executable path จาก renderer (path ที่ผู้ใช้กำหนดเองเก็บใน prefs และ main ตรวจว่าเป็นไฟล์จริง)
-- OSC 52 (clipboard write จากโปรแกรม) ปิดเป็นค่าเริ่มต้น OSC ของ AgentDock ต้องมี nonce
+- OSC 52 (clipboard write จากโปรแกรม) ปิดเป็นค่าเริ่มต้น OSC ของ Arctri ต้องมี nonce
 - Electron Fuses ตอน package: ปิด `RunAsNode`, `EnableNodeCliInspectArguments`, `EnableNodeOptionsEnvironmentVariable` เปิด `EnableEmbeddedAsarIntegrityValidation` และ `OnlyLoadAppFromAsar`
-- ข้อมูลทั้งหมดอยู่ที่ `%APPDATA%\AgentDock` ไม่มี telemetry และไม่มี network call ยกเว้นลิงก์ที่ผู้ใช้เปิดเอง
+- ข้อมูลทั้งหมดอยู่ที่ `%APPDATA%\Arctri` ไม่มี telemetry และไม่มี network call ยกเว้นลิงก์ที่ผู้ใช้เปิดเอง
 - ไม่ bypass การขออนุญาตของ agent ไม่ส่งปุ่มกดตอบ approval prompt แทนผู้ใช้
 
 ---
@@ -642,7 +642,7 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 - `postinstall`: `electron-builder install-app-deps` เพื่อดึง prebuild ของ better-sqlite3 สำหรับ Electron
 - `asarUnpack`: `node_modules/node-pty/**` (มี `conpty.dll`, `OpenConsole.exe`, agent exe), `node_modules/better-sqlite3/**/*.node`
 - `extraResources`: `resources/shell-integration/**` ต้องเป็นไฟล์จริงบนดิสก์ เพราะ pwsh dot-source และ WSL ต้องเข้าถึงผ่าน `/mnt/c/...`
-- NSIS แบบ per-user (`perMachine: false`, ไม่ต้องสิทธิ์ admin) ติดตั้งที่ `%LOCALAPPDATA%\Programs\AgentDock`
+- NSIS แบบ per-user (`perMachine: false`, ไม่ต้องสิทธิ์ admin) ติดตั้งที่ `%LOCALAPPDATA%\Programs\Arctri`
 - ทางสำรองถ้าไม่มี prebuild: ติดตั้ง VS 2022 Build Tools (Desktop development with C++) และ Python 3.12 จริง (ไม่ใช่ stub ของ WindowsApps)
 - รองรับเฉพาะ x64 ใน MVP 1
 
@@ -689,7 +689,7 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 - Expect: ลาก/snap/maximize ได้ตาม Windows · Err: ถ้าตำแหน่งที่จำไว้อยู่นอกจอ ให้คืนค่ากลางจอ
 - Verify: e2e ตรวจ `contextIsolation`/`nodeIntegration` จาก `webContents` และ manual snap layouts Win11 · DoD: เปิด/ปิดได้ไม่มี error ใน console
 
-**P1-T2 Logger และ diagnostics** · Files: `main/logger.ts` · Approach: เขียนไฟล์ JSONL ใน `%APPDATA%\AgentDock\logs` หมุนไฟล์ 5×5 MB ไม่ log ข้อมูล PTY · DoD: มีเมนู "Copy diagnostics" (เวอร์ชัน OS, Electron, conpty mode, profiles)
+**P1-T2 Logger และ diagnostics** · Files: `main/logger.ts` · Approach: เขียนไฟล์ JSONL ใน `%APPDATA%\Arctri\logs` หมุนไฟล์ 5×5 MB ไม่ log ข้อมูล PTY · DoD: มีเมนู "Copy diagnostics" (เวอร์ชัน OS, Electron, conpty mode, profiles)
 
 **P1-T3 IPC contract + preload**
 - Files: `shared/ipc/contract.ts`, `main/ipc/router.ts`, `preload/index.ts`, `renderer/lib/api.ts` · Deps: P1-T1
@@ -718,7 +718,7 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 
 **P1-T11 Thai พื้นฐาน + i18n infrastructure** · Files: `shared/i18n/*`, `renderer/assets/fonts/*`, `styles/globals.css` · Approach: bundle fonts ตาม §10.3 ตั้ง UTF-8 ให้ PS 5.1 (ผ่าน `-Command` ตอน spawn ก่อนมี integration script เต็ม) แปล UI ทั้งหมดเป็น en/th · Verify: thai-matrix หมวด "พิมพ์และแสดงผลพื้นฐาน" · DoD: พิมพ์ไทยใน pwsh 7 และ bash แล้วแสดงผลถูก ส่วนข้อจำกัดที่ทราบบันทึกไว้แล้ว
 
-**Phase 1 acceptance**: เปิด AgentDock แล้วรันคำสั่งจริงได้ใน PowerShell 5.1, PowerShell 7, cmd และ WSL bash/zsh, หลาย tab, resize/copy/paste/scrollback, vim/htop ใช้ได้, ไม่มี WSL ก็ใช้งานได้ปกติ, ไม่มี process ค้าง
+**Phase 1 acceptance**: เปิด Arctri แล้วรันคำสั่งจริงได้ใน PowerShell 5.1, PowerShell 7, cmd และ WSL bash/zsh, หลาย tab, resize/copy/paste/scrollback, vim/htop ใช้ได้, ไม่มี WSL ก็ใช้งานได้ปกติ, ไม่มี process ค้าง
 
 ---
 
@@ -728,9 +728,9 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 
 **P2-T2 Shell state machine** · Files: `shared/shell/state-machine.ts` · Approach: ตาม §6.7 · Verify: unit test ทุก transition และลำดับผิดๆ · DoD: ไม่มี transition ที่ไม่ได้ทดสอบ
 
-**P2-T3 ShellIntegrationManager (main)** · Files: `main/shell/integration-manager.ts`, `main/shell/adapters/*.ts` · Approach: adapter ต่อ shell สร้าง launch args/env (nonce, `AGENTDOCK_BLOCKS`), feed stream เข้า tokenizer + state machine, อัปเดต `SessionInfo.phase/cwd/integration`, บันทึก history เมื่อ block จบ, แก้ git branch ของ cwd (Windows: อ่าน `.git/HEAD` โดยตรง, WSL: ผ่าน helper) · Err: ไม่ได้ hello ภายใน prompt แรก/10 วินาทีจะตั้ง `unavailable` · DoD: integration test ได้ event ที่ถูกต้องสำหรับ 20 สถานการณ์ใน §15
+**P2-T3 ShellIntegrationManager (main)** · Files: `main/shell/integration-manager.ts`, `main/shell/adapters/*.ts` · Approach: adapter ต่อ shell สร้าง launch args/env (nonce, `ARCTRI_BLOCKS`), feed stream เข้า tokenizer + state machine, อัปเดต `SessionInfo.phase/cwd/integration`, บันทึก history เมื่อ block จบ, แก้ git branch ของ cwd (Windows: อ่าน `.git/HEAD` โดยตรง, WSL: ผ่าน helper) · Err: ไม่ได้ hello ภายใน prompt แรก/10 วินาทีจะตั้ง `unavailable` · DoD: integration test ได้ event ที่ถูกต้องสำหรับ 20 สถานการณ์ใน §15
 
-**P2-T4 Integration scripts** · Files: `resources/shell-integration/*` · Approach: ตาม §6.6 ทดสอบกับ rc ของผู้ใช้ที่ซับซ้อน (oh-my-zsh, starship, bash-preexec, PSReadLine custom handlers, `Set-StrictMode`) · Err: สคริปต์ทั้งหมดห่อด้วย try/trap ไม่ทำให้ shell ของผู้ใช้เสีย · Verify: integration test พร้อม fixture rc · DoD: shell ทำงานเหมือนเดิมเมื่อไม่ได้อยู่ใน AgentDock (ไม่มี nonce = ไม่ทำอะไร)
+**P2-T4 Integration scripts** · Files: `resources/shell-integration/*` · Approach: ตาม §6.6 ทดสอบกับ rc ของผู้ใช้ที่ซับซ้อน (oh-my-zsh, starship, bash-preexec, PSReadLine custom handlers, `Set-StrictMode`) · Err: สคริปต์ทั้งหมดห่อด้วย try/trap ไม่ทำให้ shell ของผู้ใช้เสีย · Verify: integration test พร้อม fixture rc · DoD: shell ทำงานเหมือนเดิมเมื่อไม่ได้อยู่ใน Arctri (ไม่มี nonce = ไม่ทำอะไร)
 
 **P2-T5 Block tracker (renderer)** · Files: `features/terminal/block-tracker.ts`, `snapshot.ts`, `stores/blocks.ts` · Approach: `term.parser.registerOscHandler(133|6973)` วาง marker, จับ alt-screen ด้วย `buffer.onBufferChange`, สร้าง snapshot เป็น logical lines + style table ตาม §6.2 · Verify: integration test บน `@xterm/headless` เทียบ snapshot กับข้อความที่คาดไว้ (ANSI, wrap, ไทย, 10,000 บรรทัด) · DoD: สร้าง snapshot 10k บรรทัดใช้เวลา < 50 ms
 
@@ -780,7 +780,7 @@ Capability matrix ถูก gate ตามเวอร์ชันที่ dete
 
 **P4-T7 Prompt composer + native command shortcuts** · Approach: ตาม §9.4 ส่งผ่าน bracketed paste ไม่ส่ง Enter · DoD: ข้อความไทย 2,000 ตัวอักษรไปถึง Claude Code/Codex ครบถูกต้อง
 
-**P4-T8 (opt-in, best-effort) Structured status** · Approach: Claude hooks ผ่าน `--settings` ไฟล์ชั่วคราว (event: Stop, Notification, UserPromptSubmit) และ Codex `notify` เขียนลง named pipe `\\.\pipe\agentdock-<session>-<nonce>` (WSL ส่งผ่าน helper) · DoD: ปิดเป็นค่าเริ่มต้น ไม่กระทบการขออนุญาตของ agent ถ้าเกินเวลาของ phase นี้ให้ย้ายไป MVP 2 โดยไม่กระทบ acceptance
+**P4-T8 (opt-in, best-effort) Structured status** · Approach: Claude hooks ผ่าน `--settings` ไฟล์ชั่วคราว (event: Stop, Notification, UserPromptSubmit) และ Codex `notify` เขียนลง named pipe `\\.\pipe\arctri-<session>-<nonce>` (WSL ส่งผ่าน helper) · DoD: ปิดเป็นค่าเริ่มต้น ไม่กระทบการขออนุญาตของ agent ถ้าเกินเวลาของ phase นี้ให้ย้ายไป MVP 2 โดยไม่กระทบ acceptance
 
 **P4-T9 Agent ใน shell tab (best-effort)** · Approach: เมื่อ `commandLine` ขึ้นต้นด้วย `claude`/`codex` ให้แสดงตัวตน agent ใน toolbar ระหว่าง block นั้น · DoD: แสดงเฉพาะระหว่างที่ block ยังรันอยู่
 
@@ -856,7 +856,7 @@ Phase 5: T1–T3 เริ่มได้หลัง Phase 4 ; T4 packaging pip
 | Thai IME composition | ⚠️ e2e จำลอง composition events ได้บางส่วน | ✅ **ต้อง manual** Thai Kedmanee/Pattachote, Microsoft IME | |
 | Thai combining characters | ✅ snapshot/width unit test | ✅ ภาพหน้าจอเทียบ matrix | |
 | Agent interactive input | ❌ (ต้อง login จริง) | ✅ | ใช้ fake TUI สคริปต์ Node ใน auto test แทน (ทดสอบ keys/alt-screen/paste) |
-| Agent approval prompts | ❌ | ✅ | ตรวจว่า AgentDock ไม่ตอบแทน |
+| Agent approval prompts | ❌ | ✅ | ตรวจว่า Arctri ไม่ตอบแทน |
 | Windows installer startup | ✅ CI: ติดตั้งแบบ silent `/S` แล้ว launch + smoke e2e | ✅ VM สะอาด Win10/11 | |
 | Process cleanup | ✅ ตรวจ process tree ก่อน/หลัง | | |
 | Security (IPC/CSP/fuses) | ✅ unit + e2e (เรียก channel ด้วย args ผิด, ตรวจ fuses ของ exe) | | |

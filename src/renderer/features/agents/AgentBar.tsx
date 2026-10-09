@@ -1,4 +1,4 @@
-import { Asterisk, ChevronDown, Folder, FolderOpen, GitBranch, Hexagon, History, MessageSquarePlus, Paperclip, PanelRight, RotateCcw, Settings, TriangleAlert, X } from 'lucide-react';
+import { Asterisk, ChevronDown, Folder, FolderOpen, GitBranch, Hexagon, History, MessageSquarePlus, Paperclip, RotateCcw, Settings, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AGENT_META } from '@shared/agents/meta';
 import type { AgentId, SessionInfo } from '@shared/types/session';
@@ -9,10 +9,8 @@ import {
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
-import { cn } from '@/lib/cn';
 import { focusActiveSession } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
-import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { agentLaunchOf, closeSession, openAgent, openShellHere, restartSession } from '../launcher/actions';
 import { sendCommand } from './commands';
@@ -22,7 +20,7 @@ import { attachFiles, insertText } from './insert';
 import { RichInput } from './RichInput';
 import { useChanges } from './useChanges';
 
-export const TOGGLE_RICH_EVENT = 'agentdock:toggle-rich';
+export const TOGGLE_RICH_EVENT = 'arctri:toggle-rich';
 
 const Glyph = ({ agent, size = 14 }: { agent: AgentId; size?: number }) =>
   agent === 'claude-code' ? <Asterisk size={size} className="text-orange-400" /> : <Hexagon size={size} className="text-accent" />;
@@ -85,7 +83,6 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
   const ownsTab = info.kind === 'agent';
   const running = info.state === 'running';
   const caps = info.agentCaps;
-  const explorerOpen = useSessions((s) => !!s.explorer[info.id]);
   const [rich, setRich] = useState(false);
   const changes = useChanges(info.id, active && running);
   const launch = agentLaunchOf(info.id);
@@ -174,19 +171,6 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
           </DropdownMenu>
         )}
 
-        <Tip label={t('agent.filesHint')}>
-          <Chip
-            active={explorerOpen}
-            onClick={() => {
-              useSessions.getState().setExplorer(info.id, !explorerOpen);
-              focusActiveSession();
-            }}
-          >
-            <PanelRight size={12} />
-            {t('agent.files')}
-          </Chip>
-        </Tip>
-
         {running && (
           <Tip label={t('agent.richInputHint')}>
             <Chip active={rich} onClick={() => setRich((v) => !v)}>
@@ -242,10 +226,6 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
             <span className="truncate">{info.gitBranch}</span>
           </Chip>
         )}
-        <span className={cn('flex items-center gap-1', running ? 'text-ok' : 'text-fg-muted')}>
-          <span className="h-1.5 w-1.5 rounded-full bg-current" />
-          {running ? t('agent.running') : `${t('agent.exited')}${info.exit?.code != null ? ` (${info.exit.code})` : ''}`}
-        </span>
         <Tip label={t('launcher.settings')}>
           <Button variant="ghost" size="icon" aria-label={t('launcher.settings')} onClick={() => useUi.getState().openSettings(true)}>
             <Settings size={13} />

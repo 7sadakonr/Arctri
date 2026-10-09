@@ -26,8 +26,8 @@ export class WslManager {
 
   /** Never starts a distribution; only lists them. */
   async refresh(): Promise<{ status: WslStatus; distros: WslDistro[] }> {
-    // AGENTDOCK_FAKE_WSL lets tests exercise the "WSL is not installed" path on a machine that has it.
-    if (process.env['AGENTDOCK_FAKE_WSL'] === 'missing' || process.platform !== 'win32' || !existsSync(wslExe())) {
+    // ARCTRI_FAKE_WSL lets tests exercise the "WSL is not installed" path on a machine that has it.
+    if (process.env['ARCTRI_FAKE_WSL'] === 'missing' || process.platform !== 'win32' || !existsSync(wslExe())) {
       return this.store({ available: false, reason: 'not-installed' }, []);
     }
     const r = await run(['--list', '--verbose'], 15000);

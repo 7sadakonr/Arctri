@@ -1,4 +1,4 @@
-// Draws AgentDock's own icon (no third-party artwork) and writes build/icon.png and build/icon.ico.
+// Draws Arctri's own icon (no third-party artwork) and writes build/icon.png and build/icon.ico.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 

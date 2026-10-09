@@ -14,6 +14,7 @@ import { useUi } from '@/stores/ui';
 import { Asterisk, Hexagon } from 'lucide-react';
 import { AGENT_META } from '@shared/agents/meta';
 import { FileExplorer } from '../agents/FileExplorer';
+import { FileViewer } from '../viewer/FileViewer';
 import { BlockList } from '../blocks/BlockList';
 import { CommandEditor } from '../editor/CommandEditor';
 import { closeSession, openShell, restartSession } from '../launcher/actions';
@@ -66,6 +67,7 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
   const uiPhase = useSessions((s) => s.uiPhase[info.id] ?? 'unknown');
   const native = useSessions((s) => !!s.nativePrompt[info.id]);
   const explorerOpen = useSessions((s) => !!s.explorer[info.id]);
+  const viewerOpen = useSessions((s) => !!s.viewer[info.id]);
   const running = useBlocks((s) => s.blocks[info.id]?.findLast((b) => b.status === 'running'));
 
   const blockMode = info.kind === 'shell' && info.presentation === 'blocks' && info.integration === 'active';
@@ -94,8 +96,10 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
     <div
       data-session={info.id}
       data-active={active}
-      className={cn('absolute inset-0 flex flex-col', !active && 'pointer-events-none invisible')}
+      aria-hidden={!active}
+      className={cn('absolute inset-0 flex', !active && 'pointer-events-none invisible')}
     >
+      <div className="flex min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 min-w-0 flex-1">
         {blockMode && <BlockList sessionId={info.id} active={active} />}
@@ -106,7 +110,8 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
           className={cn(
             'absolute inset-x-0 bottom-0',
             blockMode ? 'top-7 z-10' : 'top-0',
-            liveVisible ? 'visible' : 'pointer-events-none invisible'
+            // never 'visible': it would beat the 'invisible' of a hidden tab and paint this terminal over the others
+            !liveVisible && 'pointer-events-none invisible'
           )}
         />
         {blockMode && liveVisible && !ended && (
@@ -149,6 +154,11 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
             )}
           </div>
         )}
+        {info.presentation === 'blocks' && info.kind === 'shell' && !ended && info.state === 'starting' && (
+          <div data-testid="starting" className="absolute inset-0 z-30 flex items-center justify-center bg-bg text-[12px] text-fg-muted">
+            {t('session.starting', { shell: info.title.split(' · ')[0] ?? '' })}
+          </div>
+        )}
         {info.presentation === 'blocks' && info.kind === 'shell' && !ended && info.integration === 'unavailable' && (
           <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 border-t border-border bg-panel px-3 py-1 text-[11px] text-fg-muted">
             <Info size={12} />
@@ -188,11 +198,13 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
           </div>
         )}
       </div>
-      {explorerOpen && info.cwd && <FileExplorer info={info} />}
       </div>
       {info.presentation === 'classic' && info.kind === 'shell' && <ClassicBar info={info} />}
       {canType && <CommandEditor sessionId={info.id} focused={active} />}
       <BottomToolbar info={info} active={active} />
+      </div>
+      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
+      {explorerOpen && info.cwd && <FileExplorer info={info} active={active} />}
     </div>
   );
 }

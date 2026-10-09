@@ -10,7 +10,7 @@ function logFile(): string {
   if (file) return file;
   const dir = join(app.getPath('userData'), 'logs');
   mkdirSync(dir, { recursive: true });
-  file = join(dir, 'agentdock.log');
+  file = join(dir, 'arctri.log');
   return file;
 }
 

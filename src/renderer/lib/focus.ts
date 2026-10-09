@@ -1,5 +1,5 @@
 /** Asks the active session to take keyboard focus (its terminal, or its command editor at a prompt). */
-export const FOCUS_SESSION_EVENT = 'agentdock:focus-session';
+export const FOCUS_SESSION_EVENT = 'arctri:focus-session';
 
 export function focusActiveSession(): void {
   // after the closing menu or dialog has finished returning focus to its own trigger

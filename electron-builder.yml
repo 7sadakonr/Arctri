@@ -1,6 +1,6 @@
-appId: dev.agentdock.app
-productName: AgentDock
-copyright: Copyright (c) AgentDock contributors
+appId: dev.arctri.app
+productName: Arctri
+copyright: Copyright (c) Arctri contributors
 directories:
   output: release
   buildResources: build
@@ -34,8 +34,8 @@ win:
     - target: nsis
       arch: [x64]
   icon: build/icon.ico
-  artifactName: AgentDock-Setup-${version}-${arch}.${ext}
-  # Unsigned in MVP 1: Windows SmartScreen will warn on first run (docs/RELEASE.md).
+  artifactName: Arctri-Setup-${version}-${arch}.${ext}
+  # Unsigned in MVP 1: Windows SmartScreen will warn on first run.
   signAndEditExecutable: true
 nsis:
   oneClick: false
@@ -44,8 +44,8 @@ nsis:
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: AgentDock
-  uninstallDisplayName: AgentDock
+  shortcutName: Arctri
+  uninstallDisplayName: Arctri
 electronFuses:
   runAsNode: false
   enableCookieEncryption: true

@@ -1,1 +1,1 @@
-export const api = window.agentdock;
+export const api = window.arctri;

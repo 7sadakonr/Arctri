@@ -18,7 +18,7 @@ afterEach(async () => {
 const MB = 1024 * 1024;
 
 describe('throughput and responsiveness (numbers are printed as PERF lines)', () => {
-  it.skipIf(!!process.env['AGENTDOCK_SKIP_WSL'])('WSL bash: 100 MB of output through PTY -> pump -> xterm parser', async () => {
+  it.skipIf(!!process.env['ARCTRI_SKIP_WSL'])('WSL bash: 100 MB of output through PTY -> pump -> xterm parser', async () => {
     h = new Harness(profiles);
     await h.start('wsl:Ubuntu:bash');
     const t0 = Date.now();
@@ -53,7 +53,7 @@ describe('throughput and responsiveness (numbers are printed as PERF lines)', ()
 
   it('Ctrl+C stops a flood of output within one second (WSL and PowerShell)', async () => {
     for (const [id, flood, minBytes] of [['wsl:Ubuntu:bash', 'yes', 2 * MB], ['pwsh', 'while ($true) { "flood" }', 0.2 * MB]] as const) {
-      if (process.env['AGENTDOCK_SKIP_WSL'] && id.startsWith('wsl:')) continue;
+      if (process.env['ARCTRI_SKIP_WSL'] && id.startsWith('wsl:')) continue;
       h = new Harness(profiles);
       await h.start(id);
       const before = h.commands.length;
@@ -70,7 +70,7 @@ describe('throughput and responsiveness (numbers are printed as PERF lines)', ()
     }
   }, 120000);
 
-  it.skipIf(!!process.env['AGENTDOCK_SKIP_WSL'])('keystroke echo latency in a shell prompt', async () => {
+  it.skipIf(!!process.env['ARCTRI_SKIP_WSL'])('keystroke echo latency in a shell prompt', async () => {
     h = new Harness(profiles);
     await h.start('wsl:Ubuntu:bash', 'classic');
     const samples: number[] = [];

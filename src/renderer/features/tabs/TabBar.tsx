@@ -1,9 +1,10 @@
-import { Bot, ChevronDown, Plus, SquareTerminal, X } from 'lucide-react';
+import { Bot, ChevronDown, PanelRight, Plus, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { closeSession, openSimilarTab } from '../launcher/actions';
@@ -50,8 +51,8 @@ function Tab({ id, index }: { id: string; index: number }) {
       setDraft(info?.title ?? '');
       setEditing(true);
     };
-    window.addEventListener('agentdock:rename-tab', h);
-    return () => window.removeEventListener('agentdock:rename-tab', h);
+    window.addEventListener('arctri:rename-tab', h);
+    return () => window.removeEventListener('arctri:rename-tab', h);
   }, [active, info?.title]);
 
   if (!info) return null;
@@ -66,10 +67,10 @@ function Tab({ id, index }: { id: string; index: number }) {
       role="tab"
       aria-selected={active}
       draggable={!editing}
-      onDragStart={(e) => e.dataTransfer.setData('text/agentdock-tab', String(index))}
+      onDragStart={(e) => e.dataTransfer.setData('text/arctri-tab', String(index))}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
-        const from = Number(e.dataTransfer.getData('text/agentdock-tab'));
+        const from = Number(e.dataTransfer.getData('text/arctri-tab'));
         if (Number.isInteger(from)) useSessions.getState().move(from, index);
       }}
       onMouseDown={(e) => {
@@ -126,6 +127,9 @@ export function TabBar() {
   const order = useSessions((s) => s.order);
   const t = useT();
   const [menuOpen, setMenuOpen] = useState(false);
+  const activeId = useSessions((s) => s.activeId);
+  const hasFolder = useSessions((s) => !!(s.activeId && s.infos[s.activeId]?.cwd));
+  const filesOpen = useSessions((s) => !!(s.activeId && s.explorer[s.activeId]));
 
   return (
     <div
@@ -154,6 +158,24 @@ export function TabBar() {
           </NewTabMenu>
         </div>
       </div>
+      {activeId && hasFolder && (
+        <div className="no-drag flex shrink-0 items-center pr-1">
+          <Tip label={t('agent.filesHint')} side="bottom">
+            <Button
+              variant={filesOpen ? 'outline' : 'ghost'}
+              size="icon"
+              aria-label={t('agent.files')}
+              aria-pressed={filesOpen}
+              onClick={() => {
+                useSessions.getState().setExplorer(activeId, !filesOpen);
+                focusActiveSession();
+              }}
+            >
+              <PanelRight size={14} />
+            </Button>
+          </Tip>
+        </div>
+      )}
     </div>
   );
 }

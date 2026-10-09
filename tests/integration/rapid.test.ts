@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 for (const id of ['pwsh', 'powershell', 'wsl:Ubuntu:bash', 'wsl:Ubuntu:zsh'].filter(
-  (x) => !process.env['AGENTDOCK_SKIP_WSL'] || !x.startsWith('wsl:')
+  (x) => !process.env['ARCTRI_SKIP_WSL'] || !x.startsWith('wsl:')
 )) {
   describe(`back-to-back commands: ${id}`, () => {
     it('runs 25 commands submitted as soon as the previous one finished', async () => {

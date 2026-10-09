@@ -18,7 +18,7 @@ export interface AgentCapabilities {
   resumeLast: boolean;
   resumePicker: boolean;
   launchFlags: { model: boolean; permissionMode: boolean; extraArgs: boolean };
-  /** Permission/approval values the CLI accepts at launch and AgentDock offers (never the "skip checks" ones). */
+  /** Permission/approval values the CLI accepts at launch and Arctri offers (never the "skip checks" ones). */
   permissionModes: string[];
   structuredStatus: 'none' | 'hooks-opt-in';
   /** Slash commands that are sent to the CLI as typed text. */

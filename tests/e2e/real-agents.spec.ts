@@ -1,10 +1,10 @@
 // Opt-in: drives the real Claude Code and Codex CLIs that are installed on this machine.
 // It never sends a prompt (no Enter in the agent) so it uses no model quota and needs no login.
-//   set AGENTDOCK_REAL_AGENTS=1 && npx playwright test tests/e2e/real-agents.spec.ts
+//   set ARCTRI_REAL_AGENTS=1 && npx playwright test tests/e2e/real-agents.spec.ts
 import { expect, launch, test, waitForEditor } from './fixtures';
 import { screen, waitScreen } from './helpers';
 
-test.skip(!process.env['AGENTDOCK_REAL_AGENTS'], 'set AGENTDOCK_REAL_AGENTS=1 to run');
+test.skip(!process.env['ARCTRI_REAL_AGENTS'], 'set ARCTRI_REAL_AGENTS=1 to run');
 
 const CASES: Array<[string, RegExp, RegExp]> = [
   ['Claude Code in Ubuntu', /Claude Code|claude|Welcome|trust|theme|login/i, /Claude/i],

@@ -13,6 +13,13 @@ describe('git changes parsing', () => {
     ]);
   });
 
+  it('drops entries outside the working folder and keeps ignored markers', () => {
+    expect(parseStatus(' M ../other/x.ts\n M inside.ts\n!! build/\n?? ../y\n')).toEqual([
+      { status: ' M', path: 'inside.ts' },
+      { status: '!!', path: 'build/' }
+    ]);
+  });
+
   it('reads numstat, binary files and renames with braces', () => {
     const n = parseNumstat('3\t1\tsrc/app.ts\n-\t-\timg.png\n2\t0\tsrc/{old => new}/x.ts\n');
     expect(n.get('src/app.ts')).toEqual({ added: 3, deleted: 1 });
@@ -31,5 +38,8 @@ describe('git changes parsing', () => {
     const c = parseHelperGitStat('##STATUS\n M a.ts\n##NUMSTAT\n5\t2\ta.ts\n');
     expect(c).toMatchObject({ added: 5, deleted: 2 });
     expect(parseHelperGitStat('')).toBeUndefined();
+    // clean repository and untracked-only repository: the numstat section is empty and has no trailing newline
+    expect(parseHelperGitStat('##STATUS\n##NUMSTAT')).toEqual({ files: [], added: 0, deleted: 0 });
+    expect(parseHelperGitStat('##STATUS\n?? new.txt\n##NUMSTAT')?.files.map((f) => f.path)).toEqual(['new.txt']);
   });
 });

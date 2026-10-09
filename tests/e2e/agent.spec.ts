@@ -31,7 +31,7 @@ test('agent session: native TUI, input, paste, composer, commands, approval prom
     await page.keyboard.insertText(' สวัสดี');
     await waitScreen(page, 'input: hell สวัสดี');
 
-    // the approval prompt is never answered by AgentDock
+    // the approval prompt is never answered by Arctri
     await page.waitForTimeout(1500);
     expect(await screen(page)).toContain('approval> Allow command? (y/n)');
     expect(await screen(page)).not.toMatch(/submitted:/);

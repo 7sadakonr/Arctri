@@ -8,7 +8,7 @@ beforeAll(async () => {
 });
 
 const targets = ['powershell', 'pwsh', 'wsl:Ubuntu:bash', 'wsl:Ubuntu:zsh'].filter(
-  (id) => !process.env['AGENTDOCK_SKIP_WSL'] || !id.startsWith('wsl:')
+  (id) => !process.env['ARCTRI_SKIP_WSL'] || !id.startsWith('wsl:')
 );
 let h: Harness | undefined;
 afterEach(async () => {

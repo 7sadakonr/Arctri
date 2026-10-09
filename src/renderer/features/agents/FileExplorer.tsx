@@ -1,12 +1,14 @@
-import { ChevronDown, ChevronRight, File as FileIcon, Folder, FolderOpen, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionInfo } from '@shared/types/session';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/cn';
+import { iconUrl } from '@/lib/file-icon';
 import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
+import { useUi } from '@/stores/ui';
 import { insertText, refOf } from './insert';
 import { useChanges } from './useChanges';
 
@@ -15,21 +17,49 @@ interface Entry {
   isDir: boolean;
 }
 
+interface Row {
+  path: string;
+  name: string;
+  isDir: boolean;
+  depth: number;
+  open: boolean;
+}
+
+const ROW_H = 24;
+const OVERSCAN = 12;
+
+// What the panel last showed, per tab: reopening it paints at once and refreshes underneath (like an editor does).
+const cache = new Map<string, { cwd: string; tree: Record<string, Entry[]>; expanded: Set<string> }>();
+
 const statusDot = (s: string) => (s === '??' ? 'bg-ok' : s.includes('D') ? 'bg-danger' : 'bg-warn');
 
 /**
- * A read-only list of the files below the tab's working folder (it cannot go above it). Clicking a file puts its
- * path into the message; nothing is opened or edited here.
+ * The files below the tab's working folder (it cannot go above it). Clicking a file opens it beside the terminal;
+ * Alt+click puts its path into the message.
  */
-export function FileExplorer({ info }: { info: SessionInfo }) {
+export function FileExplorer({ info, active }: { info: SessionInfo; active: boolean }) {
   const t = useT();
   const sep = info.env.kind === 'windows' ? '\\' : '/';
   const cwd = info.cwd?.path ?? '';
-  const [tree, setTree] = useState<Record<string, Entry[]>>({});
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
+  const cached = cache.get(info.id)?.cwd === cwd ? cache.get(info.id) : undefined;
+  const [tree, setTree] = useState<Record<string, Entry[]>>(cached?.tree ?? {});
+  const [expanded, setExpanded] = useState<Set<string>>(cached?.expanded ?? new Set(['']));
   const [filter, setFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
-  const changes = useChanges(info.id, true);
+  const [rootState, setRootState] = useState<'loading' | 'ready' | 'failed'>(cached?.tree[''] ? 'ready' : 'loading');
+  const [scroll, setScroll] = useState({ top: 0, height: 400 });
+  // one counter per folder: a slow answer for one folder must not discard the answer of another
+  const requests = useRef(new Map<string, number>());
+  const known = useRef(tree);
+  known.current = tree;
+  const changes = useChanges(info.id, active);
+  const savedWidth = useUi((s) => s.prefs.filePanelWidth);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const width = dragWidth ?? savedWidth;
+  const saveWidth = (w: number) => {
+    setDragWidth(null);
+    if (w !== savedWidth) void api.prefs.set({ filePanelWidth: w }).then((p) => useUi.getState().setPrefs(p), () => undefined);
+  };
 
   const changed = useMemo(() => {
     const m = new Map<string, string>();
@@ -39,18 +69,63 @@ export function FileExplorer({ info }: { info: SessionInfo }) {
 
   const load = useCallback(
     async (rel: string) => {
-      const entries = await api.files.list(info.id, rel);
-      setTree((tr) => ({ ...tr, [rel]: entries }));
+      const id = (requests.current.get(rel) ?? 0) + 1;
+      requests.current.set(rel, id);
+      if (rel === '' && !known.current['']) setRootState('loading');
+      try {
+        const result = await api.files.list(info.id, rel);
+        if (id !== requests.current.get(rel)) return;
+        if (!result.ok) {
+          if (rel === '' && !known.current['']) setRootState('failed');
+          return;
+        }
+        setTree((tr) => ({ ...tr, [rel]: result.entries }));
+        if (rel === '') setRootState('ready');
+      } catch {
+        if (id === requests.current.get(rel) && rel === '' && !known.current['']) setRootState('failed');
+      }
     },
     [info.id]
   );
 
-  // a new working folder is a new root
+  // a new working folder is a new root; the same one keeps what it had and refreshes it
+  const first = useRef(true);
   useEffect(() => {
-    setTree({});
-    setExpanded(new Set(['']));
-    void load('');
+    const keep = first.current && cached;
+    first.current = false;
+    if (!keep) {
+      setTree({});
+      setExpanded(new Set(['']));
+      setRootState('loading');
+      requests.current.clear();
+    }
+    const dirs = keep ? [...cached.expanded] : [''];
+    for (const d of dirs) void load(d);
+    // `cached` is only the starting point, so it is not a dependency
   }, [cwd, load]);
+
+  useEffect(() => {
+    cache.set(info.id, { cwd, tree, expanded });
+  }, [info.id, cwd, tree, expanded]);
+
+  const refreshOpen = useCallback(() => {
+    for (const d of expanded) void load(d);
+  }, [expanded, load]);
+
+  // new or finished work changes the folders: refresh when the set of changed files moves and when the window returns
+  const signature = changes ? changes.files.map((f) => `${f.status}${f.path}`).join('\n') : '';
+  const lastSignature = useRef(signature);
+  useEffect(() => {
+    if (lastSignature.current === signature) return;
+    lastSignature.current = signature;
+    if (active) refreshOpen();
+  }, [signature, active, refreshOpen]);
+  useEffect(() => {
+    if (!active) return;
+    const onFocus = () => refreshOpen();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [active, refreshOpen]);
 
   const toggle = (rel: string) => {
     setExpanded((cur) => {
@@ -58,60 +133,63 @@ export function FileExplorer({ info }: { info: SessionInfo }) {
       if (next.has(rel)) next.delete(rel);
       else {
         next.add(rel);
-        if (!tree[rel]) void load(rel);
+        void load(rel);
       }
       return next;
     });
   };
 
-  const match = (name: string) => !filter || name.toLowerCase().includes(filter.toLowerCase());
-  const subtreeMatches = (rel: string): boolean =>
-    (tree[rel] ?? []).some((e) => match(e.name) || (e.isDir && subtreeMatches(join(rel, e.name))));
-  const join = (rel: string, name: string) => (rel ? `${rel}${sep}${name}` : name);
+  const join = useCallback((rel: string, name: string) => (rel ? `${rel}${sep}${name}` : name), [sep]);
+  const lowered = filter.toLowerCase();
 
-  const rows = (rel: string, depth: number): React.ReactNode =>
-    (tree[rel] ?? [])
-      .filter((e) => (showHidden || !e.name.startsWith('.')) && (match(e.name) || (e.isDir && subtreeMatches(join(rel, e.name)))))
-      .map((e) => {
+  const rows = useMemo(() => {
+    const match = (name: string) => !lowered || name.toLowerCase().includes(lowered);
+    const visible = (e: Entry) => showHidden || !e.name.startsWith('.');
+    const memo = new Map<string, boolean>();
+    const subtreeMatches = (rel: string): boolean => {
+      const hit = memo.get(rel);
+      if (hit !== undefined) return hit;
+      const r = (tree[rel] ?? []).some((e) => visible(e) && (match(e.name) || (e.isDir && subtreeMatches(join(rel, e.name)))));
+      memo.set(rel, r);
+      return r;
+    };
+    const out: Row[] = [];
+    const walk = (rel: string, depth: number) => {
+      for (const e of tree[rel] ?? []) {
+        if (!visible(e) || !(match(e.name) || (e.isDir && subtreeMatches(join(rel, e.name))))) continue;
         const path = join(rel, e.name);
-        const open = expanded.has(path) || (!!filter && e.isDir && subtreeMatches(path));
-        const status = changed.get(path.replace(/\\/g, '/'));
-        return (
-          <div key={path}>
-            <div
-              role="treeitem"
-              aria-expanded={e.isDir ? open : undefined}
-              data-path={path}
-              title={e.isDir ? path : t('files.insertHint')}
-              style={{ paddingLeft: 8 + depth * 12 }}
-              className="flex h-6 cursor-default items-center gap-1 rounded pr-2 text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
-              onClick={() => (e.isDir ? toggle(path) : insertText(info.id, refOf(path.replace(/\\/g, '/'))))}
-              onContextMenu={(ev) => {
-                ev.preventDefault();
-                void copyText(path);
-              }}
-            >
-              {e.isDir ? (
-                <>
-                  {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  {open ? <FolderOpen size={13} className="text-accent" /> : <Folder size={13} className="text-accent" />}
-                </>
-              ) : (
-                <>
-                  <span className="w-3" />
-                  <FileIcon size={13} />
-                </>
-              )}
-              <span className="min-w-0 flex-1 truncate">{e.name}</span>
-              {status && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDot(status))} />}
-            </div>
-            {e.isDir && open && rows(path, depth + 1)}
-          </div>
-        );
-      });
+        const open = e.isDir && (expanded.has(path) || (!!lowered && subtreeMatches(path)));
+        out.push({ path, name: e.name, isDir: e.isDir, depth, open });
+        if (open) walk(path, depth + 1);
+      }
+    };
+    walk('', 0);
+    return out;
+  }, [tree, expanded, lowered, showHidden, join]);
+
+  // only the rows in view are drawn: a folder with thousands of entries stays smooth
+  const from = Math.max(0, Math.floor(scroll.top / ROW_H) - OVERSCAN);
+  const to = Math.min(rows.length, Math.ceil((scroll.top + scroll.height) / ROW_H) + OVERSCAN);
 
   return (
-    <aside data-testid="file-panel" className="flex w-[280px] shrink-0 flex-col border-l border-border bg-panel/60">
+    <aside data-testid="file-panel" style={{ width }} className="relative flex shrink-0 flex-col border-l border-border bg-panel/60">
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('files.resize')}
+        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setDragWidth(width);
+        }}
+        onPointerMove={(e) => {
+          if (dragWidth === null) return;
+          const right = e.currentTarget.parentElement!.getBoundingClientRect().right;
+          setDragWidth(Math.round(Math.min(600, Math.max(200, right - e.clientX))));
+        }}
+        onPointerUp={() => dragWidth !== null && saveWidth(dragWidth)}
+        onDoubleClick={() => saveWidth(280)}
+      />
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-2 text-[11px] font-semibold text-fg-muted">
         <span className="flex-1 truncate" title={cwd}>
           {t('files.title')} · {cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop()}
@@ -122,7 +200,7 @@ export function FileExplorer({ info }: { info: SessionInfo }) {
           aria-label={t('files.close')}
           onClick={() => useSessions.getState().setExplorer(info.id, false)}
         >
-          <X size={12} />
+          <ChevronRight size={12} />
         </Button>
       </div>
       <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
@@ -141,9 +219,62 @@ export function FileExplorer({ info }: { info: SessionInfo }) {
           .*
         </button>
       </div>
-      <div role="tree" className="min-h-0 flex-1 overflow-auto py-1">
-        {rows('', 0)}
-        {tree[''] && tree[''].length === 0 && <div className="px-3 py-2 text-[12px] text-fg-muted">{t('files.empty')}</div>}
+      <div
+        role="tree"
+        className="min-h-0 flex-1 overflow-auto py-1"
+        ref={(el) => {
+          if (el && el.clientHeight && el.clientHeight !== scroll.height) setScroll((s) => ({ ...s, height: el.clientHeight }));
+        }}
+        onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}
+      >
+        <div style={{ height: rows.length * ROW_H, position: 'relative' }}>
+          {rows.slice(from, to).map((e, n) => {
+            const status = changed.get(e.path.replace(/\\/g, '/'));
+            return (
+              <div
+                key={e.path}
+                role="treeitem"
+                aria-expanded={e.isDir ? e.open : undefined}
+                data-path={e.path}
+                title={e.isDir ? e.path : t('files.insertHint')}
+                style={{ position: 'absolute', top: (from + n) * ROW_H, height: ROW_H, left: 0, right: 0, paddingLeft: 8 + e.depth * 12 }}
+                className="flex cursor-default items-center gap-1 rounded pr-2 text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
+                onClick={(ev) => {
+                  if (e.isDir) toggle(e.path);
+                  else if (ev.altKey) insertText(info.id, refOf(e.path.replace(/\\/g, '/')));
+                  else useSessions.getState().openViewer(info.id, e.path, 'file');
+                }}
+                onMouseEnter={() => {
+                  // have the folder ready before the click
+                  if (e.isDir && !known.current[e.path]) void load(e.path);
+                }}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  void copyText(e.path);
+                }}
+              >
+                {e.isDir ? (
+                  e.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />
+                ) : (
+                  <span className="w-3 shrink-0" />
+                )}
+                <img src={iconUrl(e.name, e.isDir, e.open)} alt="" width={16} height={16} draggable={false} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{e.name}</span>
+                {status && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDot(status))} />}
+              </div>
+            );
+          })}
+        </div>
+        {rootState === 'loading' && <div className="px-3 py-2 text-[12px] text-fg-muted">…</div>}
+        {rootState === 'ready' && tree['']?.length === 0 && <div className="px-3 py-2 text-[12px] text-fg-muted">{t('files.empty')}</div>}
+        {rootState === 'failed' && (
+          <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-fg-muted">
+            <span className="flex-1">{t('files.loadFailed')}</span>
+            <Button variant="outline" size="sm" onClick={() => void load('')}>
+              {t('files.retry')}
+            </Button>
+          </div>
+        )}
       </div>
     </aside>
   );

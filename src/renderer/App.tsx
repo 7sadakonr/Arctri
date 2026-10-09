@@ -1,17 +1,15 @@
-import { Plus } from 'lucide-react';
 import { useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
-import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
-import { closeSession, defaultProfile, openShell, openSimilarTab } from '@/features/launcher/actions';
+import { closeSession, defaultProfile, openShell, openSimilarTab, wasClosedHere } from '@/features/launcher/actions';
 import { refreshAgents } from '@/features/launcher/NewTabMenu';
 import { SettingsDialog } from '@/features/settings/SettingsDialog';
 import { TabBar } from '@/features/tabs/TabBar';
 import { SessionView } from '@/features/terminal/SessionView';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
+import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
 import { Toasts } from '@/features/toasts/Toasts';
 import { TOGGLE_RICH_EVENT } from '@/features/agents/AgentBar';
 
@@ -24,7 +22,7 @@ async function bootstrap(): Promise<void> {
   const build = Number(String(diag['os'] ?? '').split('.')[2]);
   if (Number.isFinite(build) && build > 0) ui.setWindowsBuild(build);
   if (diag['e2e']) {
-    (window as unknown as Record<string, unknown>)['__agentdockTest'] = {
+    (window as unknown as Record<string, unknown>)['__arctriTest'] = {
       screen: (id?: string) => screenText(id ?? useSessions.getState().activeId ?? ''),
       activeId: () => useSessions.getState().activeId,
       sessions: () => Object.values(useSessions.getState().infos)
@@ -48,19 +46,14 @@ async function bootstrap(): Promise<void> {
       if (profile) await openShell(profile, { ...(saved.cwd ? { cwd: saved.cwd } : {}), ...(saved.titleSource === 'user' ? { title: saved.title } : {}) });
     }
   }
-  if (useSessions.getState().order.length === 0) {
-    if (prefs.defaultProfile?.startsWith('wsl:')) {
-      const r = await api.profiles.list(false, true);
-      ui.setProfiles(r.profiles, r.wsl);
-    }
-    await openShell(defaultProfile());
-  }
+  // With nothing to restore, the welcome page is shown instead of a terminal nobody asked for.
+  // The e2e suite still starts with one tab (ARCTRI_E2E_WELCOME keeps the welcome page for its own test).
+  if (diag['e2e'] && !diag['welcome'] && useSessions.getState().order.length === 0) await openShell(defaultProfile());
   void api.profiles.list(false, true).then((r) => useUi.getState().setProfiles(r.profiles, r.wsl));
   void refreshAgents(false);
 }
 
 export function App() {
-  const t = useT();
   const order = useSessions((s) => s.order);
   const infos = useSessions((s) => s.infos);
   const activeId = useSessions((s) => s.activeId);
@@ -68,6 +61,7 @@ export function App() {
 
   useEffect(() => {
     const offChanged = api.sessions.onChanged((info) => {
+      if (wasClosedHere(info.id)) return;
       useSessions.getState().upsert(info);
       const h = peekHost(info.id);
       if (h) {
@@ -129,7 +123,7 @@ export function App() {
         }
       } else if (e.key === 'F2') {
         e.preventDefault();
-        window.dispatchEvent(new Event('agentdock:rename-tab'));
+        window.dispatchEvent(new Event('arctri:rename-tab'));
       } else if (e.ctrlKey && k === ',') {
         e.preventDefault();
         useUi.getState().openSettings(true);
@@ -148,15 +142,7 @@ export function App() {
             const info = infos[id];
             return info ? <SessionView key={id} info={info} active={id === activeId} /> : null;
           })}
-          {order.length === 0 && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-fg-muted">
-              <div className="text-sm">{t('tab.noSessions')}</div>
-              <Button variant="outline" onClick={() => void openShell(defaultProfile())}>
-                <Plus size={13} />
-                {t('tab.new')}
-              </Button>
-            </div>
-          )}
+          {order.length === 0 && <WelcomeScreen />}
         </main>
       </div>
       <SettingsDialog />

@@ -1,8 +1,8 @@
-import type { AgentDockApi } from './index';
+import type { ArctriApi } from './index';
 
 declare global {
   interface Window {
-    agentdock: AgentDockApi;
+    arctri: ArctriApi;
   }
 }
 export {};

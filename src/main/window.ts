@@ -35,6 +35,15 @@ export interface WindowHooks {
   busyCount: () => number;
 }
 
+const TITLE_BAR_HEIGHT = 36;
+
+/** Zooms the whole interface; the window-control overlay is resized to stay level with the tab bar. */
+export function applyUiScale(win: BrowserWindow, scale: number): void {
+  if (win.isDestroyed()) return;
+  win.webContents.setZoomFactor(scale);
+  if (process.platform === 'win32') win.setTitleBarOverlay({ height: Math.round(TITLE_BAR_HEIGHT * scale) });
+}
+
 export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): BrowserWindow {
   installCsp();
   const w = prefs.get().window;
@@ -46,13 +55,13 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     minHeight: 400,
     show: false,
     backgroundColor: prefs.get().theme === 'light' ? '#f6f7f9' : '#0e0f13',
-    title: 'AgentDock',
+    title: 'Arctri',
     // the packaged exe embeds its icon; this only gives development runs the same one
     ...(isDev() ? { icon: join(import.meta.dirname, '../../build/icon.png') } : {}),
     titleBarStyle: 'hidden',
     titleBarOverlay: prefs.get().theme === 'light'
-      ? { color: '#fbfbfd', symbolColor: '#23252e', height: 36 }
-      : { color: '#0e0f13', symbolColor: '#c9ccd6', height: 36 },
+      ? { color: '#fbfbfd', symbolColor: '#23252e', height: Math.round(TITLE_BAR_HEIGHT * prefs.get().uiScale) }
+      : { color: '#0e0f13', symbolColor: '#c9ccd6', height: Math.round(TITLE_BAR_HEIGHT * prefs.get().uiScale) },
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -63,6 +72,11 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     }
   });
   if (w.maximized) win.maximize();
+  // The scale comes from preferences; Chromium's own Ctrl+wheel / Ctrl+plus zoom is switched off.
+  win.webContents.on('did-finish-load', () => {
+    void win.webContents.setVisualZoomLevelLimits(1, 1);
+    applyUiScale(win, prefs.get().uiScale);
+  });
   win.once('ready-to-show', () => win.show());
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -86,6 +100,7 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
   });
   win.webContents.on('before-input-event', (e, input) => {
     if (isDev() && input.control && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
+    if (input.control && (input.key === '+' || input.key === '=' || input.key === '-' || input.key === '0')) e.preventDefault();
     if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) e.preventDefault();
   });
 
@@ -94,13 +109,13 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     if (confirmed) return;
     const busy = hooks.busyCount();
     // Automated runs must never wait for a person to answer a dialog.
-    if (busy > 0 && !process.env['AGENTDOCK_E2E'] && !process.env['AGENTDOCK_SMOKE_OUT']) {
+    if (busy > 0 && !process.env['ARCTRI_E2E'] && !process.env['ARCTRI_SMOKE_OUT']) {
       const choice = dialog.showMessageBoxSync(win, {
         type: 'warning',
         buttons: ['Quit', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        title: 'AgentDock',
+        title: 'Arctri',
         message: busy === 1 ? '1 session is still running.' : `${busy} sessions are still running.`,
         detail: 'Closing the window ends their processes.'
       });

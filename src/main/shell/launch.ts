@@ -23,17 +23,17 @@ export interface LaunchPlan {
   note?: string;
 }
 
-const WSL_FORWARD = ['AGENTDOCK_NONCE', 'AGENTDOCK_BLOCKS', 'AGENTDOCK_SESSION', 'TERM_PROGRAM', 'COLORTERM'];
+const WSL_FORWARD = ['ARCTRI_NONCE', 'ARCTRI_BLOCKS', 'ARCTRI_SESSION', 'TERM_PROGRAM', 'COLORTERM'];
 
 function baseEnv(ctx: LaunchContext, withIntegration: boolean): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  env['TERM_PROGRAM'] = 'AgentDock';
+  env['TERM_PROGRAM'] = 'Arctri';
   env['COLORTERM'] = 'truecolor';
-  env['AGENTDOCK_SESSION'] = ctx.sessionId;
+  env['ARCTRI_SESSION'] = ctx.sessionId;
   if (withIntegration) {
-    env['AGENTDOCK_NONCE'] = ctx.nonce;
-    env['AGENTDOCK_BLOCKS'] = ctx.blocks ? '1' : '0';
+    env['ARCTRI_NONCE'] = ctx.nonce;
+    env['ARCTRI_BLOCKS'] = ctx.blocks ? '1' : '0';
   }
   return env;
 }
@@ -76,7 +76,7 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
       env['PROMPT'] = `$E]6973;${ctx.nonce};cwdp;$P$E\\$P$G`;
       return { file: profile.executable, args: [], cwd, env };
     }
-    const script = readFileSync(join(integrationDir(), 'agentdock.ps1'), 'utf8');
+    const script = readFileSync(join(integrationDir(), 'arctri.ps1'), 'utf8');
     return {
       file: profile.executable,
       args: ['-NoLogo', '-NoExit', '-EncodedCommand', psEncoded(script)],
@@ -97,7 +97,7 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
     // zsh reads $ZDOTDIR/.zshenv first; that shim hands ZDOTDIR back to the user straight away.
     args.push('sh', '-c', 'USER_ZDOTDIR="${ZDOTDIR:-$HOME}" ZDOTDIR="$1" exec zsh -i', 'sh', shim);
   } else {
-    const rc = await ctx.toPosix(distro, join(dir, 'agentdock.bash'));
+    const rc = await ctx.toPosix(distro, join(dir, 'arctri.bash'));
     if (!rc) throw new Error(`Cannot map integration scripts into ${distro}`);
     args.push('bash', '--rcfile', rc, '-i');
   }

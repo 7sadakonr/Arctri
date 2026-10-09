@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2
+
+- New welcome page when no tab is open: New Terminal, Open Project, Clone Repository and the five most recent projects
+  (Ctrl+1 to Ctrl+5). Arctri no longer opens a terminal by itself at start; tabs from the last session are still restored.
+- Files can be opened beside the terminal: clicking a file in the file panel opens it (editable, Ctrl+S saves), clicking a
+  changed file in the changes list shows what changed against HEAD. Alt+click still inserts the path into the message.
+- Fixed a closed tab flashing back for a moment as "The process ended (code 1)".
+
+## 0.1.1
+
+- Fixed the WSL file panel so an unreadable folder is reported with a retry action instead of appearing empty.
+- Fixed agent terminal content remaining visible over a newly created tab.
+
 ## 0.1.0 (MVP 1)
 
 First release. Windows 10 22H2 and Windows 11, x64.

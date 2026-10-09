@@ -35,7 +35,7 @@ function markerCol(h: Harness, text: string): { col: number; line: string } | un
 
 for (const dll of [true, false]) {
   for (const id of ['pwsh', 'powershell', 'wsl:Ubuntu:bash']) {
-    if (process.env['AGENTDOCK_SKIP_WSL'] && id.startsWith('wsl:')) continue;
+    if (process.env['ARCTRI_SKIP_WSL'] && id.startsWith('wsl:')) continue;
     describe(`Thai cell width through ConPTY (${dll ? 'bundled' : 'inbox'} conpty): ${id}`, () => {
       it('records where the cursor lands after Thai text (printed as THAI lines)', async () => {
         h = new Harness(profiles, { conptyDll: dll, unicode11: true });

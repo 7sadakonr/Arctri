@@ -16,7 +16,10 @@ export interface Changes {
 
 const unquote = (p: string): string => (p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\') : p);
 
-/** `git status --porcelain=v1` (not -z), with core.quotepath=off so Thai names are not escaped. */
+/**
+ * `git status -s` (paths relative to the working folder, unlike --porcelain which is relative to the repository root),
+ * with core.quotepath=off so Thai names are not escaped. Entries outside the working folder ("../x") are dropped.
+ */
 export function parseStatus(text: string): Array<{ path: string; status: string }> {
   const out: Array<{ path: string; status: string }> = [];
   for (const line of text.split(/\r?\n/)) {
@@ -25,7 +28,9 @@ export function parseStatus(text: string): Array<{ path: string; status: string 
     let path = line.slice(3);
     const arrow = path.indexOf(' -> ');
     if (arrow >= 0) path = path.slice(arrow + 4); // rename: the new name
-    out.push({ path: unquote(path), status });
+    const clean = unquote(path);
+    if (clean.startsWith('../')) continue;
+    out.push({ path: clean, status });
   }
   return out;
 }
@@ -60,8 +65,9 @@ export function combineChanges(status: string, numstat: string): Changes {
 /** Section format produced by the WSL helper's `gitstat` operation. */
 export function parseHelperGitStat(text: string): Changes | undefined {
   if (!text.includes('##STATUS')) return undefined;
-  const [, rest = ''] = text.split('##STATUS\n');
-  const [status = '', numstat = ''] = rest.split('##NUMSTAT\n');
+  // the helper's output went through $(...), which drops trailing newlines: "##NUMSTAT" may end the text
+  const [, rest = ''] = text.split(/##STATUS\n?/);
+  const [status = '', numstat = ''] = rest.split(/\n?##NUMSTAT\n?/);
   return combineChanges(status, numstat);
 }
 
@@ -76,10 +82,21 @@ function git(cwd: string, args: string[]): Promise<string | null> {
   });
 }
 
+/** The file as committed in HEAD (`rel` is relative to `cwd`); null when it is not tracked or `cwd` is not a repository. */
+export function windowsGitHeadText(cwd: string, rel: string): Promise<string | null> {
+  return git(cwd, ['show', `HEAD:./${rel.replace(/\\/g, '/')}`]);
+}
+
+/** Every status below `cwd` including ignored paths ("!!"); used to colour the file tree. */
+export async function windowsGitStatusAll(cwd: string): Promise<Array<{ path: string; status: string }> | undefined> {
+  const out = await git(cwd, ['status', '-s', '--ignored=matching']);
+  return out === null ? undefined : parseStatus(out);
+}
+
 /** Changed files of the repository at `cwd` on Windows; undefined when it is not a git repository. */
 export async function windowsGitChanges(cwd: string): Promise<Changes | undefined> {
-  const status = await git(cwd, ['status', '--porcelain=v1']);
+  const status = await git(cwd, ['status', '-s']);
   if (status === null) return undefined;
-  const numstat = (await git(cwd, ['diff', '--numstat', 'HEAD'])) ?? '';
+  const numstat = (await git(cwd, ['diff', '--relative', '--numstat', 'HEAD'])) ?? '';
   return combineChanges(status, numstat);
 }

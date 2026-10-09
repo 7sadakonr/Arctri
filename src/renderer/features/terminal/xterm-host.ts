@@ -12,6 +12,7 @@ import { tNow } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
 import { TERMINAL_FONT, terminalTheme } from './theme';
 
@@ -91,6 +92,7 @@ export class TerminalHost {
         onBlockStarted: (b) => useBlocks.getState().add(b),
         onBlockFinished: (b) => {
           useBlocks.getState().replace(b);
+          refreshChanges(info.id);
           this.lastClassicBlock = { block: b, text: '' };
           this.lastOutputText = b.output ? b.output.lines.map((l) => l.runs.map((r) => r.text).join('')).join('\n') : '';
           this.decorate(b);
@@ -295,7 +297,7 @@ export function allHosts(): IterableIterator<TerminalHost> {
   return hosts.values();
 }
 
-/** Read-only text of a terminal, used by the end-to-end tests (enabled only when AGENTDOCK_E2E is set). */
+/** Read-only text of a terminal, used by the end-to-end tests (enabled only when ARCTRI_E2E is set). */
 export function screenText(id: string): string {
   const h = hosts.get(id);
   if (!h) return '';

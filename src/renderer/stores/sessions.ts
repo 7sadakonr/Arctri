@@ -13,6 +13,10 @@ interface SessionsState {
   /** The read-only file panel is open for this tab. */
   explorer: Record<string, boolean>;
   setExplorer(id: string, on: boolean): void;
+  /** The file (relative to the tab's folder) shown beside the terminal, as it is or as a diff against HEAD. */
+  viewer: Record<string, { rel: string; mode: 'file' | 'diff' } | undefined>;
+  openViewer(id: string, rel: string, mode: 'file' | 'diff'): void;
+  closeViewer(id: string): void;
   setAttention(id: string, on: boolean): void;
   upsert(info: SessionInfo, activate?: boolean): void;
   remove(id: string): void;
@@ -30,6 +34,9 @@ export const useSessions = create<SessionsState>()((set) => ({
   nativePrompt: {},
   attention: {},
   explorer: {},
+  viewer: {},
+  openViewer: (id, rel, mode) => set((s) => ({ viewer: { ...s.viewer, [id]: { rel, mode } } })),
+  closeViewer: (id) => set((s) => ({ viewer: { ...s.viewer, [id]: undefined } })),
   setExplorer: (id, on) => set((s) => ({ explorer: { ...s.explorer, [id]: on } })),
   setAttention: (id, on) =>
     set((s) => (!!s.attention[id] === on ? s : { attention: { ...s.attention, [id]: on } })),
@@ -51,9 +58,10 @@ export const useSessions = create<SessionsState>()((set) => ({
       const { [id]: _n, ...nativePrompt } = s.nativePrompt;
       const { [id]: _a, ...attention } = s.attention;
       const { [id]: _e, ...explorer } = s.explorer;
+      const { [id]: _v, ...viewer } = s.viewer;
       let activeId = s.activeId;
       if (activeId === id) activeId = order[Math.min(idx, order.length - 1)];
-      return { order, infos, uiPhase, nativePrompt, attention, explorer, activeId };
+      return { order, infos, uiPhase, nativePrompt, attention, explorer, viewer, activeId };
     }),
   setActive: (id) =>
     set((s) => ({ activeId: id, attention: s.attention[id] ? { ...s.attention, [id]: false } : s.attention })),

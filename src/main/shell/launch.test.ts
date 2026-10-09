@@ -16,12 +16,12 @@ describe('buildShellLaunch', () => {
     const args = p.args as string[];
     expect(args.slice(0, 3)).toEqual(['-NoLogo', '-NoExit', '-EncodedCommand']);
     const script = Buffer.from(args[3]!, 'base64').toString('utf16le');
-    expect(script).toContain('AGENTDOCK_NONCE');
+    expect(script).toContain('ARCTRI_NONCE');
     expect(script).toContain('PSConsoleHostReadLine');
-    expect(p.env['AGENTDOCK_NONCE']).toBe('abc123');
-    expect(p.env['AGENTDOCK_BLOCKS']).toBe('1');
-    expect(p.env['TERM_PROGRAM']).toBe('AgentDock');
-    expect((await buildShellLaunch(pwsh, ctx({ blocks: false }))).env['AGENTDOCK_BLOCKS']).toBe('0');
+    expect(p.env['ARCTRI_NONCE']).toBe('abc123');
+    expect(p.env['ARCTRI_BLOCKS']).toBe('1');
+    expect(p.env['TERM_PROGRAM']).toBe('Arctri');
+    expect((await buildShellLaunch(pwsh, ctx({ blocks: false }))).env['ARCTRI_BLOCKS']).toBe('0');
   });
 
   it('cmd: only the working folder is reported, through PROMPT', async () => {
@@ -35,9 +35,9 @@ describe('buildShellLaunch', () => {
     expect(p.file).toBe('C:\\wsl.exe');
     const a = p.args as string[];
     expect(a.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--cd', '/mnt/d/my proj', '--exec']);
-    expect(a.slice(5, 8)).toEqual(['bash', '--rcfile', expect.stringMatching(/^\/mnt\/.*agentdock\.bash$/)]);
+    expect(a.slice(5, 8)).toEqual(['bash', '--rcfile', expect.stringMatching(/^\/mnt\/.*arctri\.bash$/)]);
     expect(a.at(-1)).toBe('-i');
-    for (const k of ['AGENTDOCK_NONCE', 'AGENTDOCK_BLOCKS', 'TERM_PROGRAM']) expect(p.env['WSLENV']).toContain(k);
+    for (const k of ['ARCTRI_NONCE', 'ARCTRI_BLOCKS', 'TERM_PROGRAM']) expect(p.env['WSLENV']).toContain(k);
   });
 
   it('WSL zsh: ZDOTDIR shim, with the user directory preserved', async () => {

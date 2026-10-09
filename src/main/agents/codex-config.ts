@@ -13,7 +13,7 @@ export function tuiNotificationsEnabled(toml: string): boolean {
 }
 
 /**
- * Turns on `tui.notifications` (and sends them as OSC 9, which AgentDock listens for) with the smallest possible edit:
+ * Turns on `tui.notifications` (and sends them as OSC 9, which Arctri listens for) with the smallest possible edit:
  * comments, ordering and every other setting stay exactly as they are. Throws if the result would not be valid TOML.
  */
 export function enableTuiNotifications(toml: string): string {
@@ -58,4 +58,4 @@ export function enableTuiNotifications(toml: string): string {
 }
 
 export const codexConfigBackupName = (now = new Date()): string =>
-  `config.toml.agentdock-backup-${now.toISOString().replace(/[:.]/g, '-')}`;
+  `config.toml.arctri-backup-${now.toISOString().replace(/[:.]/g, '-')}`;

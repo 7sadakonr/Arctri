@@ -15,7 +15,7 @@ export interface AgentAdapter {
   buildArgs(caps: AgentCapabilities, o: AgentLaunchOptions): string[];
 }
 
-/** Flags that switch permission or approval checks off. AgentDock never sets them itself. */
+/** Flags that switch permission or approval checks off. Arctri never sets them itself. */
 export const UNSAFE_FLAGS = [
   '--dangerously-skip-permissions',
   '--allow-dangerously-skip-permissions',

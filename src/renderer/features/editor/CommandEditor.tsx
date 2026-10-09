@@ -42,8 +42,9 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
   // The file panel and the changes list put a path into the line being written.
   useEffect(() => {
     const h = (e: Event) => {
-      const d = (e as CustomEvent<{ sessionId: string; text: string }>).detail;
+      const d = (e as CustomEvent<{ sessionId: string; text: string; handled?: boolean }>).detail;
       if (d.sessionId !== sessionId) return;
+      d.handled = true;
       const el = area.current;
       const at = el?.selectionStart ?? text.length;
       const next = text.slice(0, at) + d.text + ' ' + text.slice(el?.selectionEnd ?? at);

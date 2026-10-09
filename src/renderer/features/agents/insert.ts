@@ -2,7 +2,7 @@ import { api } from '@/lib/api';
 import { useSessions } from '@/stores/sessions';
 import { peekHost } from '../terminal/xterm-host';
 
-export const INSERT_EVENT = 'agentdock:insert-text';
+export const INSERT_EVENT = 'arctri:insert-text';
 
 /** "@path" reference for a path that is relative to the tab's folder. Quoted when it contains spaces. */
 export const refOf = (rel: string): string => (/[\s"'`$()&;|<>]/.test(rel) ? `@"${rel.replace(/"/g, '\\"')}"` : `@${rel}`);
@@ -19,7 +19,14 @@ export function insertText(sessionId: string, text: string): void {
     host?.term.paste(text + ' ');
     host?.focus();
   } else {
-    window.dispatchEvent(new CustomEvent(INSERT_EVENT, { detail: { sessionId, text } }));
+    const detail = { sessionId, text, handled: false };
+    window.dispatchEvent(new CustomEvent(INSERT_EVENT, { detail }));
+    if (!detail.handled) {
+      // no command editor is showing (classic tab, or a command is running): the text goes to the terminal instead
+      const host = peekHost(sessionId);
+      host?.term.paste(text + ' ');
+      host?.focus();
+    }
   }
 }
 

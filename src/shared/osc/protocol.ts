@@ -1,7 +1,7 @@
 import type { ShellKind } from '../types/env';
 
 /**
- * AgentDock shell integration protocol.
+ * Arctri shell integration protocol.
  *  - OSC 133;A|B|C|D[;exit];aid=<nonce>   FinalTerm-compatible prompt marks
  *  - OSC 6973;<nonce>;hello;<shell>;<version>;<blocks 0|1>
  *  - OSC 6973;<nonce>;cmd;<commandId>;<base64 utf8 command text>
@@ -10,7 +10,7 @@ import type { ShellKind } from '../types/env';
  * Anything without the session nonce is ignored (a `cat`-ed file must not forge events).
  */
 export const OSC_MARK = 133;
-export const OSC_AGENTDOCK = 6973;
+export const OSC_ARCTRI = 6973;
 
 export type ShellEvent =
   | { t: 'hello'; shell: ShellKind; version: string; blocks: boolean }
@@ -63,7 +63,7 @@ export function parseOsc(id: number, payload: string, nonce: string): ShellEvent
         return null;
     }
   }
-  if (id === OSC_AGENTDOCK) {
+  if (id === OSC_ARCTRI) {
     const parts = payload.split(';');
     if (parts[0] !== nonce) return null;
     switch (parts[1]) {

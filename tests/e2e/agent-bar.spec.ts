@@ -45,7 +45,7 @@ async function startApp(w: ReturnType<typeof workspace>, extra: Record<string, s
   return launch({
     PATH: `${w.bin};${process.env['PATH']}`,
     CODEX_HOME: w.codexHome,
-    AGENTDOCK_E2E_PICK: JSON.stringify([join(w.repo, 'a.txt')]),
+    ARCTRI_E2E_PICK: JSON.stringify([join(w.repo, 'a.txt')]),
     ...extra
   });
 }
@@ -86,13 +86,17 @@ test('typing codex in a shell tab switches to the Codex bar, with working contro
     await waitScreen(page, /paste: @a\.txt/);
     expect(await screen(page)).not.toMatch(/submitted:/);
 
-    // the file panel lists the folder (read-only), a click inserts the path
-    await bar.getByRole('button', { name: /^Files/ }).click();
+    // the file panel lists the folder (read-only), a click opens the file beside the terminal, Alt+click inserts the path
+    await page.getByRole('button', { name: /^Files/ }).click();
     const panel = active(page).getByTestId('file-panel');
     await expect(panel.getByRole('treeitem', { name: /main\.ts|src/ }).first()).toBeVisible();
     await panel.getByRole('treeitem', { name: /^src/ }).click();
-    await panel.getByRole('treeitem', { name: /main\.ts/ }).click();
+    await panel.getByRole('treeitem', { name: /main\.ts/ }).click({ modifiers: ['Alt'] });
     await waitScreen(page, /paste: @src\/main\.ts/);
+    await panel.getByRole('treeitem', { name: /main\.ts/ }).click();
+    await expect(active(page).getByTestId('file-viewer')).toBeVisible();
+    await active(page).getByTestId('file-viewer').getByRole('button', { name: /close/i }).click();
+    await expect(active(page).getByTestId('file-viewer')).toHaveCount(0);
     await panel.getByLabel(/filter/i).fill('a.t');
     await expect(panel.getByRole('treeitem', { name: /a\.txt/ })).toBeVisible();
     await expect(panel.getByRole('treeitem', { name: /main\.ts/ })).toHaveCount(0);
@@ -116,7 +120,7 @@ test('typing codex in a shell tab switches to the Codex bar, with working contro
     expect(cfg).toContain('# mine');
     expect(cfg).toContain('notifications = true');
     expect(cfg).toContain('theme = "x"');
-    expect(readdirSync(w.codexHome).some((f) => f.startsWith('config.toml.agentdock-backup-'))).toBe(true);
+    expect(readdirSync(w.codexHome).some((f) => f.startsWith('config.toml.arctri-backup-'))).toBe(true);
 
     // the agent ends: the shell comes back, with its editor and its own bar
     await page.keyboard.press('Control+c');
@@ -168,7 +172,7 @@ test('an agent in a background tab marks the tab and raises a notification', asy
     await page.keyboard.press('Control+Shift+T');
     await expect(page.getByRole('tab')).toHaveCount(2);
     await expect(page.getByRole('tab').first().locator('[data-dot]')).toHaveAttribute('data-dot', /bg-accent/, { timeout: 15_000 });
-    const diag = await page.evaluate(() => (window as unknown as { agentdock: { app: { diagnostics(): Promise<{ notifications?: unknown[] }> } } }).agentdock.app.diagnostics());
+    const diag = await page.evaluate(() => (window as unknown as { arctri: { app: { diagnostics(): Promise<{ notifications?: unknown[] }> } } }).arctri.app.diagnostics());
     expect(diag.notifications?.length).toBeGreaterThanOrEqual(1);
     // opening the tab clears the mark
     await page.getByRole('tab').first().click();

@@ -7,7 +7,7 @@ import { EnvironmentQueryService } from '../../src/main/env-query/service';
 import { WslManager } from '../../src/main/wsl/wsl-manager';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../../src/main/agents/codex-config';
 
-const skipWsl = !!process.env['AGENTDOCK_SKIP_WSL'];
+const skipWsl = !!process.env['ARCTRI_SKIP_WSL'];
 const win = { kind: 'windows' } as const;
 const wslEnv = { kind: 'wsl', distro: 'Ubuntu' } as const;
 const root = mkdtempSync(join(tmpdir(), 'ad files ไทย '));
@@ -80,7 +80,7 @@ describe('Codex configuration', () => {
     expect(after).toContain('# mine');
     expect(after).toContain('theme = "t"');
     expect(tuiNotificationsEnabled(after)).toBe(true);
-    const backups = readdirSync(codexHomeWin).filter((f) => f.startsWith('config.toml.agentdock-backup-'));
+    const backups = readdirSync(codexHomeWin).filter((f) => f.startsWith('config.toml.arctri-backup-'));
     expect(backups).toHaveLength(1);
     expect(readFileSync(join(codexHomeWin, backups[0]!), 'utf8')).toBe(before);
   });
@@ -96,6 +96,6 @@ describe('Codex configuration', () => {
     expect(second).toContain('# end ไทย');
     expect(tuiNotificationsEnabled(second)).toBe(true);
     const ls = await wsl.exec('Ubuntu', ['sh', '-c', `ls '${wslBase}/codex-home'`]);
-    expect(ls.stdout).toMatch(/config\.toml\.agentdock-backup-/);
+    expect(ls.stdout).toMatch(/config\.toml\.arctri-backup-/);
   });
 });

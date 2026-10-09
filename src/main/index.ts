@@ -8,6 +8,7 @@ import { PortHub, registerIpc, sendInfo } from './ipc/register';
 import { openDb } from './persistence/db';
 import { HistoryRepo } from './persistence/history-repo';
 import { PrefsStore } from './persistence/prefs';
+import { migrateLegacyUserData } from './persistence/migrate-legacy';
 import { SessionRepo } from './persistence/session-repo';
 import { WorkerPtyBackend } from './pty/pty-worker-backend';
 import { SessionManager } from './pty/session-manager';
@@ -21,7 +22,7 @@ import { logger } from './logger';
 import { mark, timing } from './timing';
 
 // Tests run with an isolated profile so they never touch (or lock) the real one.
-if (process.env['AGENTDOCK_USER_DATA']) app.setPath('userData', process.env['AGENTDOCK_USER_DATA']);
+if (process.env['ARCTRI_USER_DATA']) app.setPath('userData', process.env['ARCTRI_USER_DATA']);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -63,14 +64,15 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
 
 async function start(): Promise<void> {
   if (app.isPackaged) setResourcesDir(process.resourcesPath);
-  app.setAppUserModelId('dev.agentdock.app');
+  app.setAppUserModelId('dev.arctri.app');
   Menu.setApplicationMenu(null);
   await app.whenReady();
   mark('appReady');
 
+  if (!process.env['ARCTRI_USER_DATA']) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
   const store = new Store<{ prefs: unknown }>({ name: 'preferences' });
   const prefs = new PrefsStore({ get: () => store.get('prefs'), set: (v) => store.set('prefs', v) });
-  const { db, recovered } = openDb(join(app.getPath('userData'), 'agentdock.db'));
+  const { db, recovered } = openDb(join(app.getPath('userData'), 'arctri.db'));
   if (recovered) logger.warn('database was corrupt and has been recreated');
   const history = new HistoryRepo(db, prefs.get().historyLimit);
   const sessionRepo = new SessionRepo(db);
@@ -136,7 +138,8 @@ async function start(): Promise<void> {
       },
       diagnostics: () => ({
         app: app.getVersion(), electron: process.versions.electron, node: process.versions.node,
-        e2e: !!process.env['AGENTDOCK_E2E'],
+        e2e: !!process.env['ARCTRI_E2E'],
+        welcome: !!process.env['ARCTRI_E2E_WELCOME'],
         os: process.getSystemVersion(), arch: process.arch, conptyMode: prefs.get().conptyMode,
         profiles: registry.snapshot().profiles.map((p) => p.id), wsl: registry.snapshot().wsl
       }),
@@ -156,7 +159,7 @@ async function start(): Promise<void> {
   create();
 
   // Used by scripts/smoke-installed.mjs to check a built or installed app without a debugger.
-  if (process.env['AGENTDOCK_SMOKE_OUT']) void runSmoke(sessions, registry, process.env['AGENTDOCK_SMOKE_OUT']);
+  if (process.env['ARCTRI_SMOKE_OUT']) void runSmoke(sessions, registry, process.env['ARCTRI_SMOKE_OUT']);
 
   app.on('second-instance', () => {
     if (win) {

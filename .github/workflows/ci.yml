@@ -23,12 +23,12 @@ jobs:
       # Real PTYs: PowerShell 5.1 and 7 are on the runner, WSL distributions are not.
       - run: npm run test:integration
         env:
-          AGENTDOCK_SKIP_WSL: '1'
+          ARCTRI_SKIP_WSL: '1'
       - run: npm run dist
       - name: Silent install and smoke test of the installer
-        run: node scripts/smoke-installed.mjs --install (Get-ChildItem release/AgentDock-Setup-*.exe).FullName
+        run: node scripts/smoke-installed.mjs --install (Get-ChildItem release/Arctri-Setup-*.exe).FullName
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: installer
-          path: release/AgentDock-Setup-*.exe
+          path: release/Arctri-Setup-*.exe

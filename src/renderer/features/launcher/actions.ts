@@ -6,6 +6,7 @@ import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { disposeHost } from '../terminal/xterm-host';
 import { useBlocks } from '@/stores/blocks';
+import { pushRecent, toRecent } from '../welcome/recent';
 
 const INITIAL = { cols: 120, rows: 30 };
 
@@ -62,8 +63,6 @@ export async function openAgent(
   options: AgentLaunchOptions = {},
   cwd?: EnvPath
 ): Promise<SessionInfo | undefined> {
-  // Opening an agent is always a deliberate action; the trace makes an unexpected one easy to attribute.
-  console.info('[agentdock] openAgent', adapterId, profileId, new Error().stack);
   try {
     const info = await api.sessions.create({
       profileId,
@@ -81,11 +80,16 @@ export async function openAgent(
   }
 }
 
+/** Tabs this window has closed: updates still on their way from the main process must not bring them back. */
+const closedHere = new Set<string>();
+export const wasClosedHere = (id: string): boolean => closedHere.has(id);
+
 /**
  * The tab disappears at once; ending the process tree (which can take a second or two) continues in the
  * background in the main process.
  */
 export async function closeSession(id: string): Promise<void> {
+  closedHere.add(id);
   agentLaunches.delete(id);
   disposeHost(id);
   useBlocks.getState().drop(id);
@@ -120,4 +124,47 @@ export async function openShellHere(info: SessionInfo): Promise<void> {
         profiles.find((p) => p.env.kind === 'wsl')
       : defaultProfile();
   await openShell(profile, info.cwd ? { cwd: info.cwd } : {});
+}
+
+/** The profile to use for a folder: a WSL folder gets a shell of its own distribution, anything else the default. */
+function profileForFolder(folder: EnvPath): ShellProfile | undefined {
+  const { profiles } = useUi.getState();
+  if (folder.env !== 'wsl') return defaultProfile();
+  const mine = profiles.filter((p) => p.env.kind === 'wsl' && p.env.distro.toLowerCase() === folder.distro.toLowerCase());
+  return mine.find((p) => p.shell === 'bash') ?? mine[0] ?? profiles.find((p) => p.env.kind === 'wsl') ?? defaultProfile();
+}
+
+async function rememberProject(folder: EnvPath): Promise<void> {
+  const next = pushRecent(useUi.getState().prefs.recentProjects, toRecent(folder));
+  try {
+    useUi.getState().setPrefs(await api.prefs.set({ recentProjects: next }));
+  } catch {
+    /* the list is a convenience; the tab is already open */
+  }
+}
+
+/** A new tab in the folder, which is also put on top of the recent projects. */
+export async function openProject(folder: EnvPath): Promise<SessionInfo | undefined> {
+  const info = await openShell(profileForFolder(folder), { cwd: folder });
+  if (info) void rememberProject(folder);
+  return info;
+}
+
+/** Asks for a folder and opens it as a project. */
+export async function pickAndOpenProject(): Promise<void> {
+  const picked = await api.app.pickFolder();
+  if (picked) await openProject(picked as EnvPath);
+}
+
+/** A tab in `parent` that runs `git clone <url>` so the user sees the progress (and any error) themselves. */
+export async function cloneRepository(url: string, parent: EnvPath): Promise<void> {
+  const info = await openShell(profileForFolder(parent), { cwd: parent });
+  if (!info) return;
+  const command = `git clone ${url}`;
+  for (let i = 0; i < 40; i++) {
+    const r = await api.sessions.submit(info.id, command);
+    if (r.ok) return;
+    await new Promise((res) => setTimeout(res, 250));
+  }
+  useUi.getState().toast(tNow('editor.notReady'), 'error');
 }

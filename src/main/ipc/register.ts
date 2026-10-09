@@ -14,6 +14,7 @@ import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex
 import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
 import type { WslManager } from '../wsl/wsl-manager';
 import { mark } from '../timing';
+import { applyUiScale } from '../window';
 
 export interface Services {
   sessions: SessionManager;
@@ -31,9 +32,10 @@ export interface Services {
   origins: () => string[];
 }
 
-/** Moves PTY output to the renderer over a dedicated MessagePort per session. */
+/** Notifications raised so far; recorded only in end-to-end runs so tests can look at them. */
 const notified: Array<{ sessionId: string; title: string; body: string }> = [];
 
+/** Moves PTY output to the renderer over a dedicated MessagePort per session. */
 export class PortHub {
   private ports = new Map<string, MessagePortMain>();
   private queue = new Map<string, string[]>();
@@ -81,6 +83,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     mark('createRequested');
     const info = await s.sessions.create(spec as SessionSpec);
     hub.attach(info.id);
+    s.envQuery.warm?.(info.env);
     return info;
   });
   r.handle('session:close', async ({ id }) => {
@@ -102,6 +105,10 @@ export function registerIpc(s: Services, hub: PortHub): void {
   r.handle('prefs:set', (patch) => {
     const next = s.prefs.set(patch);
     s.history.setLimit(next.historyLimit);
+    if ('uiScale' in patch) {
+      const win = s.getWindow();
+      if (win) applyUiScale(win, next.uiScale);
+    }
     s.onPrefsChanged?.(next);
     return next;
   });
@@ -128,13 +135,43 @@ export function registerIpc(s: Services, hub: PortHub): void {
   // The file panel: read-only listing below the tab's working folder, never above it.
   r.handle('fs:list', async ({ sessionId, rel }) => {
     const info = s.sessions.get(sessionId);
-    if (!info?.cwd) return [];
+    if (!info?.cwd) return { ok: false as const };
     const abs = resolveWithin(info.cwd.path, rel, info.env.kind);
-    if (!abs) return [];
-    const entries = await s.envQuery.listDir(info.env, abs);
-    return entries
-      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
-      .slice(0, 600);
+    if (!abs) return { ok: false as const };
+    const result = await s.envQuery.listDirResult(info.env, abs);
+    if (!result.ok) return result;
+    return {
+      ok: true as const,
+      entries: result.entries
+        .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
+        .slice(0, 600)
+    };
+  });
+
+  // Reading and writing text files below the tab's folder (the file editor). Nothing outside the folder is reachable.
+  const target = (sessionId: string, rel: string) => {
+    const info = s.sessions.get(sessionId);
+    if (!info?.cwd) return undefined;
+    const abs = resolveWithin(info.cwd.path, rel, info.env.kind);
+    return abs ? { info, root: info.cwd.path, abs } : undefined;
+  };
+  r.handle('fs:read', async ({ sessionId, rel }) => {
+    const t = target(sessionId, rel);
+    return t ? s.envQuery.readTextFile(t.info.env, t.root, t.abs) : { ok: false as const, error: 'denied' as const };
+  });
+  r.handle('fs:write', async ({ sessionId, rel, text, eol, bom, expectMtimeMs }) => {
+    const t = target(sessionId, rel);
+    return t
+      ? s.envQuery.writeTextFile(t.info.env, t.root, t.abs, text, eol, bom, expectMtimeMs)
+      : { ok: false as const, error: 'denied' as const };
+  });
+  r.handle('fs:stat', async ({ sessionId, rel }) => {
+    const t = target(sessionId, rel);
+    return t ? s.envQuery.statFile(t.info.env, t.root, t.abs) : null;
+  });
+  r.handle('git:status', async ({ sessionId }) => {
+    const info = s.sessions.get(sessionId);
+    return info?.cwd ? ((await s.envQuery.gitStatusAll(info.env, info.cwd.path)) ?? null) : null;
   });
 
   // Choose files to attach to a message; answers with ready-to-insert "@path" references.
@@ -142,7 +179,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const info = s.sessions.get(sessionId);
     if (!info?.cwd) return [];
     const win = s.getWindow();
-    const forced = process.env['AGENTDOCK_E2E_PICK']; // tests answer the dialog through this variable
+    const forced = process.env['ARCTRI_E2E_PICK']; // tests answer the dialog through this variable
     let picked: string[];
     if (forced) picked = JSON.parse(forced) as string[];
     else {
@@ -164,6 +201,27 @@ export function registerIpc(s: Services, hub: PortHub): void {
     return refs;
   });
 
+  // Choose a project folder. Answers with the folder as the environment it lives in (a \\wsl.localhost path is a WSL folder).
+  r.handle('app:pickFolder', async () => {
+    const forced = process.env['ARCTRI_E2E_PICK'];
+    let dir: string | undefined;
+    if (forced) dir = (JSON.parse(forced) as string[])[0];
+    else {
+      const win = s.getWindow();
+      const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
+      dir = r.canceled ? undefined : r.filePaths[0];
+    }
+    if (!dir) return null;
+    const m = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)(\\.*)?$/i.exec(dir);
+    if (m) return { env: 'wsl' as const, distro: m[1]!, path: (m[2] ?? '\\').replace(/\\/g, '/') };
+    return { env: 'windows' as const, path: dir };
+  });
+
+  r.handle('git:headText', async ({ sessionId, rel }) => {
+    const t = target(sessionId, rel);
+    return t ? ((await s.envQuery.gitHeadText(t.info.env, t.root, rel)) ?? null) : null;
+  });
+
   r.handle('agents:codexNotifications', async ({ sessionId, action }) => {
     const info = s.sessions.get(sessionId);
     if (!info) return { enabled: false, available: false };
@@ -176,7 +234,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
   });
 
   r.handle('app:notify', ({ sessionId, title, body }) => {
-    notified.push({ sessionId, title, body });
+    if (process.env['ARCTRI_E2E']) notified.push({ sessionId, title, body });
     if (!s.prefs.get().agentNotifications || !Notification.isSupported()) return;
     const n = new Notification({ title, body, silent: false });
     n.on('click', () => {
@@ -190,7 +248,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     n.show();
   });
 
-  r.handle('app:diagnostics', () => (process.env['AGENTDOCK_E2E'] ? { ...s.diagnostics(), notifications: notified } : s.diagnostics()));
+  r.handle('app:diagnostics', () => (process.env['ARCTRI_E2E'] ? { ...s.diagnostics(), notifications: notified } : s.diagnostics()));
   r.handle('app:openExternal', ({ url }) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url);
     return undefined;

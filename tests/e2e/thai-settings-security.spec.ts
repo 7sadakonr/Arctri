@@ -67,7 +67,7 @@ test('electron security: isolation, no node in the page, validated IPC, no navig
 
   const probe = await page.evaluate(() => {
     const w = window as unknown as Record<string, unknown>;
-    const api = w['agentdock'] as Record<string, unknown>;
+    const api = w['arctri'] as Record<string, unknown>;
     return {
       require: typeof w['require'], process: typeof w['process'], buffer: typeof w['Buffer'],
       keys: Object.keys(api).sort(), hasExec: JSON.stringify(Object.keys(api)).match(/exec|spawn|shell/i)
@@ -80,7 +80,7 @@ test('electron security: isolation, no node in the page, validated IPC, no navig
 
   // arguments are validated in the main process
   const results = await page.evaluate(async () => {
-    const api = (window as unknown as { agentdock: { sessions: Record<string, (...a: unknown[]) => Promise<unknown>> } }).agentdock;
+    const api = (window as unknown as { arctri: { sessions: Record<string, (...a: unknown[]) => Promise<unknown>> } }).arctri;
     const attempt = (p: Promise<unknown>) => p.then(() => 'ok', (e: Error) => String(e.message));
     return {
       badResize: await attempt(api.sessions['resize']!('x', -5, 10)),

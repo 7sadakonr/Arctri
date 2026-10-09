@@ -1,4 +1,4 @@
-import { OSC_AGENTDOCK, OSC_MARK, parseOsc } from '@shared/osc/protocol';
+import { OSC_ARCTRI, OSC_MARK, parseOsc } from '@shared/osc/protocol';
 import { ShellStateMachine, type Transition } from '@shared/shell/state-machine';
 import type { BlockSnapshot, CommandBlock } from '@shared/types/block';
 import type { EnvPath, EnvironmentRef, ShellKind } from '@shared/types/env';
@@ -52,7 +52,7 @@ export class BlockTracker {
     private readonly events: TrackerEvents,
     private readonly now: () => number = Date.now
   ) {
-    for (const id of [OSC_MARK, OSC_AGENTDOCK]) {
+    for (const id of [OSC_MARK, OSC_ARCTRI]) {
       this.disposables.push(term.parser.registerOscHandler(id, (data) => this.handle(id, data)));
     }
     this.disposables.push(

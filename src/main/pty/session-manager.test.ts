@@ -66,7 +66,7 @@ describe('SessionManager', () => {
     expect(m.get(info.id)).toMatchObject({ state: 'running', pid: 4242 });
     expect(info.nonce).toMatch(/^[0-9a-f]{24}$/);
     expect(spawns[0]!.cols).toBe(100);
-    expect(spawns[0]!.env['AGENTDOCK_NONCE']).toBe(info.nonce);
+    expect(spawns[0]!.env['ARCTRI_NONCE']).toBe(info.nonce);
     const second = await m.create(spec);
     expect(second.nonce).not.toBe(info.nonce);
   });
@@ -128,6 +128,15 @@ describe('SessionManager', () => {
     expect(b.last().integration).toBe('degraded');
   });
 
+  it('accepts a hello that arrives after the timeout and recovers into block mode', async () => {
+    const t = setup({ helloTimeoutMs: 20 });
+    const { nonce: n } = await t.m.create(spec);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(t.last().integration).toBe('unavailable');
+    t.pty.emit(hello(n) + mark(n, 'A') + mark(n, 'B'));
+    expect(t.last()).toMatchObject({ integration: 'active', phase: 'editing' });
+  });
+
   it('cmd.exe style profiles never claim blocks and keep the working folder', async () => {
     const cmdProfile: ShellProfile = { ...profile, id: 'cmd', env: { kind: 'windows' }, shell: 'cmd', integration: 'cwd-only' };
     const t = setup({ profile: cmdProfile });
@@ -170,6 +179,13 @@ describe('SessionManager', () => {
     await m.close(id);
     expect(pty.killed).toBe(true);
     expect(m.get(id)).toBeUndefined();
+  });
+
+  it('closing a live tab does not report its exit (the window would show it again for a moment)', async () => {
+    const { m, infos } = setup();
+    const { id } = await m.create(spec);
+    await m.close(id);
+    expect(infos.some((i) => i.id === id && i.state === 'exited')).toBe(false);
   });
 
   it('reports a spawn failure as a failed session instead of throwing', async () => {

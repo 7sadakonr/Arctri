@@ -49,6 +49,6 @@ describe('codex config', () => {
   });
 
   it('names backups with a sortable timestamp', () => {
-    expect(codexConfigBackupName(new Date('2026-10-09T15:04:05.123Z'))).toBe('config.toml.agentdock-backup-2026-10-09T15-04-05-123Z');
+    expect(codexConfigBackupName(new Date('2026-10-09T15:04:05.123Z'))).toBe('config.toml.arctri-backup-2026-10-09T15-04-05-123Z');
   });
 });

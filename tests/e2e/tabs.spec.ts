@@ -33,7 +33,7 @@ test('several tabs: processes keep running in the background, rename, close ends
 
   // closing a tab ends its process
   const pids = await page.evaluate(() =>
-    (window as unknown as { __agentdockTest: { sessions(): Array<{ pid: number }> } }).__agentdockTest.sessions().map((s) => s.pid)
+    (window as unknown as { __arctriTest: { sessions(): Array<{ pid: number }> } }).__arctriTest.sessions().map((s) => s.pid)
   );
   expect(pids).toHaveLength(2);
   await page.getByRole('tab').nth(1).getByRole('button', { name: /close tab/i }).click();
@@ -52,7 +52,7 @@ test('several tabs: processes keep running in the background, rename, close ends
 
 test('WSL not installed: the app still works and says so', async () => {
   const { launch } = await import('./fixtures');
-  const f = await launch({ AGENTDOCK_FAKE_WSL: 'missing' });
+  const f = await launch({ ARCTRI_FAKE_WSL: 'missing' });
   try {
     await waitForEditor(f.page);
     await f.page.getByRole('button', { name: /new tab/i }).nth(1).click();

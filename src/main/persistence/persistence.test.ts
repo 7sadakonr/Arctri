@@ -54,3 +54,17 @@ describe('prefs patches', () => {
     expect(p.get().theme).toBe('light');
   });
 });
+
+describe('layout prefs', () => {
+  it('defaults the UI scale and file panel width', () => {
+    const p = new PrefsStore(new MemoryBackend()).get();
+    expect(p.uiScale).toBe(1.1);
+    expect(p.filePanelWidth).toBe(280);
+  });
+
+  it('rejects out-of-range values', () => {
+    expect(prefsPatchSchema.safeParse({ uiScale: 3 }).success).toBe(false);
+    expect(prefsPatchSchema.safeParse({ filePanelWidth: 100 }).success).toBe(false);
+    expect(prefsPatchSchema.safeParse({ filePanelWidth: 400 }).success).toBe(true);
+  });
+});

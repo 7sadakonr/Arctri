@@ -5,9 +5,15 @@ import { join } from 'node:path';
 import { integrationDir } from '../paths';
 import { wslExePath } from '../wsl/wsl-manager';
 
+export type WslOp =
+  | 'ls' | 'lsd' | 'cmds' | 'branches' | 'cat' | 'branch' | 'home' | 'ping' | 'gitstat' | 'codexcfg' | 'codexcfgw'
+  | 'gitall' | 'headtext' | 'statfile' | 'readfile' | 'writefile';
+
 type Proc = ChildProcessByStdio<Writable, Readable, null>;
 
-const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
+// An empty field would be collapsed by `read` (TAB is whitespace in IFS) and shift the later fields left;
+// '=' is not valid base64, so the helper's `base64 -d` turns it back into an empty string.
+const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64') || '=';
 
 /**
  * One long-lived `sh` per distribution. It is started on first use, restarted if it dies (at most
@@ -23,7 +29,7 @@ export class WslHelperClient {
   private starts: number[] = [];
   private disposed = false;
 
-  constructor(readonly distro: string) {}
+  constructor(readonly distro: string, private readonly login = true) {}
 
   private start(): Proc | undefined {
     if (this.proc) return this.proc;
@@ -34,7 +40,7 @@ export class WslHelperClient {
     const script = readFileSync(join(integrationDir(), 'wsl-helper.sh'), 'utf8');
     const p = spawn(
       wslExePath(),
-      ['-d', this.distro, '--exec', 'bash', '-lc', 'eval "$(printf %s "$0" | base64 -d)"', b64(script)],
+      ['-d', this.distro, '--exec', 'bash', this.login ? '-lc' : '-c', 'eval "$(printf %s "$0" | base64 -d)"', b64(script)],
       { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true }
     );
     p.stdout.setEncoding('utf8');
@@ -71,7 +77,7 @@ export class WslHelperClient {
   }
 
   /** Resolves with the decoded output, or null on timeout or when the helper is unavailable. */
-  request(op: 'ls' | 'cmds' | 'branches' | 'cat' | 'branch' | 'home' | 'ping' | 'gitstat' | 'codexcfg' | 'codexcfgw', args: string[] = [], timeoutMs = 1500): Promise<string | null> {
+  request(op: WslOp, args: string[] = [], timeoutMs = 1500): Promise<string | null> {
     const p = this.start();
     if (!p) return Promise.resolve(null);
     clearTimeout(this.idle);
@@ -83,7 +89,7 @@ export class WslHelperClient {
         resolve(null);
       }, timeoutMs);
       this.pending.set(id, { resolve, timer });
-      const line = [id, op, b64(args[0] ?? ''), b64(args[1] ?? '')].join('\t') + '\n';
+      const line = [id, op, b64(args[0] ?? ''), b64(args[1] ?? ''), b64(args[2] ?? '')].join('\t') + '\n';
       try {
         p.stdin.write(line);
       } catch {

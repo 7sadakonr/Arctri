@@ -30,12 +30,18 @@ class FakeEnv implements EnvironmentQuery {
   exes = ['git', 'node', 'npm', 'pnpm', 'python'];
   calls: string[] = [];
   async listDir(_e: EnvironmentRef, dir: string) { this.calls.push(`ls ${dir}`); return this.files.get(dir) ?? []; }
+  async listDirResult(e: EnvironmentRef, dir: string) { return { ok: true as const, entries: await this.listDir(e, dir) }; }
   async readSmallText(_e: EnvironmentRef, f: string) { return this.texts.get(f) ?? null; }
   async gitBranches() { return this.branches; }
   async gitBranch() { return 'main'; }
   async listExecutables() { return this.exes; }
   async homeDir() { return '/home/me'; }
   async gitChanges() { return undefined; }
+  async readTextFile(): Promise<never> { throw new Error('unused'); }
+  async writeTextFile(): Promise<never> { throw new Error('unused'); }
+  async statFile() { return null; }
+  async gitHeadText() { return undefined; }
+  async gitStatusAll() { return undefined; }
   async readCodexConfig() { return null; }
   async writeCodexConfig() { return true; }
 }

@@ -56,6 +56,8 @@ interface Session {
   pump?: DataPump;
   helloTimer?: ReturnType<typeof setTimeout>;
   anomalies: number;
+  /** The profile has shell integration, so a late `hello` is still welcome. */
+  expectsHello: boolean;
   exited: Promise<void>;
   markExited: () => void;
   exitedFlag: boolean;
@@ -118,7 +120,7 @@ export class SessionManager {
     let markExited!: () => void;
     const exited = new Promise<void>((r) => (markExited = r));
     const s: Session = {
-      info, tokenizer: new OscTokenizer(), sm: new ShellStateMachine(), anomalies: 0,
+      info, tokenizer: new OscTokenizer(), sm: new ShellStateMachine(), anomalies: 0, expectsHello: integrationWanted,
       exited, markExited, exitedFlag: false, closing: false
     };
     this.sessions.set(id, s);
@@ -151,7 +153,8 @@ export class SessionManager {
             info.integration = 'unavailable';
             this.emit(s);
           }
-        }, this.deps.helloTimeoutMs ?? 10000);
+        // PowerShell 7 can need 5+ seconds just to start here, and a distribution that was stopped boots first.
+        }, this.deps.helloTimeoutMs ?? 30000);
       }
     });
     pty.onError((message) => {
@@ -202,7 +205,8 @@ export class SessionManager {
 
   private applyTransition(s: Session, tr: Transition, evType: string): boolean {
     let changed = false;
-    if (evType === 'hello' && s.info.integration === 'pending') {
+    // A hello that arrives after the timeout is accepted too: the shell is running our script, so the tab recovers by itself.
+    if (evType === 'hello' && (s.info.integration === 'pending' || (s.info.integration === 'unavailable' && s.expectsHello))) {
       s.info.integration = s.sm.blocksCapable ? 'active' : 'unavailable';
       if (s.helloTimer) clearTimeout(s.helloTimer);
       changed = true;
@@ -286,7 +290,8 @@ export class SessionManager {
     s.info.state = 'exited';
     s.info.phase = 'unknown';
     s.info.exit = { code };
-    this.emit(s);
+    // A tab the user is closing is already gone from the window; telling it about the exit would bring it back for a moment.
+    if (!s.closing) this.emit(s);
     s.markExited();
   }
 

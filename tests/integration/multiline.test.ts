@@ -22,7 +22,7 @@ const CASES: Array<[string, string, string, string]> = [
   ['wsl:Ubuntu:bash', 'for i in 1 2 3; do\n  echo "n=$i ไทย"\ndone', 'n=1 ไทย\nn=2 ไทย\nn=3 ไทย', 'for loop with Thai and quotes'],
   ['pwsh', 'foreach ($i in 1..3) {\n  "n=$i ไทย"\n}', 'n=1 ไทย\nn=2 ไทย\nn=3 ไทย', 'foreach block with Thai'],
   ['powershell', 'foreach ($i in 1..3) {\n  "n=$i ไทย"\n}', 'n=1 ไทย\nn=2 ไทย\nn=3 ไทย', 'foreach block with Thai']
-].filter(([id]) => !process.env['AGENTDOCK_SKIP_WSL'] || !id!.startsWith('wsl:')) as Array<[string, string, string, string]>;
+].filter(([id]) => !process.env['ARCTRI_SKIP_WSL'] || !id!.startsWith('wsl:')) as Array<[string, string, string, string]>;
 
 for (const [id, command, expected, what] of CASES) {
   describe(`multi-line command: ${id}`, () => {
@@ -48,7 +48,7 @@ const SCOPE: Array<[string, string, string, string]> = [
   ['wsl:Ubuntu:zsh', 'y=7\nf() { echo "f$y"; }\ncd /tmp\necho set', 'echo "y=$y $(f) $PWD"', 'y=7 f7 /tmp'],
   ['pwsh', '$y = 7\nfunction f { "f$y" }\nSet-Location $env:TEMP\n"set"', '"y=$y $(f) " + ((Get-Location).Path -eq $env:TEMP)', 'y=7 f7 True'],
   ['powershell', '$y = 7\nfunction f { "f$y" }\nSet-Location $env:TEMP\n"set"', '"y=$y $(f) " + ((Get-Location).Path -eq $env:TEMP)', 'y=7 f7 True']
-].filter(([id]) => !process.env['AGENTDOCK_SKIP_WSL'] || !id!.startsWith('wsl:')) as Array<[string, string, string, string]>;
+].filter(([id]) => !process.env['ARCTRI_SKIP_WSL'] || !id!.startsWith('wsl:')) as Array<[string, string, string, string]>;
 
 for (const [id, multi, follow, expected] of SCOPE) {
   describe(`multi-line scope: ${id}`, () => {

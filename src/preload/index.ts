@@ -91,12 +91,27 @@ const api = {
     changes: (sessionId: SessionId): Promise<{
       files: Array<{ path: string; status: string; added: number; deleted: number }>; added: number; deleted: number
     } | null> => ipcRenderer.invoke('git:changes', { sessionId }),
-    list: (sessionId: SessionId, rel: string): Promise<Array<{ name: string; isDir: boolean }>> =>
+    list: (sessionId: SessionId, rel: string): Promise<{ ok: true; entries: Array<{ name: string; isDir: boolean }> } | { ok: false }> =>
       ipcRenderer.invoke('fs:list', { sessionId, rel }),
-    pick: (sessionId: SessionId): Promise<string[]> => ipcRenderer.invoke('app:pickFiles', { sessionId })
+    pick: (sessionId: SessionId): Promise<string[]> => ipcRenderer.invoke('app:pickFiles', { sessionId }),
+    headText: (sessionId: SessionId, rel: string): Promise<string | null> => ipcRenderer.invoke('git:headText', { sessionId, rel }),
+    status: (sessionId: SessionId): Promise<Array<{ path: string; status: string }> | null> =>
+      ipcRenderer.invoke('git:status', { sessionId }),
+    read: (sessionId: SessionId, rel: string): Promise<
+      | { ok: true; text: string; eol: 'lf' | 'crlf'; bom: boolean; mtimeMs: number; size: number }
+      | { ok: false; error: 'too-large' | 'binary' | 'not-found' | 'denied' | 'failed' }
+    > => ipcRenderer.invoke('fs:read', { sessionId, rel }),
+    write: (
+      sessionId: SessionId, rel: string, text: string, eol: 'lf' | 'crlf', bom: boolean, expectMtimeMs?: number
+    ): Promise<{ ok: true; mtimeMs: number } | { ok: false; error: 'conflict' | 'denied' | 'failed'; mtimeMs?: number }> =>
+      ipcRenderer.invoke('fs:write', { sessionId, rel, text, eol, bom, ...(expectMtimeMs !== undefined ? { expectMtimeMs } : {}) }),
+    stat: (sessionId: SessionId, rel: string): Promise<{ mtimeMs: number; size: number } | null> =>
+      ipcRenderer.invoke('fs:stat', { sessionId, rel })
   },
   app: {
     diagnostics: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('app:diagnostics'),
+    pickFolder: (): Promise<{ env: 'windows'; path: string } | { env: 'wsl'; distro: string; path: string } | null> =>
+      ipcRenderer.invoke('app:pickFolder'),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url }),
     openPath: (sessionId: SessionId): Promise<void> => ipcRenderer.invoke('app:openPath', { sessionId }),
     notify: (sessionId: SessionId, title: string, body: string): Promise<void> =>
@@ -104,5 +119,5 @@ const api = {
   }
 };
 
-export type AgentDockApi = typeof api;
-contextBridge.exposeInMainWorld('agentdock', api);
+export type ArctriApi = typeof api;
+contextBridge.exposeInMainWorld('arctri', api);

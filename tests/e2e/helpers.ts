@@ -1,10 +1,10 @@
 import type { Page } from '@playwright/test';
 
 export const screen = (page: Page, id?: string) =>
-  page.evaluate((i) => (window as unknown as { __agentdockTest: { screen(id?: string): string } }).__agentdockTest.screen(i), id);
+  page.evaluate((i) => (window as unknown as { __arctriTest: { screen(id?: string): string } }).__arctriTest.screen(i), id);
 
 export const activeId = (page: Page) =>
-  page.evaluate(() => (window as unknown as { __agentdockTest: { activeId(): string } }).__agentdockTest.activeId());
+  page.evaluate(() => (window as unknown as { __arctriTest: { activeId(): string } }).__arctriTest.activeId());
 
 export async function waitScreen(page: Page, text: string | RegExp, timeout = 20_000, id?: string): Promise<string> {
   const end = Date.now() + timeout;

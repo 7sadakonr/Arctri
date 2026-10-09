@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 for (const id of ['powershell', 'pwsh', 'wsl:Ubuntu:bash', 'wsl:Ubuntu:zsh'].filter(
-  (x) => !process.env['AGENTDOCK_SKIP_WSL'] || !x.startsWith('wsl:')
+  (x) => !process.env['ARCTRI_SKIP_WSL'] || !x.startsWith('wsl:')
 )) {
   const isPs = id === 'powershell' || id === 'pwsh';
   describe(`block output capture: ${id}`, () => {

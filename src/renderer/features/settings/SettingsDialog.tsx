@@ -82,6 +82,15 @@ export function SettingsDialog() {
             <option value="light">{t('settings.theme.light')}</option>
           </select>
         </Row>
+        <Row label={t('settings.uiScale')}>
+          <select className={field} value={String(prefs.uiScale)} onChange={(e) => void save({ uiScale: Number(e.target.value) })}>
+            {[0.9, 1, 1.1, 1.25, 1.5].map((v) => (
+              <option key={v} value={String(v)}>
+                {Math.round(v * 100)}%
+              </option>
+            ))}
+          </select>
+        </Row>
         <Row label={t('settings.fontSize')}>{num('fontSize', 9, 28)}</Row>
         <Row label={t('settings.scrollback')} hint={t('settings.restartNote')}>
           {num('scrollback', 1000, 200000)}
