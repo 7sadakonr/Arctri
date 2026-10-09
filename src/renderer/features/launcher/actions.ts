@@ -62,6 +62,8 @@ export async function openAgent(
   options: AgentLaunchOptions = {},
   cwd?: EnvPath
 ): Promise<SessionInfo | undefined> {
+  // Opening an agent is always a deliberate action; the trace makes an unexpected one easy to attribute.
+  console.info('[agentdock] openAgent', adapterId, profileId, new Error().stack);
   try {
     const info = await api.sessions.create({
       profileId,

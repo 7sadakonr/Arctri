@@ -11,7 +11,7 @@ import { refreshAgents } from '@/features/launcher/NewTabMenu';
 import { SettingsDialog } from '@/features/settings/SettingsDialog';
 import { TabBar } from '@/features/tabs/TabBar';
 import { SessionView } from '@/features/terminal/SessionView';
-import { allHosts, getHost, peekHost, screenText } from '@/features/terminal/xterm-host';
+import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { Toasts } from '@/features/toasts/Toasts';
 
 async function bootstrap(): Promise<void> {
@@ -67,9 +67,7 @@ export function App() {
 
   useEffect(() => {
     const offChanged = api.sessions.onChanged((info) => {
-      const known = !!useSessions.getState().infos[info.id];
-      if (known) useSessions.getState().upsert(info);
-      else useSessions.getState().upsert(info);
+      useSessions.getState().upsert(info);
       const h = peekHost(info.id);
       if (h) {
         h.update(info);
@@ -153,4 +151,3 @@ export function App() {
   );
 }
 
-void getHost;

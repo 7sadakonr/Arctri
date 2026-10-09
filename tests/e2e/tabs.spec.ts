@@ -1,4 +1,4 @@
-import { activeBlocks, activeEditor, expect, settled, test, waitForEditor } from './fixtures';
+import { activeBlocks, activeEditor, expect, expectNewTabSelected, settled, test, waitForEditor } from './fixtures';
 
 const blocks = activeBlocks;
 
@@ -13,7 +13,7 @@ test('several tabs: processes keep running in the background, rename, close ends
   await expect(page.getByRole('button', { name: /stop/i })).toBeVisible({ timeout: 15_000 });
 
   await page.keyboard.press('Control+Shift+T');
-  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expectNewTabSelected(page, 2);
   await waitForEditor(page, 40_000);
   await editor().fill('echo second-tab');
   await editor().press('Enter');

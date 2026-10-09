@@ -1,4 +1,4 @@
-import { activeBlocks, activeEditor, expect, runCommand, settled, test, waitForEditor } from './fixtures';
+import { activeBlocks, activeEditor, expect, expectNewTabSelected, runCommand, settled, test, waitForEditor } from './fixtures';
 import { activeId, waitScreen } from './helpers';
 
 const blocks = activeBlocks;
@@ -87,7 +87,7 @@ test.describe('command blocks (WSL bash)', () => {
     const { page } = ad;
     await page.getByRole('button', { name: /new tab/i }).nth(1).click();
     await page.getByRole('menuitem', { name: /Ubuntu · bash/ }).first().click();
-    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expectNewTabSelected(page, 2);
     await waitForEditor(page, 60_000);
     await run(page, 'echo from-wsl && uname -s');
     await settled(page, 1);

@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+const consoleLog = new WeakMap<Page, string[]>();
+
 export interface AppFixture {
   app: ElectronApplication;
   page: Page;
@@ -18,14 +20,34 @@ export async function launch(extraEnv: Record<string, string> = {}, userData?: s
     env: { ...process.env, AGENTDOCK_USER_DATA: dir, AGENTDOCK_E2E: '1', ...extraEnv } as Record<string, string>
   });
   const page = await app.firstWindow();
+  const lines: string[] = [];
+  consoleLog.set(page, lines);
+  page.on('console', (m) => lines.push(`[${m.type()}] ${m.text()}`.slice(0, 2000)));
+  page.on('pageerror', (e) => lines.push(`[pageerror] ${String(e)}`));
   await page.waitForLoadState('domcontentloaded');
   return { app, page, userData: dir };
 }
 
+/** Evidence for a failed test: what the window looked like and what the main process thought of each session. */
+async function attachEvidence(f: AppFixture, outDir: (name: string) => string): Promise<void> {
+  try {
+    writeFileSync(outDir('console.log'), (consoleLog.get(f.page) ?? []).join('\n'));
+    await f.page.screenshot({ path: outDir('failure.png') });
+    const state = await f.page.evaluate(() => {
+      const t = (window as unknown as { __agentdockTest?: { sessions(): unknown[]; activeId(): string } }).__agentdockTest;
+      return { active: t?.activeId(), sessions: t?.sessions() };
+    });
+    writeFileSync(outDir('state.json'), JSON.stringify(state, null, 2));
+  } catch {
+    /* the app may already be gone */
+  }
+}
+
 export const test = base.extend<{ ad: AppFixture }>({
-  ad: async ({}, use) => {
+  ad: async ({}, use, testInfo) => {
     const f = await launch();
     await use(f);
+    if (testInfo.status !== testInfo.expectedStatus) await attachEvidence(f, (n) => testInfo.outputPath(n));
     await f.app.close().catch(() => undefined);
   }
 });
@@ -52,6 +74,12 @@ export async function waitForEditor(page: Page, timeout = 40_000): Promise<void>
       { timeout }
     )
     .toBe(true);
+}
+
+/** After opening a tab: exactly `count` tabs exist and the newest one is the selected one. */
+export async function expectNewTabSelected(page: Page, count: number): Promise<void> {
+  await expect(page.getByRole('tab')).toHaveCount(count);
+  await expect(page.getByRole('tab').nth(count - 1)).toHaveAttribute('aria-selected', 'true');
 }
 
 export async function runCommand(page: Page, command: string): Promise<void> {

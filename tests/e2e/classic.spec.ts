@@ -1,4 +1,4 @@
-import { active, activeBlocks, expect, test, waitForEditor } from './fixtures';
+import { active, activeBlocks, expect, expectNewTabSelected, test, waitForEditor } from './fixtures';
 import { waitScreen } from './helpers';
 
 test('classic tab: plain terminal with command tracking, no editor, no block list', async ({ ad }) => {
@@ -6,7 +6,7 @@ test('classic tab: plain terminal with command tracking, no editor, no block lis
   await waitForEditor(page);
   await page.getByRole('button', { name: /new tab/i }).nth(1).click();
   await page.getByRole('menuitem', { name: /Windows PowerShell/ }).getByRole('button', { name: /classic/i }).click();
-  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expectNewTabSelected(page, 2);
   await waitScreen(page, 'PS ', 30_000);
 
   // no command editor and no block list: the shell's own prompt is used

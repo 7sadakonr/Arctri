@@ -94,6 +94,7 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
   if (profile.shell === 'zsh') {
     const shim = await ctx.toPosix(distro, join(dir, 'zsh'));
     if (!shim) throw new Error(`Cannot map integration scripts into ${distro}`);
+    // zsh reads $ZDOTDIR/.zshenv first; that shim hands ZDOTDIR back to the user straight away.
     args.push('sh', '-c', 'USER_ZDOTDIR="${ZDOTDIR:-$HOME}" ZDOTDIR="$1" exec zsh -i', 'sh', shim);
   } else {
     const rc = await ctx.toPosix(distro, join(dir, 'agentdock.bash'));

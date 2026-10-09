@@ -12,3 +12,4 @@ playwright-report/
 poc/*.log
 poc/*.json
 poc/*.out
+resources/shell-integration/zsh/.zcompdump*

@@ -54,6 +54,9 @@ Environment variables for tests: `AGENTDOCK_USER_DATA` (isolated profile), `AGEN
 - Terminal processes run in worker threads (`src/main/pty`), one per session, so a slow `CreateProcess` never freezes the window (ADR-008).
 - The bundled `conpty.dll` is the default; the Windows 10 inbox ConPTY loses Thai marks in PowerShell 5.1 and reorders OSC sequences (ADR-001, 003).
 - Integration tests use real shells. WSL tests expect a distribution named `Ubuntu`; set `AGENTDOCK_SKIP_WSL=1` to skip them.
+- The end-to-end suite drives real windows. Run it on an idle machine and leave the mouse and keyboard alone: input from a person while it runs
+  can move focus or click menus (twice an unexpected extra agent tab appeared in a test window while the machine was in use, and not in three clean runs
+  afterwards; failed tests now keep a screenshot, the session state and the page console in `test-results/`).
 - To run the real agent CLIs without sending prompts: `set AGENTDOCK_REAL_AGENTS=1 && npx playwright test tests/e2e/real-agents.spec.ts`.
 
 ## Layout

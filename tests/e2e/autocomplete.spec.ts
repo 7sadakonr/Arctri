@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { activeBlocks, activeEditor, expect, runCommand, settled, test, waitForEditor, active } from './fixtures';
+import { activeBlocks, activeEditor, expect, expectNewTabSelected, runCommand, settled, test, waitForEditor, active } from './fixtures';
 import { waitScreen } from './helpers';
 
 const options = (page: import('@playwright/test').Page) => active(page).getByRole('option');
@@ -64,6 +64,7 @@ test('WSL sessions get Linux commands and paths', async ({ ad }) => {
   const { page } = ad;
   await page.getByRole('button', { name: /new tab/i }).nth(1).click();
   await page.getByRole('menuitem', { name: /Ubuntu · bash/ }).first().click();
+  await expectNewTabSelected(page, 2);
   await waitForEditor(page, 60_000);
   const editor = activeEditor(page);
   await editor.pressSequentially('cd /us');

@@ -1,4 +1,4 @@
-import { app, shell, MessageChannelMain, type BrowserWindow, type MessagePortMain } from 'electron';
+import { shell, MessageChannelMain, type BrowserWindow, type MessagePortMain } from 'electron';
 import type { SessionInfo, SessionSpec } from '@shared/types/session';
 import { envKeyOf } from '@shared/types/env';
 import type { CompletionResponse } from '@shared/types/completion';
@@ -122,7 +122,6 @@ export function registerIpc(s: Services, hub: PortHub): void {
     if (cwd?.env === 'wsl') return shell.openPath(`\\\\wsl.localhost\\${cwd.distro}${cwd.path.replace(/\//g, '\\')}`);
     return undefined;
   });
-  void app;
 }
 
 export function sendInfo(win: BrowserWindow | undefined, info: SessionInfo): void {

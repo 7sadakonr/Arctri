@@ -1,0 +1,12 @@
+# Scripts that run inside Linux must keep LF line endings even when Git on Windows is set to autocrlf.
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+*.sh text eol=lf
+resources/shell-integration/** text eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary

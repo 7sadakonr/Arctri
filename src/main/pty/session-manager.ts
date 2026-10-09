@@ -5,7 +5,7 @@ import { OscTokenizer } from '@shared/osc/tokenizer';
 import { ShellStateMachine, type Transition } from '@shared/shell/state-machine';
 import type { EnvPath, ShellProfile } from '@shared/types/env';
 import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session';
-import { buildShellLaunch, windowsCwd, type LaunchPlan } from '../shell/launch';
+import { buildShellLaunch, type LaunchPlan } from '../shell/launch';
 import { submitSteps } from '../shell/submit';
 import { gitBranchOf } from '../shell/git';
 import { mark } from '../timing';
@@ -367,4 +367,3 @@ export class SessionManager {
   }
 }
 
-export { windowsCwd };

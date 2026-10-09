@@ -26,6 +26,9 @@ extraResources:
   # shell integration scripts are read by PowerShell, bash and zsh from disk
   - from: resources/shell-integration
     to: shell-integration
+    filter:
+      - '**/*'
+      - '!**/.zcompdump*'
 win:
   target:
     - target: nsis
