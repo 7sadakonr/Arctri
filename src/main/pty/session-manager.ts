@@ -5,6 +5,7 @@ import { OscTokenizer } from '@shared/osc/tokenizer';
 import { ShellStateMachine, type Transition } from '@shared/shell/state-machine';
 import type { EnvPath, ShellProfile } from '@shared/types/env';
 import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session';
+import { detectAgentCommand } from '@shared/agents/detect-command';
 import { buildShellLaunch, type LaunchPlan } from '../shell/launch';
 import { submitSteps } from '../shell/submit';
 import { gitBranchOf } from '../shell/git';
@@ -207,6 +208,17 @@ export class SessionManager {
       changed = true;
     }
     if (evType === 'cwd' && s.sm.cwd) changed = this.setCwd(s, s.sm.cwd) || changed;
+    if (tr.kind === 'blockStarted' && s.info.kind === 'shell') {
+      const agentId = detectAgentCommand(tr.command.text, s.info.shell);
+      if (agentId) {
+        s.info.runningAgent = { agentId, startedAt: tr.command.startedAt, command: tr.command.text };
+        changed = true;
+      }
+    }
+    if (tr.kind === 'blockFinished' && s.info.runningAgent) {
+      delete s.info.runningAgent;
+      changed = true;
+    }
     if (tr.kind === 'anomaly') {
       s.anomalies++;
       if (s.anomalies >= 3 && s.info.integration === 'active') {
@@ -270,6 +282,7 @@ export class SessionManager {
         startedAt: tr.command.startedAt, endedAt: tr.endedAt
       });
     }
+    delete s.info.runningAgent;
     s.info.state = 'exited';
     s.info.phase = 'unknown';
     s.info.exit = { code };

@@ -12,7 +12,7 @@ Status: MVP 1, v0.1.0. Windows 10 22H2 and Windows 11 (x64). WSL2 is optional.
   Copy command / output, run again, collapse, keyboard navigation. Full-screen programs (vim, htop, less, ssh, agent TUIs)
   take over the terminal. If command boundaries cannot be detected reliably the tab simply works as a normal terminal.
 - **Autocomplete:** history, commands, paths, git, npm/pnpm scripts. Tab accepts, Esc dismisses, nothing runs by itself.
-- **Agents:** Codex CLI and Claude Code, native interactive UI, separately detected on Windows and in each WSL distro.
+- **Agents:** Codex CLI and Claude Code, native interactive UI, separately detected on Windows and in each WSL distro. Type `claude` or `codex` in any shell tab and the bottom bar switches to that agent's controls (attach files, changed files, file panel, Rich Input, notifications) until it exits.
   The toolbar shows only what the installed CLI really supports. Authentication stays with the CLI.
 - **Thai:** UTF-8 everywhere, Thai IME in the editor, Thai UI (English/Thai switchable).
 - **Local first:** no account, no cloud, no telemetry. History and preferences stay on this PC.
@@ -29,6 +29,8 @@ Status: MVP 1, v0.1.0. Windows 10 22H2 and Windows 11 (x64). WSL2 is optional.
 | Tab, Esc, Up/Down | Accept, dismiss, move through suggestions or history |
 | Ctrl+C (selection) / Ctrl+V | Copy / paste; Ctrl+C without selection interrupts |
 | Ctrl+, | Settings |
+| Ctrl+Shift+E | File panel (read-only list of the tab's folder; click a file to insert its path) |
+| Ctrl+G | Rich Input, while an agent is in the tab |
 
 ## Develop
 

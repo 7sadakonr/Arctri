@@ -122,6 +122,9 @@ export function SettingsDialog() {
         <Row label={t('settings.osc52')}>
           <Switch checked={prefs.osc52} onCheckedChange={(v) => void save({ osc52: v })} />
         </Row>
+        <Row label={t('settings.agentNotifications')}>
+          <Switch checked={prefs.agentNotifications} onCheckedChange={(v) => void save({ agentNotifications: v })} />
+        </Row>
         <Row label={t('settings.historyLimit')}>{num('historyLimit', 100, 200000)}</Row>
         <Row label={t('settings.history')}>
           <Button

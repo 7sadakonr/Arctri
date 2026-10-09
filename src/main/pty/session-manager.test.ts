@@ -148,6 +148,22 @@ describe('SessionManager', () => {
     expect(m.list()).toHaveLength(0);
   });
 
+  it('marks the tab while an agent CLI typed in the shell is running, and clears it afterwards', async () => {
+    const { m, pty, last } = setup();
+    const { nonce: n } = await m.create(spec);
+    pty.emit(hello(n) + mark(n, 'A') + mark(n, 'B'));
+    pty.emit(cmd(n, 1, 'cd proj && claude --resume') + mark(n, 'C'));
+    expect(last().runningAgent).toMatchObject({ agentId: 'claude-code', command: 'cd proj && claude --resume' });
+    pty.emit(mark(n, 'D', ';0') + mark(n, 'A') + mark(n, 'B'));
+    expect(last().runningAgent).toBeUndefined();
+    pty.emit(cmd(n, 2, 'claude -p hi') + mark(n, 'C'));
+    expect(last().runningAgent).toBeUndefined();
+    pty.emit(mark(n, 'D', ';0') + mark(n, 'A') + mark(n, 'B') + cmd(n, 3, 'codex') + mark(n, 'C'));
+    expect(last().runningAgent?.agentId).toBe('codex');
+    pty.emitExit(0);
+    expect(last().runningAgent).toBeUndefined();
+  });
+
   it('close kills the process and resolves', async () => {
     const { m, pty } = setup();
     const { id } = await m.create(spec);

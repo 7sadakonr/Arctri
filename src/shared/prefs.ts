@@ -21,6 +21,8 @@ const shape = {
   osc52: z.boolean(),
   historyLimit: z.number().int().min(100).max(200000),
   agentPaths: z.record(z.string().max(100), z.string().max(1000)),
+  agentNotifications: z.boolean(),
+  dismissedHints: z.array(z.string().max(100)).max(50),
   window: z.object(windowShape)
 };
 
@@ -36,6 +38,8 @@ export const prefsSchema = z.object({
   osc52: shape.osc52.default(false),
   historyLimit: shape.historyLimit.default(10000),
   agentPaths: shape.agentPaths.default({}),
+  agentNotifications: shape.agentNotifications.default(true),
+  dismissedHints: shape.dismissedHints.default([]),
   window: z
     .object({
       ...windowShape,

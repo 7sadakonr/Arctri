@@ -1,4 +1,4 @@
-import { shell, MessageChannelMain, type BrowserWindow, type MessagePortMain } from 'electron';
+import { dialog, Notification, shell, MessageChannelMain, type BrowserWindow, type MessagePortMain } from 'electron';
 import type { SessionInfo, SessionSpec } from '@shared/types/session';
 import { envKeyOf } from '@shared/types/env';
 import type { CompletionResponse } from '@shared/types/completion';
@@ -9,6 +9,10 @@ import type { SessionManager } from '../pty/session-manager';
 import type { SavedSession } from '../persistence/session-repo';
 import type { ProfileRegistry } from '../shell/registry';
 import { Router } from './router';
+import type { EnvironmentQuery } from '../env-query/service';
+import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
+import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
+import type { WslManager } from '../wsl/wsl-manager';
 import { mark } from '../timing';
 
 export interface Services {
@@ -21,11 +25,15 @@ export interface Services {
   savedSessions: () => SavedSession[];
   onPrefsChanged?: (prefs: import('@shared/prefs').Prefs) => void;
   diagnostics: () => Record<string, unknown>;
+  envQuery: EnvironmentQuery;
+  wsl: WslManager;
   getWindow: () => BrowserWindow | undefined;
   origins: () => string[];
 }
 
 /** Moves PTY output to the renderer over a dedicated MessagePort per session. */
+const notified: Array<{ sessionId: string; title: string; body: string }> = [];
+
 export class PortHub {
   private ports = new Map<string, MessagePortMain>();
   private queue = new Map<string, string[]>();
@@ -111,7 +119,78 @@ export function registerIpc(s: Services, hub: PortHub): void {
   });
   r.handle('agents:detect', (a) => (s.agents ? s.agents.detect(a?.refresh ?? false) : []));
 
-  r.handle('app:diagnostics', () => s.diagnostics());
+  r.handle('git:changes', async ({ sessionId }) => {
+    const info = s.sessions.get(sessionId);
+    if (!info?.cwd) return null;
+    return (await s.envQuery.gitChanges(info.env, info.cwd.path)) ?? null;
+  });
+
+  // The file panel: read-only listing below the tab's working folder, never above it.
+  r.handle('fs:list', async ({ sessionId, rel }) => {
+    const info = s.sessions.get(sessionId);
+    if (!info?.cwd) return [];
+    const abs = resolveWithin(info.cwd.path, rel, info.env.kind);
+    if (!abs) return [];
+    const entries = await s.envQuery.listDir(info.env, abs);
+    return entries
+      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
+      .slice(0, 600);
+  });
+
+  // Choose files to attach to a message; answers with ready-to-insert "@path" references.
+  r.handle('app:pickFiles', async ({ sessionId }) => {
+    const info = s.sessions.get(sessionId);
+    if (!info?.cwd) return [];
+    const win = s.getWindow();
+    const forced = process.env['AGENTDOCK_E2E_PICK']; // tests answer the dialog through this variable
+    let picked: string[];
+    if (forced) picked = JSON.parse(forced) as string[];
+    else {
+      const start =
+        info.env.kind === 'wsl'
+          ? `\\\\wsl.localhost\\${info.env.distro}${info.cwd.path.replace(/\//g, '\\')}`
+          : info.cwd.path;
+      const r = await dialog.showOpenDialog(win!, { defaultPath: start, properties: ['openFile', 'multiSelections'] });
+      picked = r.canceled ? [] : r.filePaths;
+    }
+    const refs: string[] = [];
+    for (const f of picked) {
+      if (info.env.kind === 'windows') refs.push(formatRef(info.cwd.path, f, 'windows'));
+      else {
+        const posixPath = uncToPosix(f, info.env.distro) ?? (f.startsWith('/') ? f : await s.wsl.toPosix(info.env.distro, f));
+        if (posixPath) refs.push(formatRef(info.cwd.path, posixPath, 'wsl'));
+      }
+    }
+    return refs;
+  });
+
+  r.handle('agents:codexNotifications', async ({ sessionId, action }) => {
+    const info = s.sessions.get(sessionId);
+    if (!info) return { enabled: false, available: false };
+    const text = await s.envQuery.readCodexConfig(info.env);
+    if (text === undefined) return { enabled: false, available: false };
+    const enabled = text !== null && tuiNotificationsEnabled(text);
+    if (action === 'status' || enabled) return { enabled, available: true };
+    const ok = await s.envQuery.writeCodexConfig(info.env, enableTuiNotifications(text ?? ''));
+    return { enabled: ok, available: true, changed: ok };
+  });
+
+  r.handle('app:notify', ({ sessionId, title, body }) => {
+    notified.push({ sessionId, title, body });
+    if (!s.prefs.get().agentNotifications || !Notification.isSupported()) return;
+    const n = new Notification({ title, body, silent: false });
+    n.on('click', () => {
+      const win = s.getWindow();
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      win.webContents.send('app:focus-session', sessionId);
+    });
+    n.show();
+  });
+
+  r.handle('app:diagnostics', () => (process.env['AGENTDOCK_E2E'] ? { ...s.diagnostics(), notifications: notified } : s.diagnostics()));
   r.handle('app:openExternal', ({ url }) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url);
     return undefined;

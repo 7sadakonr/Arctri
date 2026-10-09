@@ -941,3 +941,10 @@ reasoning for each deviation are in `docs/decisions/ADR-*.md`; the release limit
 - Integration (Vitest, real PTYs and a real Ubuntu): 78 tests: blocks and snapshots on four shells, rapid and multi-line submission, WSL helper, cleanup of 20 tabs, throughput, Thai width, worker backend.
 - End to end (Playwright against the built app): 20 tests, plus 3 opt-in tests with the real agent CLIs.
 - Installer: `scripts/smoke-installed.mjs --install` (silent install, start, prompt, uninstall).
+
+## Round 2 (agent UX), 2026-10-09
+
+Requested after use: stable tab dots, a status bar that does not cover the terminal, detecting `claude`/`codex` typed in a shell, and an agent bar per agent
+(attach files, changed files, remote-control for Claude, file panel, Rich Input, Codex notifications). Details and decisions: `docs/decisions/ADR-009-agent-in-shell-and-bar.md`.
+
+Scope change decided by the product owner: a **read-only file panel inside the app** is now in scope (it replaces the non-goal "IDE-style file explorer"). It cannot open, edit or leave the tab's folder.

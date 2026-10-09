@@ -13,6 +13,7 @@ import { TabBar } from '@/features/tabs/TabBar';
 import { SessionView } from '@/features/terminal/SessionView';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { Toasts } from '@/features/toasts/Toasts';
+import { TOGGLE_RICH_EVENT } from '@/features/agents/AgentBar';
 
 async function bootstrap(): Promise<void> {
   const ui = useUi.getState();
@@ -75,10 +76,14 @@ export function App() {
       }
     });
     const offClosed = api.sessions.onClosed((id) => useSessions.getState().remove(id));
+    const offFocus = api.sessions.onFocusRequested((id) => {
+      if (useSessions.getState().infos[id]) useSessions.getState().setActive(id);
+    });
     void bootstrap();
     return () => {
       offChanged();
       offClosed();
+      offFocus();
     };
   }, []);
 
@@ -112,6 +117,15 @@ export function App() {
         if (id) {
           e.preventDefault();
           s.setActive(id);
+        }
+      } else if (e.ctrlKey && e.shiftKey && k === 'e') {
+        e.preventDefault();
+        if (s.activeId) s.setExplorer(s.activeId, !s.explorer[s.activeId]);
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g') {
+        const info = s.activeId ? s.infos[s.activeId] : undefined;
+        if (info && (info.kind === 'agent' || info.runningAgent)) {
+          e.preventDefault();
+          window.dispatchEvent(new Event(TOGGLE_RICH_EVENT));
         }
       } else if (e.key === 'F2') {
         e.preventDefault();

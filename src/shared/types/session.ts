@@ -44,6 +44,8 @@ export interface SessionInfo {
   /** Per-session secret that authenticates shell-integration sequences. */
   nonce: string;
   launchNote?: string;
+  /** An agent CLI the user started inside this shell tab; set while that command runs. */
+  runningAgent?: { agentId: AgentId; startedAt: number; command: string };
   /** Agent sessions: what the CLI was started with, e.g. "--model opus". */
   launchSummary?: string;
   /** Agent sessions: the user supplied flags that turn permission checks off. */

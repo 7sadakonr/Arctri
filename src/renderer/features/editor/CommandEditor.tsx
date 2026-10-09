@@ -5,6 +5,7 @@ import { FOCUS_SESSION_EVENT } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useUi } from '@/stores/ui';
+import { INSERT_EVENT } from '../agents/insert';
 import { AutocompleteOverlay } from './AutocompleteOverlay';
 
 const drafts = new Map<string, string>();
@@ -37,6 +38,22 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
   useEffect(() => {
     if (focused) area.current?.focus();
   }, [focused]);
+
+  // The file panel and the changes list put a path into the line being written.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent<{ sessionId: string; text: string }>).detail;
+      if (d.sessionId !== sessionId) return;
+      const el = area.current;
+      const at = el?.selectionStart ?? text.length;
+      const next = text.slice(0, at) + d.text + ' ' + text.slice(el?.selectionEnd ?? at);
+      caretAfter.current = at + d.text.length + 1;
+      setText(next);
+      el?.focus();
+    };
+    window.addEventListener(INSERT_EVENT, h);
+    return () => window.removeEventListener(INSERT_EVENT, h);
+  }, [sessionId, text]);
 
   useEffect(() => {
     if (!focused) return;

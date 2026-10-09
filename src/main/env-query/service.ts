@@ -2,6 +2,8 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, win32 } from 'node:path';
 import type { EnvironmentRef } from '@shared/types/env';
+import { codexConfigBackupName } from '../agents/codex-config';
+import { parseHelperGitStat, windowsGitChanges, type Changes } from '../git/changes';
 import { gitBranchOf } from '../shell/git';
 import { WslHelperClient } from './wsl-helper';
 
@@ -21,6 +23,11 @@ export interface EnvironmentQuery {
   gitBranch(env: EnvironmentRef, cwd: string): Promise<string | undefined>;
   listExecutables(env: EnvironmentRef): Promise<string[]>;
   homeDir(env: EnvironmentRef): Promise<string>;
+  gitChanges(env: EnvironmentRef, cwd: string): Promise<Changes | undefined>;
+  /** Codex's config.toml: null when the file does not exist yet. */
+  readCodexConfig(env: EnvironmentRef): Promise<string | null | undefined>;
+  /** Writes it after saving the old file under a timestamped backup name. */
+  writeCodexConfig(env: EnvironmentRef, content: string): Promise<boolean>;
 }
 
 const TTL = 5 * 60_000;
@@ -125,6 +132,46 @@ export class EnvironmentQueryService implements EnvironmentQuery {
     const h = (await this.helper(env.distro).request('home', [], 3000)) || '/root';
     this.homeCache.set(env.distro, h);
     return h;
+  }
+
+  async gitChanges(env: EnvironmentRef, cwd: string): Promise<Changes | undefined> {
+    if (env.kind === 'wsl') {
+      const out = await this.helper(env.distro).request('gitstat', [cwd], 4000);
+      return out ? parseHelperGitStat(out) : undefined;
+    }
+    return windowsGitChanges(cwd);
+  }
+
+  private codexDir = (): string => process.env['CODEX_HOME'] || join(homedir(), '.codex');
+
+  async readCodexConfig(env: EnvironmentRef): Promise<string | null | undefined> {
+    if (env.kind === 'wsl') {
+      const out = await this.helper(env.distro).request('codexcfg', [], 3000);
+      if (out === null) return undefined; // helper unavailable
+      return out.startsWith('EXISTS\n') ? out.slice(7) : null;
+    }
+    try {
+      return await readFile(join(this.codexDir(), 'config.toml'), 'utf8');
+    } catch (e) {
+      return (e as { code?: string }).code === 'ENOENT' ? null : undefined;
+    }
+  }
+
+  async writeCodexConfig(env: EnvironmentRef, content: string): Promise<boolean> {
+    const backup = codexConfigBackupName();
+    if (env.kind === 'wsl') return (await this.helper(env.distro).request('codexcfgw', [content, backup], 5000)) === 'OK';
+    const { copyFile, mkdir, rename, writeFile } = await import('node:fs/promises');
+    const dir = this.codexDir();
+    const file = join(dir, 'config.toml');
+    try {
+      await mkdir(dir, { recursive: true });
+      await copyFile(file, join(dir, backup)).catch(() => undefined); // no old file, nothing to back up
+      await writeFile(`${file}.agentdock-tmp`, content, 'utf8');
+      await rename(`${file}.agentdock-tmp`, file);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   dispose(): void {

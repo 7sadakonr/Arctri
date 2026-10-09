@@ -19,8 +19,8 @@ test('agent session: native TUI, input, paste, composer, commands, approval prom
 
     // identity is shown, and only controls that can work are offered
     const bar = active(page);
-    await expect(bar.getByText('Codex', { exact: true })).toBeVisible();
-    await expect(bar.getByText('Windows', { exact: true })).toBeVisible();
+    await expect(page.getByRole('tab').nth(1)).toContainText('Codex · Windows');
+    await expect(bar.getByTestId('agent-bar')).toHaveAttribute('data-agent', 'codex');
     await expect(bar.getByText(/running/i)).toBeVisible();
 
     // native keyboard input, including Thai
@@ -36,12 +36,11 @@ test('agent session: native TUI, input, paste, composer, commands, approval prom
     expect(await screen(page)).toContain('approval> Allow command? (y/n)');
     expect(await screen(page)).not.toMatch(/submitted:/);
 
-    // composer pastes multi-line text and never presses Enter
-    await bar.getByRole('button', { name: /compose/i }).click();
-    await bar.getByLabel(/compose/i).fill('line1\nบรรทัด2');
-    await bar.getByRole('button', { name: /paste into agent/i }).click();
-    await waitScreen(page, 'paste: line1⏎บรรทัด2');
-    expect(await screen(page)).not.toMatch(/submitted:/);
+    // Rich Input pastes multi-line text; Enter inside it is the user's own "send"
+    await bar.getByRole('button', { name: /^Rich Input/ }).click();
+    await bar.getByTestId('rich-input').getByRole('textbox').fill('line1\nบรรทัด2');
+    await bar.getByTestId('rich-input').getByRole('textbox').press('Enter');
+    await waitScreen(page, /paste: line1⏎บรรทัด2[\s\S]*note: submitted:/);
 
     // native commands are sent as typed text and are labelled as such
     await bar.getByRole('button', { name: '/', exact: true }).click();

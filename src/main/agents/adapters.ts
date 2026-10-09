@@ -1,3 +1,4 @@
+import { AGENT_META } from '@shared/agents/meta';
 import type { AgentCapabilities, AgentId } from '@shared/types/agent';
 import type { AgentLaunchOptions } from '@shared/types/session';
 
@@ -30,8 +31,6 @@ export const isSafeValue = (v: string): boolean => SAFE_VALUE.test(v);
 
 const has = (help: string, flag: string): boolean => new RegExp(`(^|[\\s,\\[])${flag.replace(/-/g, '\\-')}(?![\\w-])`, 'm').test(help);
 
-const NATIVE_HINT = 'It only works while the CLI is waiting for input.';
-
 export const claudeCode: AgentAdapter = {
   id: 'claude-code',
   displayName: 'Claude Code',
@@ -42,12 +41,7 @@ export const claudeCode: AgentAdapter = {
     launchFlags: { model: has(help, '--model'), permissionMode: has(help, '--permission-mode'), extraArgs: true },
     permissionModes: has(help, '--permission-mode') ? ['manual', 'acceptEdits', 'plan'].filter((m) => help.includes(m)) : [],
     structuredStatus: 'none',
-    nativeCommands: [
-      { label: '/model', text: '/model', hint: NATIVE_HINT },
-      { label: '/compact', text: '/compact', hint: NATIVE_HINT },
-      { label: '/clear', text: '/clear', hint: NATIVE_HINT },
-      { label: '/help', text: '/help', hint: NATIVE_HINT }
-    ]
+    nativeCommands: AGENT_META['claude-code'].nativeCommands
   }),
   buildArgs(caps, o) {
     const args: string[] = [];
@@ -76,12 +70,7 @@ export const codex: AgentAdapter = {
       ? ['untrusted', 'on-request', 'on-failure'].filter((m) => help.includes(m))
       : [],
     structuredStatus: 'none',
-    nativeCommands: [
-      { label: '/model', text: '/model', hint: NATIVE_HINT },
-      { label: '/approvals', text: '/approvals', hint: NATIVE_HINT },
-      { label: '/status', text: '/status', hint: NATIVE_HINT },
-      { label: '/new', text: '/new', hint: NATIVE_HINT }
-    ]
+    nativeCommands: AGENT_META.codex.nativeCommands
   }),
   buildArgs(caps, o) {
     const args: string[] = [];

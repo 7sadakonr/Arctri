@@ -1,4 +1,4 @@
-import { Folder, GitBranch, Settings, TerminalSquare } from 'lucide-react';
+import { Folder, GitBranch, PanelRight, Settings, TerminalSquare } from 'lucide-react';
 import type { SessionInfo } from '@shared/types/session';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn';
 import { tNow, useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
-import { AgentToolbar } from './AgentToolbar';
+import { AgentBar } from '../agents/AgentBar';
 
 function envLabel(info: SessionInfo): string {
   return info.env.kind === 'windows' ? `Windows · ${info.shell}` : `${info.env.distro} · ${info.shell}`;
@@ -18,6 +18,7 @@ export function ShellToolbar({ info }: { info: SessionInfo }) {
   const t = useT();
   const blockMode = info.presentation === 'blocks' && info.integration === 'active';
   const native = useSessions((s) => !!s.nativePrompt[info.id]);
+  const explorerOpen = useSessions((s) => !!s.explorer[info.id]);
   const integ = info.integration;
   const tone =
     integ === 'active' ? 'text-ok' : integ === 'degraded' ? 'text-warn' : integ === 'pending' ? 'text-fg-muted' : 'text-fg-muted';
@@ -49,6 +50,12 @@ export function ShellToolbar({ info }: { info: SessionInfo }) {
         </span>
       )}
       <span className="flex-1" />
+      <Tip label={t('agent.filesHint')}>
+        <Button variant={explorerOpen ? 'outline' : 'ghost'} size="sm" onClick={() => useSessions.getState().setExplorer(info.id, !explorerOpen)}>
+          <PanelRight size={12} />
+          {t('agent.files')}
+        </Button>
+      </Tip>
       <span className={cn('flex items-center gap-1', tone)} title={t(`toolbar.integration.${integ}` as const)}>
         <span className="h-1.5 w-1.5 rounded-full bg-current" />
         {t(`toolbar.integration.${integ}` as const)}
@@ -72,6 +79,6 @@ export function ShellToolbar({ info }: { info: SessionInfo }) {
 }
 
 /** Variant chosen by session kind; controls appear only when they can really do their job. */
-export function BottomToolbar({ info }: { info: SessionInfo }) {
-  return info.kind === 'agent' ? <AgentToolbar info={info} /> : <ShellToolbar info={info} />;
+export function BottomToolbar({ info, active }: { info: SessionInfo; active: boolean }) {
+  return info.kind === 'agent' || info.runningAgent ? <AgentBar info={info} active={active} /> : <ShellToolbar info={info} />;
 }

@@ -9,19 +9,26 @@ import { useSessions } from '@/stores/sessions';
 import { closeSession, openSimilarTab } from '../launcher/actions';
 import { NewTabMenu } from '../launcher/NewTabMenu';
 
+/**
+ * One dot per tab, always drawn, never animated: a dot that blinks or disappears while a tab starts looks like a fault.
+ * starting (hollow grey) -> ready (green) -> running a command (orange) -> agent (violet) -> needs attention (blue);
+ * red only when the process really failed or exited with an error.
+ */
 function StatusDot({ id }: { id: string }) {
   const info = useSessions((s) => s.infos[id]);
   const phase = useSessions((s) => s.uiPhase[id]);
-  if (!info) return null;
-  const color =
-    info.state === 'failed' || (info.state === 'exited' && (info.exit?.code ?? 0) !== 0)
-      ? 'bg-danger'
-      : info.state === 'exited'
-        ? 'bg-fg-muted'
-        : phase === 'executing'
-          ? 'bg-warn animate-pulse'
-          : 'bg-ok';
-  return <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', color)} />;
+  const attention = useSessions((s) => !!s.attention[id]);
+  let tone = 'border border-fg-muted/70 bg-transparent'; // starting
+  if (info) {
+    if (info.state === 'failed' || (info.state === 'exited' && (info.exit?.code ?? 0) !== 0)) tone = 'bg-danger';
+    else if (info.state === 'exited') tone = 'bg-fg-muted';
+    else if (attention) tone = 'bg-accent';
+    else if (info.kind === 'agent' || info.runningAgent) tone = 'bg-violet-400';
+    else if (info.state === 'starting' || info.integration === 'pending') tone = 'border border-fg-muted/70 bg-transparent';
+    else if (phase === 'executing') tone = 'bg-warn';
+    else tone = 'bg-ok';
+  }
+  return <span data-dot={tone} className={cn('h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-150', tone)} />;
 }
 
 function Tab({ id, index }: { id: string; index: number }) {

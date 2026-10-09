@@ -53,3 +53,38 @@ for (const [menuName, screenRe] of CASES.map(([m, s]) => [m, s] as const)) {
     }
   });
 }
+
+// The case from real use: an agent started by typing its name in a WSL shell tab.
+for (const agent of ['claude', 'codex']) {
+  test(`real ${agent} typed in a WSL zsh tab: bar switches, first rows are not covered`, async () => {
+    const f = await launch();
+    const { page } = f;
+    try {
+      await waitForEditor(page);
+      await page.getByRole('button', { name: /new tab/i }).nth(1).click();
+      const item = page.getByRole('menuitem', { name: /Ubuntu · zsh/ });
+      await item.waitFor({ state: 'visible', timeout: 60_000 });
+      await item.first().click();
+      await expect(page.getByRole('tab')).toHaveCount(2);
+      await expect(page.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true');
+      await waitForEditor(page, 60_000);
+      const editor = page.locator('[data-active="true"]').getByTestId('command-editor');
+      await editor.fill(agent);
+      await editor.press('Enter');
+      const bar = page.locator('[data-active="true"]').getByTestId('agent-bar');
+      await expect(bar).toHaveAttribute('data-agent', agent === 'claude' ? 'claude-code' : 'codex', { timeout: 30_000 });
+      await waitScreen(page, agent === 'claude' ? /Claude Code|trust|Welcome/i : /Codex|OpenAI|Sign in|trust|model/i, 60_000);
+      const barBox = (await page.locator('[data-active="true"]').getByTestId('running-bar').boundingBox())!;
+      const screenBox = (await page.locator('[data-active="true"]').locator('.xterm-screen').boundingBox())!;
+      expect(screenBox.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 1);
+      await page.screenshot({ path: `test-results/real-${agent}-in-zsh.png` });
+      // Claude's trust dialog is left with Esc; Codex ends on Ctrl+C
+      await page.keyboard.press(agent === 'claude' ? 'Escape' : 'Control+c');
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Control+c');
+      await expect(page.locator('[data-active="true"]').getByTestId('agent-bar')).toHaveCount(0, { timeout: 30_000 });
+    } finally {
+      await f.app.close();
+    }
+  });
+}

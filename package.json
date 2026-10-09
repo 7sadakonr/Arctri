@@ -41,6 +41,7 @@
     "clsx": "^2.1.1",
     "electron-store": "^11.0.2",
     "node-pty": "^1.1.0",
+    "smol-toml": "^1.9.1",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"
   },

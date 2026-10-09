@@ -127,7 +127,7 @@ async function start(): Promise<void> {
 
   registerIpc(
     {
-      sessions, registry, prefs, history, completion,
+      sessions, registry, prefs, history, completion, envQuery, wsl,
       agents: { detect: (refresh) => agents.detect(refresh) },
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {

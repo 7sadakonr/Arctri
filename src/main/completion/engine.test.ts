@@ -35,6 +35,9 @@ class FakeEnv implements EnvironmentQuery {
   async gitBranch() { return 'main'; }
   async listExecutables() { return this.exes; }
   async homeDir() { return '/home/me'; }
+  async gitChanges() { return undefined; }
+  async readCodexConfig() { return null; }
+  async writeCodexConfig() { return true; }
 }
 
 const wslInfo = (cwd = '/home/me/proj') =>

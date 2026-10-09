@@ -64,7 +64,8 @@ const api = {
       };
     },
     onChanged: (cb: (i: SessionInfo) => void): Unsub => subscribe('session:changed', cb),
-    onClosed: (cb: (id: SessionId) => void): Unsub => subscribe('session:closed', cb)
+    onClosed: (cb: (id: SessionId) => void): Unsub => subscribe('session:closed', cb),
+    onFocusRequested: (cb: (id: SessionId) => void): Unsub => subscribe('app:focus-session', cb)
   },
   prefs: {
     get: (): Promise<Prefs> => ipcRenderer.invoke('prefs:get'),
@@ -82,12 +83,24 @@ const api = {
       ipcRenderer.invoke('completion:query', req)
   },
   agents: {
-    detect: (refresh = false): Promise<AgentEntry[]> => ipcRenderer.invoke('agents:detect', { refresh })
+    detect: (refresh = false): Promise<AgentEntry[]> => ipcRenderer.invoke('agents:detect', { refresh }),
+    codexNotifications: (sessionId: SessionId, action: 'status' | 'enable'): Promise<{ enabled: boolean; available: boolean; changed?: boolean }> =>
+      ipcRenderer.invoke('agents:codexNotifications', { sessionId, action })
+  },
+  files: {
+    changes: (sessionId: SessionId): Promise<{
+      files: Array<{ path: string; status: string; added: number; deleted: number }>; added: number; deleted: number
+    } | null> => ipcRenderer.invoke('git:changes', { sessionId }),
+    list: (sessionId: SessionId, rel: string): Promise<Array<{ name: string; isDir: boolean }>> =>
+      ipcRenderer.invoke('fs:list', { sessionId, rel }),
+    pick: (sessionId: SessionId): Promise<string[]> => ipcRenderer.invoke('app:pickFiles', { sessionId })
   },
   app: {
     diagnostics: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('app:diagnostics'),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url }),
-    openPath: (sessionId: SessionId): Promise<void> => ipcRenderer.invoke('app:openPath', { sessionId })
+    openPath: (sessionId: SessionId): Promise<void> => ipcRenderer.invoke('app:openPath', { sessionId }),
+    notify: (sessionId: SessionId, title: string, body: string): Promise<void> =>
+      ipcRenderer.invoke('app:notify', { sessionId, title, body })
   }
 };
 

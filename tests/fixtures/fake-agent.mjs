@@ -20,6 +20,8 @@ Options:
 }
 
 const out = (s) => process.stdout.write(s);
+const notifyAfter = args.indexOf('--notify-after');
+if (notifyAfter >= 0) setTimeout(() => out('\x1b]9;fake-agent needs your attention\x07'), Number(args[notifyAfter + 1] ?? 3) * 1000);
 let typed = '';
 let pasted = '';
 let note = '';
@@ -52,7 +54,8 @@ process.stdin.on('data', (d) => {
     if (ch === '\x03') {
       out('\x1b[?2004l\x1b[?1049l');
       process.exit(130);
-    } else if (ch === '\x1b') note = 'esc';
+    } else if (ch === '#') out('\x1b]9;fake-agent needs your attention\x07');
+    else if (ch === '\x1b') note = 'esc';
     else if (ch === '\r') {
       note = `submitted:${typed}`;
       typed = '';

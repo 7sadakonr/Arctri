@@ -52,6 +52,30 @@ while IFS="$TAB" read -r id op a1 a2; do
         d=${d%/*}
       done
       ;;
+    gitstat)
+      d=$(expand_home "$(dec "$a1")")
+      out=$(cd "$d" 2>/dev/null && git -c core.quotepath=off --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 2>&1 && {
+        printf '##STATUS\n'
+        git -c core.quotepath=off --no-optional-locks status --porcelain=v1
+        printf '##NUMSTAT\n'
+        git -c core.quotepath=off --no-optional-locks diff --numstat HEAD 2>/dev/null
+      })
+      ;;
+    codexcfg)
+      # the only file this helper may read besides the ones named in a request: Codex's own config
+      f="${CODEX_HOME:-$HOME/.codex}/config.toml"
+      if [ -f "$f" ]; then out="EXISTS
+$(cat "$f")"; else out="MISSING"; fi
+      ;;
+    codexcfgw)
+      # the only file this helper writes: Codex's config, after copying the old one to a backup name (a2)
+      dir="${CODEX_HOME:-$HOME/.codex}"
+      f="$dir/config.toml"
+      bk=$(dec "$a2" | tr -cd 'A-Za-z0-9._-')
+      mkdir -p "$dir" 2>/dev/null
+      [ -f "$f" ] && [ -n "$bk" ] && cp "$f" "$dir/$bk" 2>/dev/null
+      if dec "$a1" > "$f.agentdock-tmp" 2>/dev/null && mv "$f.agentdock-tmp" "$f" 2>/dev/null; then out=OK; else rm -f "$f.agentdock-tmp"; out=FAIL; fi
+      ;;
     home) out=$HOME ;;
     ping) out=pong ;;
   esac

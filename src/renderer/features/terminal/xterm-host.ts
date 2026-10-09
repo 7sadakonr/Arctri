@@ -16,9 +16,11 @@ import { BlockTracker } from './block-tracker';
 import { TERMINAL_FONT, terminalTheme } from './theme';
 
 /** Key chords handled by the app; xterm must not forward them to the shell. */
-function isAppChord(e: KeyboardEvent): boolean {
+function isAppChord(e: KeyboardEvent, agentActive: boolean): boolean {
   if (e.type !== 'keydown') return false;
   const k = e.key.toLowerCase();
+  if (e.ctrlKey && e.shiftKey && k === 'e') return true; // file panel
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g' && agentActive) return true; // Rich Input
   if (e.ctrlKey && e.shiftKey && ['t', 'w', 'n', ','].includes(k)) return true;
   if (e.ctrlKey && k === 'tab') return true;
   if (e.ctrlKey && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true;
@@ -100,7 +102,17 @@ export class TerminalHost {
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
     this.term.onData((d) => api.sessions.write(info.id, d));
     this.term.onResize(({ cols, rows }) => void api.sessions.resize(info.id, cols, rows));
-    this.term.onBell(() => undefined);
+    this.term.onBell(() => this.agentSignal('', ''));
+    // OSC 9 (message) and OSC 777 (notify;title;body): how agent CLIs ask for attention. OSC 9;4 is progress, not a message.
+    this.term.parser.registerOscHandler(9, (data) => {
+      if (!/^\d+(;|$)/.test(data)) this.agentSignal('', data);
+      return true;
+    });
+    this.term.parser.registerOscHandler(777, (data) => {
+      const [kind, title = '', ...body] = data.split(';');
+      if (kind === 'notify') this.agentSignal(title, body.join(';'));
+      return true;
+    });
 
     this.unsubData = api.sessions.onData(info.id, (chunk) => {
       this.term.write(chunk, () => api.sessions.ack(info.id, chunk.length));
@@ -108,6 +120,25 @@ export class TerminalHost {
 
     this.observer = new ResizeObserver(() => this.scheduleFit());
     this.observer.observe(this.element);
+  }
+
+  private lastSignalAt = 0;
+
+  /** A bell or notification from the program. Only agents are allowed to ask for attention, and only when nobody is looking. */
+  private agentSignal(title: string, body: string): void {
+    const info = this.info;
+    if (info.kind !== 'agent' && !info.runningAgent) return;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const watching = useSessions.getState().activeId === info.id && document.hasFocus();
+    if (watching) return;
+    const now = Date.now();
+    if (now - this.lastSignalAt < 10_000) return;
+    this.lastSignalAt = now;
+    if (useSessions.getState().activeId !== info.id) useSessions.getState().setAttention(info.id, true);
+    if (useUi.getState().prefs.agentNotifications) {
+      const name = agentId === 'claude-code' ? 'Claude Code' : agentId === 'codex' ? 'Codex' : info.title;
+      void api.app.notify(info.id, title || name, body || tNow('agent.needsAttention'));
+    }
   }
 
   mount(parent: HTMLElement): void {
@@ -156,7 +187,7 @@ export class TerminalHost {
   }
 
   private onKey(e: KeyboardEvent): boolean {
-    if (isAppChord(e)) return false;
+    if (isAppChord(e, this.info.kind === 'agent' || !!this.info.runningAgent)) return false;
     if (e.type !== 'keydown') return true;
     const k = e.key.toLowerCase();
     if (e.ctrlKey && k === 'c' && (e.shiftKey || this.term.hasSelection())) {

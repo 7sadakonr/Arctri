@@ -11,6 +11,9 @@ import { tNow, useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { Asterisk, Hexagon } from 'lucide-react';
+import { AGENT_META } from '@shared/agents/meta';
+import { FileExplorer } from '../agents/FileExplorer';
 import { BlockList } from '../blocks/BlockList';
 import { CommandEditor } from '../editor/CommandEditor';
 import { closeSession, openShell, restartSession } from '../launcher/actions';
@@ -62,6 +65,7 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
   const host = getHost(info);
   const uiPhase = useSessions((s) => s.uiPhase[info.id] ?? 'unknown');
   const native = useSessions((s) => !!s.nativePrompt[info.id]);
+  const explorerOpen = useSessions((s) => !!s.explorer[info.id]);
   const running = useBlocks((s) => s.blocks[info.id]?.findLast((b) => b.status === 'running'));
 
   const blockMode = info.kind === 'shell' && info.presentation === 'blocks' && info.integration === 'active';
@@ -92,14 +96,24 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       data-active={active}
       className={cn('absolute inset-0 flex flex-col', !active && 'pointer-events-none invisible')}
     >
-      <div className="relative min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1">
         {blockMode && <BlockList sessionId={info.id} active={active} />}
         <div
           ref={mountRef}
-          className={cn('absolute inset-0', blockMode && 'z-10', liveVisible ? 'visible' : 'pointer-events-none invisible')}
+          // Block mode reserves the top 28px for the status bar for good, so the PTY keeps one size and a
+          // full-screen program's first rows are never hidden behind the bar.
+          className={cn(
+            'absolute inset-x-0 bottom-0',
+            blockMode ? 'top-7 z-10' : 'top-0',
+            liveVisible ? 'visible' : 'pointer-events-none invisible'
+          )}
         />
         {blockMode && liveVisible && !ended && (
-          <div className="absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-2 border-b border-border bg-panel/95 px-3 text-[11px] text-fg-muted">
+          <div
+            data-testid="running-bar"
+            className="absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-2 border-b border-border bg-panel px-3 text-[11px] text-fg-muted"
+          >
             {native && uiPhase !== 'executing' ? (
               <>
                 <span>{t('toolbar.nativePrompt')}</span>
@@ -110,10 +124,22 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
               </>
             ) : (
               <>
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warn" />
-                <span className="min-w-0 flex-1 truncate font-mono text-fg" title={running?.command}>
-                  {running?.command ?? t('live.running')}
-                </span>
+                {info.runningAgent ? (
+                  <>
+                    {info.runningAgent.agentId === 'claude-code' ? <Asterisk size={13} className="text-orange-400" /> : <Hexagon size={13} className="text-accent" />}
+                    <span className="min-w-0 flex-1 truncate text-fg" title={running?.command}>
+                      {AGENT_META[info.runningAgent.agentId].name}
+                      <span className="ml-2 font-mono text-fg-muted">{running?.command}</span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-warn" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-fg" title={running?.command}>
+                      {running?.command ?? t('live.running')}
+                    </span>
+                  </>
+                )}
                 {running && <Elapsed since={running.startedAt} />}
                 <Button variant="ghost" size="sm" onClick={() => api.sessions.write(info.id, '\x03')}>
                   <Square size={11} />
@@ -162,9 +188,11 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
           </div>
         )}
       </div>
+      {explorerOpen && info.cwd && <FileExplorer info={info} />}
+      </div>
       {info.presentation === 'classic' && info.kind === 'shell' && <ClassicBar info={info} />}
       {canType && <CommandEditor sessionId={info.id} focused={active} />}
-      <BottomToolbar info={info} />
+      <BottomToolbar info={info} active={active} />
     </div>
   );
 }

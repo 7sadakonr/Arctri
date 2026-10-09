@@ -71,7 +71,7 @@ export class WslHelperClient {
   }
 
   /** Resolves with the decoded output, or null on timeout or when the helper is unavailable. */
-  request(op: 'ls' | 'cmds' | 'branches' | 'cat' | 'branch' | 'home' | 'ping', args: string[] = [], timeoutMs = 1500): Promise<string | null> {
+  request(op: 'ls' | 'cmds' | 'branches' | 'cat' | 'branch' | 'home' | 'ping' | 'gitstat' | 'codexcfg' | 'codexcfgw', args: string[] = [], timeoutMs = 1500): Promise<string | null> {
     const p = this.start();
     if (!p) return Promise.resolve(null);
     clearTimeout(this.idle);
