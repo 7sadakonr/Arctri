@@ -1,0 +1,34 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # npm 12 blocks install scripts; Electron's binary download is run explicitly.
+      - run: node node_modules/electron/install.js
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # Real PTYs: PowerShell 5.1 and 7 are on the runner, WSL distributions are not.
+      - run: npm run test:integration
+        env:
+          AGENTDOCK_SKIP_WSL: '1'
+      - run: npm run dist
+      - name: Silent install and smoke test of the installer
+        run: node scripts/smoke-installed.mjs --install (Get-ChildItem release/AgentDock-Setup-*.exe).FullName
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: release/AgentDock-Setup-*.exe

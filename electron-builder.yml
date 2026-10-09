@@ -1,0 +1,52 @@
+appId: dev.agentdock.app
+productName: AgentDock
+copyright: Copyright (c) AgentDock contributors
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - '!**/*.{pdb,map}'
+  # x64 only in MVP 1: leave out other platforms' native binaries
+  - '!node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**'
+  - '!node_modules/node-pty/third_party/conpty/*/win10-arm64/**'
+  - '!node_modules/node-pty/prebuilds/win32-x64/winpty*'
+  - '!node_modules/better-sqlite3/prebuilds/{darwin-*,linux*,win32-arm64}.node'
+# Native modules ship N-API prebuilds inside their packages (ADR-006): nothing is rebuilt.
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+asar: true
+asarUnpack:
+  # conpty.dll / OpenConsole.exe / pty.node must be real files so they can be loaded and executed
+  - node_modules/node-pty/**
+  - node_modules/better-sqlite3/**
+extraResources:
+  # shell integration scripts are read by PowerShell, bash and zsh from disk
+  - from: resources/shell-integration
+    to: shell-integration
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: AgentDock-Setup-${version}-${arch}.${ext}
+  # Unsigned in MVP 1: Windows SmartScreen will warn on first run (docs/RELEASE.md).
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AgentDock
+  uninstallDisplayName: AgentDock
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true

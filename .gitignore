@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.DS_Store
+.vscode/
+poc/**/output/
+tests/fixtures/*.exe
+test-results/
+playwright-report/
+poc/*.log
+poc/*.json
+poc/*.out

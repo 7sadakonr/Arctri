@@ -1,0 +1,124 @@
+@import 'tailwindcss';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/ibm-plex-sans-thai/400.css';
+@import '@fontsource/ibm-plex-sans-thai/500.css';
+@import '@fontsource/ibm-plex-sans-thai/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/noto-sans-thai/400.css';
+@import '@fontsource/noto-sans-thai/600.css';
+
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+@theme {
+  --color-bg: var(--ad-bg);
+  --color-panel: var(--ad-panel);
+  --color-fg: var(--ad-fg);
+  --color-fg-muted: var(--ad-fg-muted);
+  --color-border: var(--ad-border);
+  --color-hover: var(--ad-hover);
+  --color-accent: var(--ad-accent);
+  --color-accent-fg: var(--ad-accent-fg);
+  --color-ok: #3fa24c;
+  --color-danger: #e0554c;
+  --color-warn: #e5c07b;
+  --font-sans: 'Inter', 'IBM Plex Sans Thai', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Noto Sans Thai', 'Leelawadee UI', Consolas, monospace;
+}
+
+:root,
+[data-theme='dark'] {
+  --ad-bg: #0e0f13;
+  --ad-panel: #15171d;
+  --ad-fg: #d7dae3;
+  --ad-fg-muted: #8a8fa0;
+  --ad-border: #23252e;
+  --ad-hover: #1d2029;
+  --ad-accent: #7aa2ff;
+  --ad-accent-fg: #0b1020;
+  color-scheme: dark;
+}
+[data-theme='light'] {
+  --ad-bg: #fbfbfd;
+  --ad-panel: #f1f2f6;
+  --ad-fg: #23252e;
+  --ad-fg-muted: #666b7d;
+  --ad-border: #dcdee6;
+  --ad-hover: #e8eaf1;
+  --ad-accent: #2358c4;
+  --ad-accent-fg: #ffffff;
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+body {
+  background: var(--ad-bg);
+  color: var(--ad-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+:lang(th) {
+  line-break: strict;
+}
+button {
+  cursor: default;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+.drag {
+  -webkit-app-region: drag;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ad-border) transparent;
+}
+
+.xterm-host {
+  position: absolute;
+  inset: 0;
+  padding: 6px 0 0 8px;
+  background: var(--ad-bg);
+}
+.xterm .xterm-viewport {
+  background: transparent !important;
+}
+
+/* Finished-command output: chunks use content-visibility so long blocks stay cheap. */
+.block-output {
+  font-family: var(--font-mono);
+  font-size: var(--ad-term-size, 13px);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.block-chunk {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1400px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fade-in {
+    animation: fade-in 120ms ease-out;
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

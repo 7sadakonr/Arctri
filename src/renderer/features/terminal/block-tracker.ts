@@ -1,0 +1,157 @@
+import { OSC_AGENTDOCK, OSC_MARK, parseOsc } from '@shared/osc/protocol';
+import { ShellStateMachine, type Transition } from '@shared/shell/state-machine';
+import type { BlockSnapshot, CommandBlock } from '@shared/types/block';
+import type { EnvPath, EnvironmentRef, ShellKind } from '@shared/types/env';
+import { snapshotRange, type BufferLike } from './snapshot';
+
+interface MarkerLike {
+  readonly line: number;
+  readonly isDisposed: boolean;
+  dispose(): void;
+}
+interface Disposable {
+  dispose(): void;
+}
+interface TrackerTerm {
+  parser: { registerOscHandler(id: number, cb: (data: string) => boolean): Disposable };
+  buffer: { active: BufferLike & { type: string }; normal: BufferLike; onBufferChange(cb: (b: { type: string }) => void): Disposable };
+  registerMarker(offset?: number): MarkerLike | undefined;
+}
+
+export interface TrackerEvents {
+  onBlockStarted(block: CommandBlock): void;
+  onBlockFinished(block: CommandBlock): void;
+  onPhase?(phase: ShellStateMachine['phase']): void;
+  onCwd?(cwd: string): void;
+  onAnomaly?(reason: string): void;
+}
+
+export interface TrackerSession {
+  sessionId: string;
+  nonce: string;
+  env: EnvironmentRef;
+  shell: ShellKind;
+}
+
+/**
+ * Turns shell-integration sequences into command blocks while the PTY stream keeps flowing
+ * into the one real terminal. OSC handlers run synchronously while xterm parses, so the
+ * markers they place and the buffer they read line up exactly with the bytes that triggered them.
+ */
+export class BlockTracker {
+  readonly sm = new ShellStateMachine();
+  private marker: MarkerLike | undefined;
+  private current: CommandBlock | undefined;
+  private altSeen = false;
+  private seq = 0;
+  private disposables: Disposable[] = [];
+
+  constructor(
+    private readonly term: TrackerTerm,
+    private session: TrackerSession,
+    private readonly events: TrackerEvents,
+    private readonly now: () => number = Date.now
+  ) {
+    for (const id of [OSC_MARK, OSC_AGENTDOCK]) {
+      this.disposables.push(term.parser.registerOscHandler(id, (data) => this.handle(id, data)));
+    }
+    this.disposables.push(
+      term.buffer.onBufferChange((b) => {
+        if (b.type === 'alternate' && this.current) this.altSeen = true;
+      })
+    );
+  }
+
+  update(session: Partial<TrackerSession>): void {
+    this.session = { ...this.session, ...session };
+  }
+
+  private handle(id: number, data: string): boolean {
+    const ev = parseOsc(id, data, this.session.nonce);
+    if (!ev) return false; // not ours (or forged): let xterm treat it as an ordinary OSC
+    const tr = this.sm.apply(ev, this.now());
+    if (ev.t === 'cwd') this.events.onCwd?.(this.sm.cwd ?? '');
+    this.handleTransition(tr);
+    this.events.onPhase?.(this.sm.phase);
+    return true;
+  }
+
+  private handleTransition(tr: Transition): void {
+    switch (tr.kind) {
+      case 'blockStarted': {
+        this.marker?.dispose();
+        this.marker = this.term.registerMarker(0);
+        this.altSeen = this.term.buffer.active.type === 'alternate';
+        const cwd = this.cwdPath();
+        const block: CommandBlock = {
+          id: `${this.session.sessionId}:${++this.seq}`,
+          sessionId: this.session.sessionId,
+          ...(tr.command.commandId !== undefined ? { commandId: tr.command.commandId } : {}),
+          command: tr.command.text,
+          ...(cwd ? { cwd } : {}),
+          env: this.session.env,
+          shell: this.session.shell,
+          status: 'running',
+          startedAt: tr.command.startedAt,
+          usedAltScreen: false,
+          collapsed: false
+        };
+        this.current = block;
+        this.events.onBlockStarted({ ...block });
+        break;
+      }
+      case 'blockFinished': {
+        const block = this.current;
+        this.current = undefined;
+        if (!block) break;
+        const finished: CommandBlock = {
+          ...block,
+          status: tr.status === 'failed' && (tr.exitCode === 130 || tr.exitCode === -1073741510) ? 'interrupted' : tr.status,
+          endedAt: tr.endedAt,
+          usedAltScreen: this.altSeen,
+          output: this.capture()
+        };
+        if (tr.exitCode !== undefined) finished.exitCode = tr.exitCode;
+        this.marker?.dispose();
+        this.marker = undefined;
+        this.events.onBlockFinished(finished);
+        break;
+      }
+      case 'anomaly':
+        this.events.onAnomaly?.(tr.reason);
+        break;
+      case 'none':
+        break;
+    }
+  }
+
+  private cwdPath(): EnvPath | undefined {
+    const p = this.sm.cwd;
+    if (!p) return undefined;
+    return this.session.env.kind === 'windows'
+      ? { env: 'windows', path: p as never }
+      : { env: 'wsl', distro: this.session.env.distro, path: p as never };
+  }
+
+  /** Output of the command that just ended: from its marker to the cursor, normal buffer only. */
+  private capture(): BlockSnapshot {
+    const buf = this.term.buffer.normal;
+    const cursorRow = buf.baseY + buf.cursorY;
+    const end = buf.cursorX === 0 ? cursorRow : cursorRow + 1;
+    const gone = !this.marker || this.marker.isDisposed || this.marker.line < 0;
+    const start = gone ? 0 : this.marker!.line;
+    return snapshotRange(buf, start, end, gone);
+  }
+
+  /** The PTY closed while a command was running. */
+  closed(): void {
+    this.handleTransition(this.sm.closed(this.now()));
+    this.events.onPhase?.(this.sm.phase);
+  }
+
+  dispose(): void {
+    this.marker?.dispose();
+    for (const d of this.disposables) d.dispose();
+    this.disposables = [];
+  }
+}

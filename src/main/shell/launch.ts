@@ -1,0 +1,106 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import type { EnvPath, ShellProfile } from '@shared/types/env';
+import { integrationDir } from '../paths';
+
+export interface LaunchContext {
+  sessionId: string;
+  nonce: string;
+  /** true: the shell clears the screen after each command (block presentation). */
+  blocks: boolean;
+  cwd?: EnvPath;
+  /** Converts a Windows path to a path inside the distro. */
+  toPosix: (distro: string, winPath: string) => Promise<string | null>;
+}
+
+export interface LaunchPlan {
+  file: string;
+  args: string[] | string;
+  cwd: string;
+  env: Record<string, string>;
+  /** Set when a requested cwd could not be used. */
+  note?: string;
+}
+
+const WSL_FORWARD = ['AGENTDOCK_NONCE', 'AGENTDOCK_BLOCKS', 'AGENTDOCK_SESSION', 'TERM_PROGRAM', 'COLORTERM'];
+
+function baseEnv(ctx: LaunchContext, withIntegration: boolean): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  env['TERM_PROGRAM'] = 'AgentDock';
+  env['COLORTERM'] = 'truecolor';
+  env['AGENTDOCK_SESSION'] = ctx.sessionId;
+  if (withIntegration) {
+    env['AGENTDOCK_NONCE'] = ctx.nonce;
+    env['AGENTDOCK_BLOCKS'] = ctx.blocks ? '1' : '0';
+  }
+  return env;
+}
+
+/** -EncodedCommand is not subject to execution policy and needs no quoting. */
+function psEncoded(script: string): string {
+  return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+export async function resolveLinuxCwd(
+  distro: string,
+  cwd: EnvPath | undefined,
+  toPosix: LaunchContext['toPosix']
+): Promise<{ cwd: string; note?: string }> {
+  if (!cwd) return { cwd: '~' };
+  if (cwd.env === 'wsl') return cwd.distro === distro ? { cwd: cwd.path } : { cwd: '~' };
+  const mapped = await toPosix(distro, cwd.path);
+  return mapped ? { cwd: mapped } : { cwd: '~', note: 'cwd-unmapped' };
+}
+
+export function baseLaunchEnv(sessionId: string, nonce: string, withIntegration: boolean, blocks: boolean): Record<string, string> {
+  return baseEnv({ sessionId, nonce, blocks, toPosix: async () => null }, withIntegration);
+}
+
+export const WSL_ENV_FORWARD = WSL_FORWARD;
+
+export function windowsCwd(cwd: EnvPath | undefined): { cwd: string; note?: string } {
+  if (cwd && cwd.env === 'windows') return { cwd: cwd.path };
+  return { cwd: homedir() };
+}
+
+export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext): Promise<LaunchPlan> {
+  const withIntegration = profile.integration !== 'none';
+  const env = baseEnv(ctx, withIntegration);
+
+  if (profile.env.kind === 'windows') {
+    const { cwd } = windowsCwd(ctx.cwd);
+    if (profile.shell === 'cmd') {
+      // cmd cannot report command boundaries; PROMPT only reports the working directory.
+      env['PROMPT'] = `$E]6973;${ctx.nonce};cwdp;$P$E\\$P$G`;
+      return { file: profile.executable, args: [], cwd, env };
+    }
+    const script = readFileSync(join(integrationDir(), 'agentdock.ps1'), 'utf8');
+    return {
+      file: profile.executable,
+      args: ['-NoLogo', '-NoExit', '-EncodedCommand', psEncoded(script)],
+      cwd,
+      env
+    };
+  }
+
+  // WSL: spawn wsl.exe, which hands the PTY to a Linux shell in the chosen distro.
+  const distro = profile.env.distro;
+  env['WSLENV'] = [env['WSLENV'], ...WSL_FORWARD].filter(Boolean).join(':');
+  const { cwd: linuxCwd, note } = await resolveLinuxCwd(distro, ctx.cwd, ctx.toPosix);
+  const dir = integrationDir();
+  const args = ['-d', distro, '--cd', linuxCwd, '--exec'];
+  if (profile.shell === 'zsh') {
+    const shim = await ctx.toPosix(distro, join(dir, 'zsh'));
+    if (!shim) throw new Error(`Cannot map integration scripts into ${distro}`);
+    args.push('sh', '-c', 'USER_ZDOTDIR="${ZDOTDIR:-$HOME}" ZDOTDIR="$1" exec zsh -i', 'sh', shim);
+  } else {
+    const rc = await ctx.toPosix(distro, join(dir, 'agentdock.bash'));
+    if (!rc) throw new Error(`Cannot map integration scripts into ${distro}`);
+    args.push('bash', '--rcfile', rc, '-i');
+  }
+  const plan: LaunchPlan = { file: profile.executable, args, cwd: homedir(), env };
+  if (note) plan.note = note;
+  return plan;
+}
