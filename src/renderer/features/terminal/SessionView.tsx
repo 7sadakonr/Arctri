@@ -68,6 +68,7 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
   const native = useSessions((s) => !!s.nativePrompt[info.id]);
   const explorerOpen = useSessions((s) => !!s.explorer[info.id]);
   const viewerOpen = useSessions((s) => !!s.viewer[info.id]);
+  const viewerMax = useSessions((s) => !!s.viewer[info.id]?.maximized);
   const running = useBlocks((s) => s.blocks[info.id]?.findLast((b) => b.status === 'running'));
 
   const blockMode = info.kind === 'shell' && info.presentation === 'blocks' && info.integration === 'active';
@@ -99,7 +100,8 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       aria-hidden={!active}
       className={cn('absolute inset-0 flex', !active && 'pointer-events-none invisible')}
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
+      <div className={cn('flex flex-col overflow-hidden', viewerOpen && viewerMax ? 'w-0 min-w-0 flex-none' : 'min-w-[320px] flex-1')}>
       <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 min-w-0 flex-1">
         {blockMode && <BlockList sessionId={info.id} active={active} />}
@@ -203,7 +205,6 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       {canType && <CommandEditor sessionId={info.id} focused={active} />}
       <BottomToolbar info={info} active={active} />
       </div>
-      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
       {explorerOpen && info.cwd && <FileExplorer info={info} active={active} />}
     </div>
   );

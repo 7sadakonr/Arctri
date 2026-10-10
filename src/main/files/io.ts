@@ -31,6 +31,12 @@ export type FileReadResult =
   | { ok: true; text: string; eol: Eol; bom: boolean; mtimeMs: number; size: number }
   | { ok: false; error: FileReadError };
 
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+export type ImageReadResult =
+  | { ok: true; base64: string; mtimeMs: number; size: number }
+  | { ok: false; error: FileReadError };
+
 export type FileWriteResult =
   | { ok: true; mtimeMs: number }
   | { ok: false; error: 'conflict' | 'denied' | 'failed'; mtimeMs?: number };

@@ -5,7 +5,7 @@ import { search, searchKeymap } from '@codemirror/search';
 import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
-import { AtSign, Save, X } from 'lucide-react';
+import { AtSign, Maximize2, Minimize2, Save, WrapText, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SessionInfo } from '@shared/types/session';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { insertText, refOf } from '../agents/insert';
+import { iconUrl } from '@/lib/file-icon';
+import { ImageView, isImage } from './ImageView';
 import { languageFor } from './language';
 
 const theme = EditorView.theme({
@@ -61,8 +63,8 @@ type Doc =
 export function FileViewer({ info, active }: { info: SessionInfo; active: boolean }) {
   const t = useT();
   const view = useSessions((s) => s.viewer[info.id]);
-  const rel = view?.rel ?? '';
-  const mode = view?.mode ?? 'file';
+  const rel = view?.active ?? '';
+  const mode = view?.tabs.find((x) => x.rel === rel)?.mode ?? 'file';
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | undefined>(undefined);
   const lang = useRef(new Compartment());
@@ -70,17 +72,97 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   const [dirty, setDirty] = useState(false);
   const [stale, setStale] = useState(false);
   const [noHead, setNoHead] = useState(false);
+  const [noChange, setNoChange] = useState(false);
+  const savedWidth = useUi((s) => s.prefs.viewerWidth);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const maximized = !!view?.maximized;
+  const setMaximized = (on: boolean) => useSessions.getState().setViewerMaximized(info.id, on);
+  const [wrap, setWrap] = useState(true);
+  const wrapC = useRef(new Compartment());
+  const wrapRef = useRef(true);
+  wrapRef.current = wrap;
+  const width = dragWidth ?? savedWidth;
+  const saveWidth = (w: number) => {
+    if (w !== savedWidth) useUi.getState().setPrefs({ ...useUi.getState().prefs, viewerWidth: w }); // no snap-back while the save is in flight
+    setDragWidth(null);
+    if (w !== savedWidth) void api.prefs.set({ viewerWidth: w }).then((p) => useUi.getState().setPrefs(p), () => undefined);
+  };
   const [nonce, setNonce] = useState(0); // bumped to load the file again
   const mtime = useRef(0);
   const dirtyRef = useRef(false);
   const textRef = useRef<string | undefined>(undefined); // unsaved text carried over when only the mode changes
+  // editor state (text, undo history, cursor) of the tabs that are not on screen
+  const cache = useRef(new Map<string, { state: EditorState; eol: 'lf' | 'crlf'; bom: boolean; mtime: number; noHead: boolean }>());
+  const shown = useRef<string | undefined>(undefined); // the file the editor currently holds
+  const meta = useRef<{ eol: 'lf' | 'crlf'; bom: boolean; noHead: boolean }>({ eol: 'lf', bom: false, noHead: false });
+  const dirtyRels = useRef(new Set<string>());
+  const [dirtySet, setDirtySet] = useState<Set<string>>(new Set());
+  const markDirty = (r: string, on: boolean) => {
+    if (dirtyRels.current.has(r) === on) return;
+    if (on) dirtyRels.current.add(r);
+    else dirtyRels.current.delete(r);
+    setDirtySet(new Set(dirtyRels.current));
+  };
+  const reload = (r: string) => {
+    cache.current.delete(r);
+    if (r === shown.current) shown.current = undefined;
+    setNonce((n) => n + 1);
+  };
+  const t0 = t;
+  const closeTab = (r: string) => {
+    if (dirtyRels.current.has(r) && !window.confirm(t0('viewer.discard'))) return;
+    cache.current.delete(r);
+    markDirty(r, false);
+    if (useSessions.getState().viewer[info.id]?.tabs.length === 1) shown.current = undefined;
+    useSessions.getState().closeViewer(info.id, r);
+  };
+  const close = () => {
+    if (dirtyRels.current.size && !window.confirm(t0('viewer.discard'))) return;
+    useSessions.getState().closeViewer(info.id);
+  };
+  const closeTabRef = useRef(closeTab);
+  closeTabRef.current = closeTab;
+  const closeRef = useRef(close);
+  closeRef.current = close;
 
-  const close = () => useSessions.getState().closeViewer(info.id);
+  // forget tabs that were closed elsewhere
+  useEffect(() => {
+    const open = new Set(view?.tabs.map((x) => x.rel));
+    for (const r of [...cache.current.keys()]) if (!open.has(r)) cache.current.delete(r);
+    for (const r of [...dirtyRels.current]) if (!open.has(r)) markDirty(r, false);
+  }, [view]);
 
   // (re)load the file and build the editor
   useEffect(() => {
     if (!rel) return;
+    if (isImage(rel)) {
+      // an image has no editor: park the text file we leave so its unsaved edits survive
+      const left = shown.current;
+      if (left && editor.current) cache.current.set(left, { state: editor.current.state, ...meta.current, mtime: mtime.current });
+      shown.current = undefined;
+      return;
+    }
     let dead = false;
+    // park the file we are leaving, bring back the one we return to
+    const prev = shown.current;
+    if (prev && prev !== rel && editor.current) {
+      cache.current.set(prev, { state: editor.current.state, ...meta.current, mtime: mtime.current });
+    }
+    const hit = prev !== rel ? cache.current.get(rel) : undefined;
+    if (hit && editor.current) {
+      editor.current.setState(hit.state);
+      editor.current.dispatch({ effects: wrapC.current.reconfigure(wrapRef.current ? EditorView.lineWrapping : []) });
+      meta.current = { eol: hit.eol, bom: hit.bom, noHead: hit.noHead };
+      mtime.current = hit.mtime;
+      shown.current = rel;
+      dirtyRef.current = dirtyRels.current.has(rel);
+      setDirty(dirtyRef.current);
+      setNoHead(hit.noHead);
+      setNoChange(false);
+      setStale(false);
+      setDoc({ state: 'ready', eol: hit.eol, bom: hit.bom, mtimeMs: hit.mtime });
+      return;
+    }
     setDoc({ state: 'loading' });
     void (async () => {
       const r = await api.files.read(info.id, rel);
@@ -98,27 +180,36 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       const text = carried ?? r.text;
       mtime.current = r.mtimeMs;
       setNoHead(head === null);
-      setDirty(carried !== undefined && carried !== r.text);
-      dirtyRef.current = carried !== undefined && carried !== r.text;
+      setNoChange(base !== undefined && head !== null && base === text.replace(/\r\n/g, '\n'));
+      const isDirty = carried !== undefined && carried !== r.text;
+      setDirty(isDirty);
+      dirtyRef.current = isDirty;
+      markDirty(rel, isDirty);
+      meta.current = { eol: r.eol, bom: r.bom, noHead: head === null };
       setStale(false);
       const extensions: Extension[] = [
         lineNumbers(), history(), drawSelection(), highlightActiveLine(), search({ top: true }),
         theme, syntaxHighlighting(highlight), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         lang.current.of(language ?? []),
+        wrapC.current.of(wrapRef.current ? EditorView.lineWrapping : []),
         keymap.of([
           { key: 'Mod-s', run: () => (void save(), true) },
-          { key: 'Escape', run: () => (close(), true) },
+          { key: 'Escape', run: () => (closeRef.current(), true) },
+          { key: 'Mod-w', run: () => (closeTabRef.current(rel), true) },
           ...searchKeymap, ...historyKeymap, ...defaultKeymap
         ]),
         EditorView.updateListener.of((u) => {
           if (!u.docChanged) return;
           dirtyRef.current = true;
           setDirty(true);
+          markDirty(rel, true);
         }),
-        ...(base !== undefined ? [unifiedMergeView({ original: base, mergeControls: false, gutter: true })] : [])
+        ...(base !== undefined ? [unifiedMergeView({ original: base, mergeControls: false, gutter: true, collapseUnchanged: { margin: 3, minSize: 6 } })] : [])
       ];
-      editor.current?.destroy();
-      editor.current = new EditorView({ parent: host.current, state: EditorState.create({ doc: text, extensions }) });
+      const state = EditorState.create({ doc: text, extensions });
+      if (editor.current) editor.current.setState(state);
+      else editor.current = new EditorView({ parent: host.current, state });
+      shown.current = rel;
       setDoc({ state: 'ready', eol: r.eol, bom: r.bom, mtimeMs: r.mtimeMs });
     })();
     return () => {
@@ -127,6 +218,11 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   }, [info.id, rel, mode, nonce]);
 
   useEffect(() => () => editor.current?.destroy(), []);
+
+  // soft wrap follows the toggle; cached tabs pick it up when they come back
+  useEffect(() => {
+    editor.current?.dispatch({ effects: wrapC.current.reconfigure(wrap ? EditorView.lineWrapping : []) });
+  }, [wrap]);
 
   const save = useCallback(async () => {
     const ev = editor.current;
@@ -138,6 +234,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       mtime.current = r.mtimeMs;
       dirtyRef.current = false;
       setDirty(false);
+      markDirty(rel, false);
       setStale(false);
       useUi.getState().toast(t('viewer.saved'));
     } else if (r.error === 'conflict') {
@@ -155,7 +252,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       void api.files.stat(info.id, rel).then((s) => {
         if (!s || s.mtimeMs === mtime.current) return;
         if (dirtyRef.current) setStale(true);
-        else setNonce((n) => n + 1);
+        else reload(rel);
       }, () => undefined);
     }, 1500);
     return () => clearInterval(i);
@@ -166,20 +263,78 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   const switchMode = (m: 'file' | 'diff') => {
     if (m === mode) return;
     if (dirtyRef.current && editor.current) textRef.current = editor.current.state.doc.toString();
+    cache.current.delete(rel);
+    shown.current = rel; // same file, other mode: rebuild in place
     useSessions.getState().openViewer(info.id, rel, m);
   };
+  const image = isImage(rel);
+  const unchanged = !image && mode === 'diff' && noChange && !stale;
   const errorText = doc.state === 'error'
     ? t(doc.error === 'binary' ? 'viewer.binary' : doc.error === 'too-large' ? 'viewer.tooLarge' : doc.error === 'not-found' ? 'viewer.notFound' : 'viewer.failed')
     : '';
 
   return (
-    <aside data-testid="file-viewer" className="flex min-h-0 w-[min(46%,720px)] min-w-[320px] shrink-0 flex-col border-l border-border bg-bg">
+    <aside
+      data-testid="file-viewer"
+      style={maximized ? undefined : { width }}
+      className={cn(
+        'relative flex min-h-0 min-w-0 flex-col border-r border-border bg-bg',
+        maximized ? 'flex-1' : 'min-w-[280px] max-w-[70%] shrink-0'
+      )}
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('viewer.resize')}
+        className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
+        onPointerDown={(e) => {
+          if (maximized) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setDragWidth(width);
+        }}
+        onPointerMove={(e) => {
+          if (dragWidth === null) return;
+          const left = e.currentTarget.parentElement!.getBoundingClientRect().left;
+          setDragWidth(Math.round(Math.min(1600, Math.max(280, e.clientX - left))));
+        }}
+        onPointerUp={() => dragWidth !== null && saveWidth(dragWidth)}
+        onDoubleClick={() => saveWidth(560)}
+      />
+      <div role="tablist" className="flex h-8 shrink-0 overflow-x-auto border-b border-border bg-panel text-[12px]">
+        {view.tabs.map((tab) => (
+          <div
+            key={tab.rel}
+            role="tab"
+            aria-selected={tab.rel === rel}
+            title={tab.rel}
+            onClick={() => useSessions.getState().openViewer(info.id, tab.rel, tab.mode)}
+            onAuxClick={(e) => e.button === 1 && closeTab(tab.rel)}
+            className={cn(
+              'group flex shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2',
+              tab.rel === rel ? 'bg-bg text-fg' : 'text-fg-muted hover:text-fg'
+            )}
+          >
+            <img src={iconUrl(baseName(tab.rel), false)} alt="" width={14} height={14} draggable={false} />
+            <span className="max-w-[160px] truncate">{baseName(tab.rel)}</span>
+            {dirtySet.has(tab.rel) && <span className="text-warn">●</span>}
+            <button
+              type="button"
+              title={t('viewer.closeTab')}
+              aria-label={t('viewer.closeTab')}
+              onClick={(e) => { e.stopPropagation(); closeTab(tab.rel); }}
+              className={cn('rounded p-0.5 hover:bg-hover', tab.rel === rel ? '' : 'invisible group-hover:visible')}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+      </div>
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border bg-panel px-2 text-[12px]">
         <span className="min-w-0 flex-1 truncate font-mono text-fg" title={rel}>
           {rel}
-          {dirty && <span className="ml-1 text-warn">●</span>}
+          {dirty && !image && <span className="ml-1 text-warn">●</span>}
         </span>
-        {(['file', 'diff'] as const).map((m) => (
+        {!image && (['file', 'diff'] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -192,27 +347,39 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
         <Button variant="ghost" size="sm" title={t('viewer.insertPath')} aria-label={t('viewer.insertPath')} onClick={() => insertText(info.id, refOf(rel.replace(/\\/g, '/')))}>
           <AtSign size={12} />
         </Button>
-        <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (Ctrl+S)`} aria-label={t('viewer.save')} onClick={() => void save()}>
-          <Save size={12} />
+        {!image && (
+          <>
+            <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (Ctrl+S)`} aria-label={t('viewer.save')} onClick={() => void save()}>
+              <Save size={12} />
+            </Button>
+            <Button variant="ghost" size="sm" title={t('viewer.wrap')} aria-label={t('viewer.wrap')} aria-pressed={wrap} onClick={() => setWrap((v) => !v)} className={cn(wrap && 'bg-hover')}>
+              <WrapText size={12} />
+            </Button>
+          </>
+        )}
+        <Button variant="ghost" size="sm" title={t(maximized ? 'viewer.restore' : 'viewer.maximize')} aria-label={t(maximized ? 'viewer.restore' : 'viewer.maximize')} onClick={() => setMaximized(!maximized)}>
+          {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
         </Button>
         <Button variant="ghost" size="sm" title={t('viewer.close')} aria-label={t('viewer.close')} onClick={close}>
           <X size={12} />
         </Button>
       </div>
-      {(stale || noHead) && (
+      {!image && (stale || noHead) && (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-panel px-3 py-1 text-[11px] text-warn">
           <span className="flex-1">{stale ? t('viewer.changed') : t('viewer.noHead')}</span>
           {stale && (
-            <Button variant="outline" size="sm" onClick={() => { dirtyRef.current = false; setNonce((n) => n + 1); }}>
+            <Button variant="outline" size="sm" onClick={() => { dirtyRef.current = false; markDirty(rel, false); reload(rel); }}>
               {t('viewer.reload')}
             </Button>
           )}
         </div>
       )}
       <div className="relative min-h-0 flex-1">
-        <div ref={host} className={cn('absolute inset-0', doc.state !== 'ready' && 'invisible')} />
-        {doc.state === 'loading' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.loading')}</div>}
-        {doc.state === 'error' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{errorText}</div>}
+        <div ref={host} className={cn('absolute inset-0', (image || unchanged || doc.state !== 'ready') && 'invisible')} />
+        {image && <ImageView key={rel} sessionId={info.id} rel={rel} active={active} />}
+        {unchanged && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.noChanges')}</div>}
+        {!image && doc.state === 'loading' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.loading')}</div>}
+        {!image && doc.state === 'error' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{errorText}</div>}
       </div>
     </aside>
   );

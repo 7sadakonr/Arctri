@@ -48,6 +48,7 @@ export const requestSchemas = {
   'agents:detect': z.object({ refresh: z.boolean().optional() }).optional(),
   'git:status': z.object({ sessionId: id }),
   'fs:read': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
+  'fs:readImage': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
   'fs:write': z.object({
     sessionId: id, rel: z.string().min(1).max(4096), text: z.string().max(5_500_000),
     eol: z.enum(['lf', 'crlf']), bom: z.boolean(), expectMtimeMs: z.number().optional()

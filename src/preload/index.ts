@@ -101,6 +101,10 @@ const api = {
       | { ok: true; text: string; eol: 'lf' | 'crlf'; bom: boolean; mtimeMs: number; size: number }
       | { ok: false; error: 'too-large' | 'binary' | 'not-found' | 'denied' | 'failed' }
     > => ipcRenderer.invoke('fs:read', { sessionId, rel }),
+    readImage: (sessionId: SessionId, rel: string): Promise<
+      | { ok: true; base64: string; mtimeMs: number; size: number }
+      | { ok: false; error: 'too-large' | 'binary' | 'not-found' | 'denied' | 'failed' }
+    > => ipcRenderer.invoke('fs:readImage', { sessionId, rel }),
     write: (
       sessionId: SessionId, rel: string, text: string, eol: 'lf' | 'crlf', bom: boolean, expectMtimeMs?: number
     ): Promise<{ ok: true; mtimeMs: number } | { ok: false; error: 'conflict' | 'denied' | 'failed'; mtimeMs?: number }> =>

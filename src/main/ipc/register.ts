@@ -159,6 +159,10 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const t = target(sessionId, rel);
     return t ? s.envQuery.readTextFile(t.info.env, t.root, t.abs) : { ok: false as const, error: 'denied' as const };
   });
+  r.handle('fs:readImage', async ({ sessionId, rel }) => {
+    const t = target(sessionId, rel);
+    return t ? s.envQuery.readImageFile(t.info.env, t.root, t.abs) : { ok: false as const, error: 'denied' as const };
+  });
   r.handle('fs:write', async ({ sessionId, rel, text, eol, bom, expectMtimeMs }) => {
     const t = target(sessionId, rel);
     return t

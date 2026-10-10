@@ -19,7 +19,7 @@ export function ShellToolbar({ info }: { info: SessionInfo }) {
   const native = useSessions((s) => !!s.nativePrompt[info.id]);
 
   return (
-    <div className="flex h-7 shrink-0 items-center gap-3 px-3 text-[11px] text-fg-muted">
+    <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-0.5 text-[11px] text-fg-muted">
       <span className="flex items-center gap-1.5 text-fg">
         <TerminalSquare size={12} />
         {envLabel(info)}
@@ -27,7 +27,7 @@ export function ShellToolbar({ info }: { info: SessionInfo }) {
       {info.cwd && (
         <Tip label={t('toolbar.copyPath')}>
           <button
-            className="flex min-w-0 max-w-[40%] items-center gap-1 hover:text-fg"
+            className="flex min-w-0 max-w-full flex-1 basis-[120px] items-center gap-1 hover:text-fg"
             onClick={() => void copyText(info.cwd!.path).then(() => useUi.getState().toast(tNow('block.copied')))}
             onDoubleClick={() => void api.app.openPath(info.id)}
           >

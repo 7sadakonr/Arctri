@@ -38,6 +38,7 @@ class FakeEnv implements EnvironmentQuery {
   async homeDir() { return '/home/me'; }
   async gitChanges() { return undefined; }
   async readTextFile(): Promise<never> { throw new Error('unused'); }
+  async readImageFile(): Promise<never> { throw new Error('unused'); }
   async writeTextFile(): Promise<never> { throw new Error('unused'); }
   async statFile() { return null; }
   async gitHeadText() { return undefined; }
