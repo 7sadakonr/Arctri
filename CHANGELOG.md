@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3-beta
+
+- Multi-tab file viewer on the left side of the terminal: several files open at once, image preview, word wrap,
+  maximize, and a resizable width.
+- CI fixes: installer smoke test, cleanup test and publishing behaviour.
+
 ## 0.1.2
 
 - New welcome page when no tab is open: New Terminal, Open Project, Clone Repository and the five most recent projects
