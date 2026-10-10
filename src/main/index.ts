@@ -33,7 +33,17 @@ if (!app.requestSingleInstanceLock()) {
 async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, outFile: string): Promise<void> {
   const deadline = Date.now() + 90_000;
   let result: Record<string, unknown> = { ok: false, reason: 'timeout' };
+  let started = false;
   while (Date.now() < deadline) {
+    // A fresh profile has no tabs to restore and the window shows the welcome page, so there is no shell to wait for: open one.
+    if (!started && Date.now() > deadline - 85_000 && sessions.list().length === 0) {
+      started = true;
+      const all = (await registry.refresh(false)).profiles;
+      const profile = all.find((p) => p.id === 'pwsh') ?? all.find((p) => !p.id.startsWith('wsl:'));
+      if (profile) {
+        await sessions.create({ profileId: profile.id, kind: 'shell', cols: 100, rows: 30, presentation: 'blocks' }).catch((e) => logger.error('smoke shell failed', e));
+      }
+    }
     const s = sessions.list().find((x) => x.integration === 'active' && x.phase === 'editing');
     if (s) {
       const native: Record<string, unknown> = {};
@@ -56,6 +66,14 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
       break;
     }
     await new Promise((r) => setTimeout(r, 250));
+  }
+  if (!result['ok']) {
+    // say what the app did see, so a timeout on a bare CI machine is not a blank
+    result = {
+      ...result,
+      sessions: sessions.list().map((x) => ({ shell: x.shell, state: x.state, phase: x.phase, integration: x.integration, kind: x.kind })),
+      profiles: registry.snapshot().profiles.map((p) => p.id)
+    };
   }
   writeFileSync(outFile, JSON.stringify(result));
   if (!result['ok']) process.exitCode = 1;
