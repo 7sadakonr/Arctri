@@ -8,11 +8,14 @@ beforeAll(async () => {
   profiles = await allProfiles();
 });
 
+const SYSTEM = new Set(['csrss', 'dwm', 'fontdrvhost', 'winlogon', 'wininit', 'services', 'lsass', 'smss', 'system', 'idle']);
+
 /** Windows processes with these pids that are still alive. */
 function aliveNamed(pids: number[]): string[] {
   if (pids.length === 0) return [];
   const out = execFileSync('powershell.exe', ['-NoProfile', '-Command', `Get-Process -Id ${pids.join(',')} -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Id):$($_.ProcessName)" }; exit 0`], { encoding: 'utf8' });
-  return out.split(/\s+/).filter(Boolean);
+  // A pid in the tree can be a stale parent id that Windows has since given to a system process; those are not ours.
+  return out.split(/\s+/).filter((x) => x && !SYSTEM.has(x.split(':')[1]?.toLowerCase() ?? ''));
 }
 const alive = (pids: number[]): number[] => aliveNamed(pids).map((x) => Number(x.split(':')[0]));
 
