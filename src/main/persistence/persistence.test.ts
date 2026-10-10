@@ -60,6 +60,7 @@ describe('layout prefs', () => {
     const p = new PrefsStore(new MemoryBackend()).get();
     expect(p.uiScale).toBe(1.1);
     expect(p.filePanelWidth).toBe(280);
+    expect(p.viewerWidth).toBe(560);
   });
 
   it('rejects out-of-range values', () => {

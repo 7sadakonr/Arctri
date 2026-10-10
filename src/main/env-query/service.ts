@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join, win32 } from 'node:path';
 import type { EnvironmentRef } from '@shared/types/env';
 import { codexConfigBackupName } from '../agents/codex-config';
-import { decodeFile, encodeFile, MAX_EDIT_BYTES, type Eol, type FileReadResult, type FileWriteResult } from '../files/io';
+import { decodeFile, encodeFile, MAX_EDIT_BYTES, MAX_IMAGE_BYTES, type Eol, type FileReadResult, type FileWriteResult, type ImageReadResult } from '../files/io';
 import { parseHelperGitStat, parseStatus, windowsGitChanges, windowsGitHeadText, windowsGitStatusAll, type Changes } from '../git/changes';
 import { gitBranchOf } from '../shell/git';
 import { WslHelperClient, type WslOp } from './wsl-helper';
@@ -39,6 +39,7 @@ export interface EnvironmentQuery {
   writeCodexConfig(env: EnvironmentRef, content: string): Promise<boolean>;
   /** Text files below `root` (the tab's folder). Paths that resolve outside it are refused, symlinks included. */
   readTextFile(env: EnvironmentRef, root: string, abs: string): Promise<FileReadResult>;
+  readImageFile(env: EnvironmentRef, root: string, abs: string): Promise<ImageReadResult>;
   writeTextFile(
     env: EnvironmentRef, root: string, abs: string, text: string, eol: Eol, bom: boolean, expectMtimeMs?: number
   ): Promise<FileWriteResult>;
@@ -262,6 +263,29 @@ export class EnvironmentQueryService implements EnvironmentQuery {
       const d = decodeFile(await readFile(abs));
       if (d === 'binary') return { ok: false, error: 'binary' };
       return { ok: true, ...d, mtimeMs: Math.round(st.mtimeMs), size: st.size };
+    } catch (e) {
+      return { ok: false, error: (e as { code?: string }).code === 'ENOENT' ? 'not-found' : 'failed' };
+    }
+  }
+
+  async readImageFile(env: EnvironmentRef, root: string, abs: string): Promise<ImageReadResult> {
+    if (env.kind === 'wsl') {
+      const out = await this.ask(env.distro, 'readfile', [abs, String(MAX_IMAGE_BYTES), `${root}|`], 30000);
+      if (out === null) return { ok: false, error: 'failed' };
+      if (out.startsWith('ERR')) {
+        const e = out.slice(4).trim();
+        return { ok: false, error: e === 'toolarge' ? 'too-large' : e === 'notfound' ? 'not-found' : e === 'denied' ? 'denied' : 'failed' };
+      }
+      const nl = out.indexOf('\n');
+      const [, ms, size] = out.slice(0, nl).split(' ');
+      return { ok: true, base64: out.slice(nl + 1).trim(), mtimeMs: Number(ms), size: Number(size) };
+    }
+    try {
+      if (!(await this.insideRoot(root, abs))) return { ok: false, error: 'denied' };
+      const st = await stat(abs);
+      if (!st.isFile()) return { ok: false, error: 'not-found' };
+      if (st.size > MAX_IMAGE_BYTES) return { ok: false, error: 'too-large' };
+      return { ok: true, base64: (await readFile(abs)).toString('base64'), mtimeMs: Math.round(st.mtimeMs), size: st.size };
     } catch (e) {
       return { ok: false, error: (e as { code?: string }).code === 'ENOENT' ? 'not-found' : 'failed' };
     }

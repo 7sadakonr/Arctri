@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import type { SessionInfo, ShellPhase } from '@shared/types/session';
 
+export interface ViewerTab {
+  rel: string;
+  mode: 'file' | 'diff';
+}
+export interface ViewerState {
+  tabs: ViewerTab[];
+  active: string;
+  /** The editor takes the whole width; the terminal is hidden until it is restored. */
+  maximized?: boolean;
+}
+
 interface SessionsState {
   order: string[];
   infos: Record<string, SessionInfo>;
@@ -13,10 +24,12 @@ interface SessionsState {
   /** The read-only file panel is open for this tab. */
   explorer: Record<string, boolean>;
   setExplorer(id: string, on: boolean): void;
-  /** The file (relative to the tab's folder) shown beside the terminal, as it is or as a diff against HEAD. */
-  viewer: Record<string, { rel: string; mode: 'file' | 'diff' } | undefined>;
+  /** The files (relative to the tab's folder) shown beside the terminal, each as it is or as a diff against HEAD. */
+  viewer: Record<string, ViewerState | undefined>;
   openViewer(id: string, rel: string, mode: 'file' | 'diff'): void;
-  closeViewer(id: string): void;
+  /** Closes one file; without `rel` (or after the last one) the whole panel. */
+  closeViewer(id: string, rel?: string): void;
+  setViewerMaximized(id: string, on: boolean): void;
   setAttention(id: string, on: boolean): void;
   upsert(info: SessionInfo, activate?: boolean): void;
   remove(id: string): void;
@@ -35,8 +48,30 @@ export const useSessions = create<SessionsState>()((set) => ({
   attention: {},
   explorer: {},
   viewer: {},
-  openViewer: (id, rel, mode) => set((s) => ({ viewer: { ...s.viewer, [id]: { rel, mode } } })),
-  closeViewer: (id) => set((s) => ({ viewer: { ...s.viewer, [id]: undefined } })),
+  openViewer: (id, rel, mode) =>
+    set((s) => {
+      const tabs = s.viewer[id]?.tabs ?? [];
+      const next = tabs.some((x) => x.rel === rel)
+        ? tabs.map((x) => (x.rel === rel ? { rel, mode } : x))
+        : [...tabs, { rel, mode }];
+      return { viewer: { ...s.viewer, [id]: { ...s.viewer[id], tabs: next, active: rel } } };
+    }),
+  closeViewer: (id, rel) =>
+    set((s) => {
+      const v = s.viewer[id];
+      if (!v || rel === undefined) return { viewer: { ...s.viewer, [id]: undefined } };
+      const i = v.tabs.findIndex((x) => x.rel === rel);
+      if (i < 0) return s;
+      const tabs = v.tabs.filter((x) => x.rel !== rel);
+      if (!tabs.length) return { viewer: { ...s.viewer, [id]: undefined } };
+      const active = v.active === rel ? tabs[Math.min(i, tabs.length - 1)]!.rel : v.active;
+      return { viewer: { ...s.viewer, [id]: { ...v, tabs, active } } };
+    }),
+  setViewerMaximized: (id, on) =>
+    set((s) => {
+      const v = s.viewer[id];
+      return v && !!v.maximized !== on ? { viewer: { ...s.viewer, [id]: { ...v, maximized: on } } } : s;
+    }),
   setExplorer: (id, on) => set((s) => ({ explorer: { ...s.explorer, [id]: on } })),
   setAttention: (id, on) =>
     set((s) => (!!s.attention[id] === on ? s : { attention: { ...s.attention, [id]: on } })),
