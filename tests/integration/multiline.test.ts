@@ -46,8 +46,8 @@ for (const [id, command, expected, what] of CASES) {
 const SCOPE: Array<[string, string, string, string]> = [
   ['wsl:Ubuntu:bash', 'y=7\nf() { echo "f$y"; }\ncd /tmp\necho set', 'echo "y=$y $(f) $PWD"', 'y=7 f7 /tmp'],
   ['wsl:Ubuntu:zsh', 'y=7\nf() { echo "f$y"; }\ncd /tmp\necho set', 'echo "y=$y $(f) $PWD"', 'y=7 f7 /tmp'],
-  ['pwsh', '$y = 7\nfunction f { "f$y" }\nSet-Location $env:TEMP\n"set"', '"y=$y $(f) " + ((Get-Location).Path -eq $env:TEMP)', 'y=7 f7 True'],
-  ['powershell', '$y = 7\nfunction f { "f$y" }\nSet-Location $env:TEMP\n"set"', '"y=$y $(f) " + ((Get-Location).Path -eq $env:TEMP)', 'y=7 f7 True']
+  ['pwsh', '$y = 7\nfunction f { "f$y" }\nSet-Location $env:SystemRoot\n"set"', '"y=$y $(f) " + ((Get-Location).Path -eq $env:SystemRoot)', 'y=7 f7 True'],
+  ['powershell', '$y = 7\nfunction f { "f$y" }\nSet-Location $env:SystemRoot\n"set"', '"y=$y $(f) " + ((Get-Location).Path -eq $env:SystemRoot)', 'y=7 f7 True']
 ].filter(([id]) => !process.env['ARCTRI_SKIP_WSL'] || !id!.startsWith('wsl:')) as Array<[string, string, string, string]>;
 
 for (const [id, multi, follow, expected] of SCOPE) {

@@ -44,7 +44,7 @@ describe('process cleanup', () => {
     });
   }, 120000);
 
-  it('closing a WSL tab ends the shell and its foreground program inside the distro', async () => {
+  it.skipIf(!!process.env['ARCTRI_SKIP_WSL'])('closing a WSL tab ends the shell and its foreground program inside the distro', async () => {
     const h = new Harness(profiles);
     await h.start('wsl:Ubuntu:bash');
     const tag = `ad-orphan-${Date.now()}`;
