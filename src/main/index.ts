@@ -41,7 +41,7 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
     if (!started && Date.now() > deadline - 85_000 && sessions.list().length === 0) {
       started = true;
       const all = (await registry.refresh(false)).profiles;
-      const profile = all.find((p) => p.id === 'pwsh') ?? all.find((p) => !p.id.startsWith('wsl:'));
+      const profile = all.find((p) => p.id === 'pwsh') ?? all.find((p) => p.id === 'local:zsh') ?? all.find((p) => !p.id.startsWith('wsl:'));
       if (profile) {
         await sessions.create({ profileId: profile.id, kind: 'shell', cols: 100, rows: 30, presentation: 'blocks' }).catch((e) => logger.error('smoke shell failed', e));
       }
@@ -73,7 +73,7 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
     // say what the app did see, so a timeout on a bare CI machine is not a blank
     result = {
       ...result,
-      sessions: sessions.list().map((x) => ({ shell: x.shell, state: x.state, phase: x.phase, integration: x.integration, kind: x.kind })),
+      sessions: sessions.list().map((x) => ({ shell: x.shell, state: x.state, phase: x.phase, integration: x.integration, kind: x.kind, ...(x.exit ? { exit: x.exit } : {}) })),
       profiles: registry.snapshot().profiles.map((p) => p.id)
     };
   }

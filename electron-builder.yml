@@ -14,6 +14,7 @@ npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false
 asar: true
+afterPack: scripts/after-pack.mjs
 asarUnpack:
   # conpty.dll / OpenConsole.exe / pty.node must be real files so they can be loaded and executed
   - node_modules/node-pty/**
