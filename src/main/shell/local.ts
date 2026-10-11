@@ -35,7 +35,11 @@ function bashVersion(path: string): [number, number] | undefined {
 export const bashHasBlocks = (v: [number, number] | undefined): boolean => !!v && (v[0] > 4 || (v[0] === 4 && v[1] >= 4));
 
 /** Shells found on a Mac (or any non-Windows host), in the order they are listed; the login shell is listed first. */
-export function discoverLocalProfiles(exists: (p: string) => boolean = existsSync, versionOf = bashVersion): ShellProfile[] {
+export function discoverLocalProfiles(
+  exists: (p: string) => boolean = existsSync,
+  versionOf = bashVersion,
+  login: string = userShell()
+): ShellProfile[] {
   const env = { kind: 'local' } as const;
   const out: ShellProfile[] = [];
   const add = (id: string, label: string, shell: 'zsh' | 'bash', executable: string, blocks: boolean) =>
@@ -50,14 +54,12 @@ export function discoverLocalProfiles(exists: (p: string) => boolean = existsSyn
     const label = id === 'local:bash' ? 'bash' : 'bash (Homebrew)';
     add(id, label, 'bash', path, bashHasBlocks(versionOf(path)));
   }
-  const login = userShell();
   const first = out.findIndex((p) => p.executable === login);
   if (first > 0) out.unshift(...out.splice(first, 1));
   return out;
 }
 
 /** The profile that matches the user's login shell: the default for a new tab. */
-export function defaultLocalProfileId(profiles: ShellProfile[]): string | undefined {
-  const login = userShell();
+export function defaultLocalProfileId(profiles: ShellProfile[], login: string = userShell()): string | undefined {
   return (profiles.find((p) => p.executable === login) ?? profiles[0])?.id;
 }
