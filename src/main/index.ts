@@ -12,6 +12,7 @@ import { migrateLegacyUserData } from './persistence/migrate-legacy';
 import { SessionRepo } from './persistence/session-repo';
 import { WorkerPtyBackend } from './pty/pty-worker-backend';
 import { SessionManager } from './pty/session-manager';
+import type { WslDistro } from '@shared/types/wsl';
 import { ProfileRegistry } from './shell/registry';
 import { WslManager } from './wsl/wsl-manager';
 import { AgentManager } from './agents/agent-manager';
@@ -88,14 +89,23 @@ async function start(): Promise<void> {
   mark('appReady');
 
   if (!process.env['ARCTRI_USER_DATA']) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
-  const store = new Store<{ prefs: unknown }>({ name: 'preferences' });
+  const store = new Store<{ prefs: unknown; wslZsh: Record<string, boolean>; wslDistros: WslDistro[] }>({ name: 'preferences' });
   const prefs = new PrefsStore({ get: () => store.get('prefs'), set: (v) => store.set('prefs', v) });
   const { db, recovered } = openDb(join(app.getPath('userData'), 'arctri.db'));
   if (recovered) logger.warn('database was corrupt and has been recreated');
   const history = new HistoryRepo(db, prefs.get().historyLimit);
   const sessionRepo = new SessionRepo(db);
   const wsl = new WslManager();
-  const registry = new ProfileRegistry(wsl);
+  const registry = new ProfileRegistry(wsl, {
+    zsh: {
+      get: () => (store.get('wslZsh') as Record<string, boolean> | undefined) ?? {},
+      set: (v) => store.set('wslZsh', v)
+    },
+    distros: {
+      get: () => (store.get('wslDistros') as WslDistro[] | undefined) ?? [],
+      set: (v) => store.set('wslDistros', v)
+    }
+  });
   mark('storesOpen');
   // Windows shells are known at once; WSL is probed in the background so it never delays the window.
   registry.startBackgroundRefresh();
@@ -103,7 +113,7 @@ async function start(): Promise<void> {
   let win: BrowserWindow | undefined;
   const hub = new PortHub(() => win);
 
-  const startupSaved = prefs.get().restoreTabs ? sessionRepo.load().filter((x) => x.kind === 'shell') : [];
+  const startupSaved = sessionRepo.load().filter((x) => x.kind === 'shell');
   const agents = new AgentManager(wsl, registry, () => prefs.get().agentPaths);
   const envQuery = new EnvironmentQueryService();
 

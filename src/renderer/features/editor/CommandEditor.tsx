@@ -4,8 +4,10 @@ import { api } from '@/lib/api';
 import { FOCUS_SESSION_EVENT } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
+import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { INSERT_EVENT } from '../agents/insert';
+import { SnapshotView } from '../blocks/styled-lines';
 import { AutocompleteOverlay } from './AutocompleteOverlay';
 
 const drafts = new Map<string, string>();
@@ -19,6 +21,8 @@ export function applyCompletion(line: string, item: CompletionItem): { text: str
 
 export function CommandEditor({ sessionId, focused }: { sessionId: string; focused: boolean }) {
   const t = useT();
+  const prompt = useSessions((s) => s.prompt[sessionId]);
+  const dark = useUi((s) => s.prefs.theme === 'dark');
   const [text, setText] = useState(() => drafts.get(sessionId) ?? '');
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [selected, setSelected] = useState(-1);
@@ -208,39 +212,54 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
     }
   };
 
+  const head = prompt && prompt.lines.length > 1 ? { ...prompt, lines: prompt.lines.slice(0, -1) } : undefined;
+  const tail = prompt ? { ...prompt, lines: prompt.lines.slice(-1) } : undefined;
+  const fontSize = { fontSize: 'var(--ad-term-size, 13px)' } as const;
+
   return (
-    <div className="relative px-3 pt-2">
+    <div className="relative border-t border-border px-4 py-3">
       {open && <AutocompleteOverlay items={items} selected={selected} onPick={(i) => items[i] && accept(items[i]!)} />}
-      <div className="relative rounded-lg border border-border bg-panel focus-within:border-accent/60">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono text-[13px] leading-[1.45]"
-        >
-          <span className="invisible">{text}</span>
-          <span className="text-fg-muted/60">{ghost}</span>
+      {head && (
+        <div className="font-mono" style={fontSize}>
+          <SnapshotView snapshot={head} dark={dark} />
         </div>
-        <textarea
-          ref={area}
-          data-testid="command-editor"
-          value={text}
-          rows={1}
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          placeholder={t('editor.placeholder')}
-          aria-label={t('editor.placeholder')}
-          onChange={(e) => change(e.target.value, e.target.selectionStart)}
-          onKeyDown={onKeyDown}
-          onCompositionStart={() => {
-            composing.current = true;
-          }}
-          onCompositionEnd={(e) => {
-            composing.current = false;
-            query(e.currentTarget.value, e.currentTarget.selectionStart);
-          }}
-          onBlur={() => setOpen(false)}
-          className="relative block max-h-[168px] w-full resize-none overflow-auto bg-transparent px-3 py-2 font-mono text-[13px] leading-[1.45] text-fg outline-none placeholder:text-fg-muted/70"
-        />
+      )}
+      <div className="flex items-start gap-2">
+        <div className="shrink-0 whitespace-pre font-mono leading-[1.45]" style={fontSize}>
+          {tail ? <SnapshotView snapshot={tail} dark={dark} /> : <span className="text-fg-muted">›</span>}
+        </div>
+        <div className="relative min-w-0 flex-1">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words font-mono leading-[1.45]"
+            style={fontSize}
+          >
+            <span className="invisible">{text}</span>
+            <span className="text-fg-muted/60">{ghost}</span>
+          </div>
+          <textarea
+            ref={area}
+            data-testid="command-editor"
+            value={text}
+            rows={1}
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            aria-label={t('editor.label')}
+            style={fontSize}
+            onChange={(e) => change(e.target.value, e.target.selectionStart)}
+            onKeyDown={onKeyDown}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={(e) => {
+              composing.current = false;
+              query(e.currentTarget.value, e.currentTarget.selectionStart);
+            }}
+            onBlur={() => setOpen(false)}
+            className="relative block max-h-[168px] w-full resize-none overflow-auto bg-transparent p-0 font-mono leading-[1.45] text-fg outline-none"
+          />
+        </div>
       </div>
     </div>
   );

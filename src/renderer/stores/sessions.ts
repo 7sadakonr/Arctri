@@ -1,9 +1,15 @@
 import { create } from 'zustand';
+import type { BlockSnapshot } from '@shared/types/block';
 import type { SessionInfo, ShellPhase } from '@shared/types/session';
 
 export interface ViewerTab {
+  /** Identity of the tab: the file's path, or `<rev>:<path>` for a file as a commit changed it. */
   rel: string;
   mode: 'file' | 'diff';
+  /** The file's path when `rel` is not it. */
+  path?: string;
+  /** Shows the file as this commit changed it (read-only, against the commit's parent). */
+  rev?: string;
 }
 export interface ViewerState {
   tabs: ViewerTab[];
@@ -18,15 +24,14 @@ interface SessionsState {
   activeId: string | undefined;
   /** Phase as seen by the renderer's own parser; in step with what xterm has drawn. */
   uiPhase: Record<string, ShellPhase>;
-  nativePrompt: Record<string, boolean>;
+  /** The prompt the shell is showing right now (what the command editor puts in front of the input). */
+  prompt: Record<string, BlockSnapshot | undefined>;
+  setPrompt(id: string, prompt: BlockSnapshot | undefined): void;
   /** An agent in this tab wants attention (finished a turn, asks for approval) while it was not on screen. */
   attention: Record<string, boolean>;
-  /** The read-only file panel is open for this tab. */
-  explorer: Record<string, boolean>;
-  setExplorer(id: string, on: boolean): void;
   /** The files (relative to the tab's folder) shown beside the terminal, each as it is or as a diff against HEAD. */
   viewer: Record<string, ViewerState | undefined>;
-  openViewer(id: string, rel: string, mode: 'file' | 'diff'): void;
+  openViewer(id: string, rel: string, mode: 'file' | 'diff', extra?: { path?: string; rev?: string }): void;
   /** Closes one file; without `rel` (or after the last one) the whole panel. */
   closeViewer(id: string, rel?: string): void;
   setViewerMaximized(id: string, on: boolean): void;
@@ -36,7 +41,6 @@ interface SessionsState {
   setActive(id: string): void;
   move(from: number, to: number): void;
   setUiPhase(id: string, phase: ShellPhase): void;
-  setNativePrompt(id: string, on: boolean): void;
 }
 
 export const useSessions = create<SessionsState>()((set) => ({
@@ -44,16 +48,17 @@ export const useSessions = create<SessionsState>()((set) => ({
   infos: {},
   activeId: undefined,
   uiPhase: {},
-  nativePrompt: {},
+  prompt: {},
+  setPrompt: (id, prompt) => set((s) => ({ prompt: { ...s.prompt, [id]: prompt } })),
   attention: {},
-  explorer: {},
   viewer: {},
-  openViewer: (id, rel, mode) =>
+  openViewer: (id, rel, mode, extra) =>
     set((s) => {
       const tabs = s.viewer[id]?.tabs ?? [];
+      const tab: ViewerTab = { rel, mode, ...(extra?.path ? { path: extra.path } : {}), ...(extra?.rev ? { rev: extra.rev } : {}) };
       const next = tabs.some((x) => x.rel === rel)
-        ? tabs.map((x) => (x.rel === rel ? { rel, mode } : x))
-        : [...tabs, { rel, mode }];
+        ? tabs.map((x) => (x.rel === rel ? { ...x, ...tab } : x))
+        : [...tabs, tab];
       return { viewer: { ...s.viewer, [id]: { ...s.viewer[id], tabs: next, active: rel } } };
     }),
   closeViewer: (id, rel) =>
@@ -72,7 +77,6 @@ export const useSessions = create<SessionsState>()((set) => ({
       const v = s.viewer[id];
       return v && !!v.maximized !== on ? { viewer: { ...s.viewer, [id]: { ...v, maximized: on } } } : s;
     }),
-  setExplorer: (id, on) => set((s) => ({ explorer: { ...s.explorer, [id]: on } })),
   setAttention: (id, on) =>
     set((s) => (!!s.attention[id] === on ? s : { attention: { ...s.attention, [id]: on } })),
   upsert: (info, activate) =>
@@ -90,13 +94,12 @@ export const useSessions = create<SessionsState>()((set) => ({
       const order = s.order.filter((x) => x !== id);
       const { [id]: _gone, ...infos } = s.infos;
       const { [id]: _p, ...uiPhase } = s.uiPhase;
-      const { [id]: _n, ...nativePrompt } = s.nativePrompt;
+      const { [id]: _pr, ...prompt } = s.prompt;
       const { [id]: _a, ...attention } = s.attention;
-      const { [id]: _e, ...explorer } = s.explorer;
       const { [id]: _v, ...viewer } = s.viewer;
       let activeId = s.activeId;
       if (activeId === id) activeId = order[Math.min(idx, order.length - 1)];
-      return { order, infos, uiPhase, nativePrompt, attention, explorer, viewer, activeId };
+      return { order, infos, uiPhase, prompt, attention, viewer, activeId };
     }),
   setActive: (id) =>
     set((s) => ({ activeId: id, attention: s.attention[id] ? { ...s.attention, [id]: false } : s.attention })),
@@ -108,6 +111,5 @@ export const useSessions = create<SessionsState>()((set) => ({
       order.splice(to, 0, id!);
       return { order };
     }),
-  setUiPhase: (id, phase) => set((s) => (s.uiPhase[id] === phase ? s : { uiPhase: { ...s.uiPhase, [id]: phase } })),
-  setNativePrompt: (id, on) => set((s) => ({ nativePrompt: { ...s.nativePrompt, [id]: on } }))
+  setUiPhase: (id, phase) => set((s) => (s.uiPhase[id] === phase ? s : { uiPhase: { ...s.uiPhase, [id]: phase } }))
 }));

@@ -47,6 +47,8 @@ export interface CommandBlock {
   startedAt: number;
   endedAt?: number;
   usedAltScreen: boolean;
+  /** The prompt and command as the shell drew them (colours included); the header of the block. */
+  prompt?: BlockSnapshot;
   output?: BlockSnapshot;
   collapsed: boolean;
 }

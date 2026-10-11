@@ -76,6 +76,9 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
       env['PROMPT'] = `$E]6973;${ctx.nonce};cwdp;$P$E\\$P$G`;
       return { file: profile.executable, args: [], cwd, env };
     }
+    if (profile.shell === 'other') {
+      return { file: profile.executable, args: profile.args ?? [], cwd, env };
+    }
     const script = readFileSync(join(integrationDir(), 'arctri.ps1'), 'utf8');
     return {
       file: profile.executable,
@@ -91,7 +94,19 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
   const { cwd: linuxCwd, note } = await resolveLinuxCwd(distro, ctx.cwd, ctx.toPosix);
   const dir = integrationDir();
   const args = ['-d', distro, '--cd', linuxCwd, '--exec'];
-  if (profile.shell === 'zsh') {
+  if (profile.autoShell) {
+    const shim = await ctx.toPosix(distro, join(dir, 'zsh'));
+    const rc = await ctx.toPosix(distro, join(dir, 'arctri.bash'));
+    if (!shim || !rc) throw new Error(`Cannot map integration scripts into ${distro}`);
+    // zsh when it is installed and the user uses it (it is the login shell, or there is a .zshrc), otherwise bash.
+    const script =
+      'if command -v zsh >/dev/null 2>&1; then use=; ' +
+      'case "$(getent passwd "$(id -un)" | cut -d: -f7)" in */zsh) use=1;; esac; ' +
+      '[ -f "${ZDOTDIR:-$HOME}/.zshrc" ] && use=1; ' +
+      'if [ -n "$use" ]; then USER_ZDOTDIR="${ZDOTDIR:-$HOME}" ZDOTDIR="$1" exec zsh -i; fi; fi; ' +
+      'exec bash --rcfile "$2" -i';
+    args.push('sh', '-c', script, 'sh', shim, rc);
+  } else if (profile.shell === 'zsh') {
     const shim = await ctx.toPosix(distro, join(dir, 'zsh'));
     if (!shim) throw new Error(`Cannot map integration scripts into ${distro}`);
     // zsh reads $ZDOTDIR/.zshenv first; that shim hands ZDOTDIR back to the user straight away.

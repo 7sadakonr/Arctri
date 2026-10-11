@@ -8,6 +8,7 @@ import { copyText } from '@/lib/clipboard';
 import { focusActiveSession } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
 import { useUi } from '@/stores/ui';
+import { blockProfiles } from '../launcher/actions';
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -101,26 +102,13 @@ export function SettingsDialog() {
             value={prefs.defaultProfile ?? ''}
             onChange={(e) => void save({ defaultProfile: e.target.value || undefined } as Partial<Prefs>)}
           >
-            <option value="">—</option>
-            {profiles.map((p) => (
+            <option value="">{t('settings.defaultProfile.auto')}</option>
+            {blockProfiles(profiles).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
               </option>
             ))}
           </select>
-        </Row>
-        <Row label={t('settings.defaultPresentation')}>
-          <select
-            className={field}
-            value={prefs.defaultPresentation}
-            onChange={(e) => void save({ defaultPresentation: e.target.value as Prefs['defaultPresentation'] })}
-          >
-            <option value="blocks">{t('settings.presentation.blocks')}</option>
-            <option value="classic">{t('settings.presentation.classic')}</option>
-          </select>
-        </Row>
-        <Row label={t('settings.restoreTabs')}>
-          <Switch checked={prefs.restoreTabs} onCheckedChange={(v) => void save({ restoreTabs: v })} />
         </Row>
         <Row label={t('settings.conpty')} hint={t('settings.restartNote')}>
           <select className={field} value={prefs.conptyMode} onChange={(e) => void save({ conptyMode: e.target.value as Prefs['conptyMode'] })}>

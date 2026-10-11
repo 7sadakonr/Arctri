@@ -4,7 +4,11 @@ import { join, win32 } from 'node:path';
 import type { EnvironmentRef } from '@shared/types/env';
 import { codexConfigBackupName } from '../agents/codex-config';
 import { decodeFile, encodeFile, MAX_EDIT_BYTES, MAX_IMAGE_BYTES, type Eol, type FileReadResult, type FileWriteResult, type ImageReadResult } from '../files/io';
-import { parseHelperGitStat, parseStatus, windowsGitChanges, windowsGitHeadText, windowsGitStatusAll, type Changes } from '../git/changes';
+import {
+  parseHelperGitShow, parseHelperGitStat, parseLog, parseRefs, parseStatus, windowsGitChanges, windowsGitCommitFiles, windowsGitHeadText,
+  windowsGitLog, windowsGitRefs, windowsGitRevText, windowsGitStatusAll,
+  type Changes, type Commit, type CommitFile, type Refs
+} from '../git/changes';
 import { gitBranchOf } from '../shell/git';
 import { WslHelperClient, type WslOp } from './wsl-helper';
 
@@ -48,11 +52,29 @@ export interface EnvironmentQuery {
   gitHeadText(env: EnvironmentRef, cwd: string, rel: string): Promise<string | undefined>;
 }
 
+/** Branches and history of the tab's repository (read-only). */
+export interface GitHistoryQuery {
+  gitRefs(env: EnvironmentRef, cwd: string): Promise<Refs | undefined>;
+  gitLog(env: EnvironmentRef, cwd: string, limit: number): Promise<Commit[] | undefined>;
+  gitCommitFiles(env: EnvironmentRef, cwd: string, hash: string): Promise<CommitFile[] | undefined>;
+  gitRevText(env: EnvironmentRef, cwd: string, rel: string, rev: string): Promise<string | undefined>;
+}
+
 const TTL = 5 * 60_000;
 type Lane = 'fast' | 'slow';
+// refs, gitlog and gitshow read only refs and objects (fast); they must not queue behind a long `git status`
 const SLOW_OPS = new Set<WslOp>(['cmds', 'branches', 'branch', 'gitstat', 'gitall', 'headtext']);
 
-export class EnvironmentQueryService implements EnvironmentQuery {
+/**
+ * `/mnt/d/proj` (a Windows drive seen from WSL) as `D:\proj`. Git inside WSL walks such a folder through the slow
+ * Windows file system bridge (seconds for a big repository); git for Windows reads it natively.
+ */
+export function drvfsToWindows(cwd: string): string | undefined {
+  const m = /^\/mnt\/([a-zA-Z])(\/.*)?$/.exec(cwd);
+  return m ? `${m[1]!.toUpperCase()}:${(m[2] ?? '/').replace(/\//g, '\\')}` : undefined;
+}
+
+export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuery {
   private helpers = new Map<string, WslHelperClient>();
   private exeCache = new Map<string, { at: number; key: string; names: string[] }>();
   private homeCache = new Map<string, string>();
@@ -176,15 +198,67 @@ export class EnvironmentQueryService implements EnvironmentQuery {
     return h;
   }
 
+  /** The answer of git for Windows for a folder on a Windows drive; undefined when it cannot answer (then WSL's git is asked). */
+  private async viaWindowsGit<T>(env: EnvironmentRef, cwd: string, ask: (winCwd: string) => Promise<T | null | undefined>): Promise<T | undefined> {
+    if (env.kind !== 'wsl') return undefined;
+    const win = drvfsToWindows(cwd);
+    return win ? ((await ask(win)) ?? undefined) : undefined;
+  }
+
   async gitChanges(env: EnvironmentRef, cwd: string): Promise<Changes | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, windowsGitChanges);
+    if (quick !== undefined) return quick;
     if (env.kind === 'wsl') {
-      const out = await this.ask(env.distro, 'gitstat', [cwd], 4000);
+      const out = await this.ask(env.distro, 'gitstat', [cwd], 20000);
       return out ? parseHelperGitStat(out) : undefined;
     }
     return windowsGitChanges(cwd);
   }
 
+  async gitRefs(env: EnvironmentRef, cwd: string): Promise<Refs | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, windowsGitRefs);
+    if (quick !== undefined) return quick;
+    if (env.kind === 'wsl') {
+      const out = await this.ask(env.distro, 'refs', [cwd], 4000);
+      return out?.startsWith('OK') ? parseRefs(out.slice(2)) : undefined;
+    }
+    return windowsGitRefs(cwd);
+  }
+
+  async gitLog(env: EnvironmentRef, cwd: string, limit: number): Promise<Commit[] | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, (w) => windowsGitLog(w, limit));
+    if (quick !== undefined) return quick;
+    if (env.kind === 'wsl') {
+      const out = await this.ask(env.distro, 'gitlog', [cwd, String(limit)], 6000);
+      return out?.startsWith('OK') ? parseLog(out.slice(2)) : undefined;
+    }
+    return windowsGitLog(cwd, limit);
+  }
+
+  async gitCommitFiles(env: EnvironmentRef, cwd: string, hash: string): Promise<CommitFile[] | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, (w) => windowsGitCommitFiles(w, hash));
+    if (quick !== undefined) return quick;
+    if (env.kind === 'wsl') {
+      const out = await this.ask(env.distro, 'gitshow', [cwd, hash], 6000);
+      return out ? parseHelperGitShow(out) : undefined;
+    }
+    return windowsGitCommitFiles(cwd, hash);
+  }
+
+  /** The file as it was at `rev` (a commit or its parent); undefined when it did not exist there. */
+  async gitRevText(env: EnvironmentRef, cwd: string, rel: string, rev: string): Promise<string | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, (w) => windowsGitRevText(w, rel, rev));
+    if (quick !== undefined) return quick;
+    if (env.kind === 'wsl') {
+      const out = await this.ask(env.distro, 'headtext', [cwd, rel, rev], 4000);
+      return out?.startsWith('OK\n') ? out.slice(3) : undefined;
+    }
+    return (await windowsGitRevText(cwd, rel, rev)) ?? undefined;
+  }
+
   async gitHeadText(env: EnvironmentRef, cwd: string, rel: string): Promise<string | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, (w) => windowsGitHeadText(w, rel));
+    if (quick !== undefined) return quick;
     if (env.kind === 'wsl') {
       const out = await this.ask(env.distro, 'headtext', [cwd, rel], 4000);
       return out?.startsWith('OK\n') ? out.slice(3) : undefined;
@@ -193,8 +267,10 @@ export class EnvironmentQueryService implements EnvironmentQuery {
   }
 
   async gitStatusAll(env: EnvironmentRef, cwd: string): Promise<Array<{ path: string; status: string }> | undefined> {
+    const quick = await this.viaWindowsGit(env, cwd, windowsGitStatusAll);
+    if (quick !== undefined) return quick;
     if (env.kind === 'wsl') {
-      const out = await this.ask(env.distro, 'gitall', [cwd], 4000);
+      const out = await this.ask(env.distro, 'gitall', [cwd], 20000);
       return out === null ? undefined : parseStatus(out);
     }
     return windowsGitStatusAll(cwd);

@@ -26,6 +26,7 @@ function isAppChord(e: KeyboardEvent, agentActive: boolean): boolean {
   if (e.ctrlKey && k === 'tab') return true;
   if (e.ctrlKey && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true;
   if (k === 'f2') return true;
+  if (e.ctrlKey && !e.altKey && ['=', '+', '-', '0'].includes(k)) return true; // zoom
   return false;
 }
 
@@ -97,9 +98,16 @@ export class TerminalHost {
           this.lastOutputText = b.output ? b.output.lines.map((l) => l.runs.map((r) => r.text).join('')).join('\n') : '';
           this.decorate(b);
         },
-        onPhase: (p) => useSessions.getState().setUiPhase(info.id, p)
+        onPhase: (p) => {
+          useSessions.getState().setUiPhase(info.id, p);
+          if (p === 'editing') this.capturePromptSoon();
+        }
       }
     );
+    // The shell draws its prompt after it has said where the prompt is, so it is read once the drawing has been parsed.
+    this.term.onWriteParsed(() => {
+      if (this.tracker.sm.phase === 'editing') this.capturePromptSoon();
+    });
 
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
     this.term.onData((d) => api.sessions.write(info.id, d));
@@ -122,6 +130,18 @@ export class TerminalHost {
 
     this.observer = new ResizeObserver(() => this.scheduleFit());
     this.observer.observe(this.element);
+  }
+
+  private promptTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private capturePromptSoon(): void {
+    clearTimeout(this.promptTimer);
+    this.promptTimer = setTimeout(() => {
+      const id = this.info.id;
+      // Nothing typed yet: the command is reported as soon as it is submitted.
+      if (this.tracker.sm.phase !== 'editing' || this.tracker.sm.current) return;
+      useSessions.getState().setPrompt(id, this.tracker.promptSnapshot());
+    }, 40);
   }
 
   private lastSignalAt = 0;
@@ -207,6 +227,16 @@ export class TerminalHost {
     return true;
   }
 
+  copySelection(): void {
+    if (!this.term.hasSelection()) return;
+    void copyText(this.term.getSelection());
+    this.term.clearSelection();
+  }
+
+  selectAll(): void {
+    this.term.selectAll();
+  }
+
   async pasteFromClipboard(): Promise<void> {
     const text = await readClipboard();
     if (!text) return;
@@ -264,6 +294,7 @@ export class TerminalHost {
     this.disposed = true;
     clearTimeout(this.resizeTimer);
     clearTimeout(this.idleTimer);
+    clearTimeout(this.promptTimer);
     this.observer.disconnect();
     this.unsubData();
     this.tracker.dispose();

@@ -8,9 +8,8 @@ import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/file-icon';
 import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
-import { useUi } from '@/stores/ui';
-import { insertText, refOf } from './insert';
-import { useChanges } from './useChanges';
+import { insertText, refOf } from '../agents/insert';
+import { useChanges } from '../agents/useChanges';
 
 interface Entry {
   name: string;
@@ -37,7 +36,7 @@ const statusDot = (s: string) => (s === '??' ? 'bg-ok' : s.includes('D') ? 'bg-d
  * The files below the tab's working folder (it cannot go above it). Clicking a file opens it beside the terminal;
  * Alt+click puts its path into the message.
  */
-export function FileExplorer({ info, active }: { info: SessionInfo; active: boolean }) {
+export function FilesView({ info, active }: { info: SessionInfo; active: boolean }) {
   const t = useT();
   const sep = info.env.kind === 'windows' ? '\\' : '/';
   const cwd = info.cwd?.path ?? '';
@@ -53,13 +52,6 @@ export function FileExplorer({ info, active }: { info: SessionInfo; active: bool
   const known = useRef(tree);
   known.current = tree;
   const changes = useChanges(info.id, active);
-  const savedWidth = useUi((s) => s.prefs.filePanelWidth);
-  const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const width = dragWidth ?? savedWidth;
-  const saveWidth = (w: number) => {
-    setDragWidth(null);
-    if (w !== savedWidth) void api.prefs.set({ filePanelWidth: w }).then((p) => useUi.getState().setPrefs(p), () => undefined);
-  };
 
   const changed = useMemo(() => {
     const m = new Map<string, string>();
@@ -172,37 +164,7 @@ export function FileExplorer({ info, active }: { info: SessionInfo; active: bool
   const to = Math.min(rows.length, Math.ceil((scroll.top + scroll.height) / ROW_H) + OVERSCAN);
 
   return (
-    <aside data-testid="file-panel" style={{ width }} className="relative flex shrink-0 flex-col border-l border-border bg-panel/60">
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('files.resize')}
-        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          setDragWidth(width);
-        }}
-        onPointerMove={(e) => {
-          if (dragWidth === null) return;
-          const right = e.currentTarget.parentElement!.getBoundingClientRect().right;
-          setDragWidth(Math.round(Math.min(600, Math.max(200, right - e.clientX))));
-        }}
-        onPointerUp={() => dragWidth !== null && saveWidth(dragWidth)}
-        onDoubleClick={() => saveWidth(280)}
-      />
-      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-2 text-[11px] font-semibold text-fg-muted">
-        <span className="flex-1 truncate" title={cwd}>
-          {t('files.title')} · {cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop()}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t('files.close')}
-          onClick={() => useSessions.getState().setExplorer(info.id, false)}
-        >
-          <ChevronRight size={12} />
-        </Button>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
         <input
           value={filter}
@@ -276,6 +238,6 @@ export function FileExplorer({ info, active }: { info: SessionInfo; active: bool
           </div>
         )}
       </div>
-    </aside>
+    </div>
   );
 }

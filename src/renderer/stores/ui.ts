@@ -15,17 +15,23 @@ interface UiState {
   prefs: Prefs;
   profiles: ShellProfile[];
   wsl: WslStatus;
+  /** The profile Windows Terminal starts by default (undefined when it is not installed). */
+  windowsDefaultProfile: string | undefined;
   agents: AgentEntry[];
   agentsLoading: boolean;
   windowsBuild: number;
   settingsOpen: boolean;
+  cloneOpen: boolean;
+  helpDialog: 'shortcuts' | 'about' | null;
   toasts: Toast[];
   setPrefs(p: Prefs): void;
-  setProfiles(profiles: ShellProfile[], wsl: WslStatus): void;
+  setProfiles(profiles: ShellProfile[], wsl: WslStatus, defaultProfileId?: string): void;
   setAgents(a: AgentEntry[]): void;
   setAgentsLoading(b: boolean): void;
   setWindowsBuild(n: number): void;
   openSettings(open: boolean): void;
+  setCloneOpen(open: boolean): void;
+  setHelpDialog(d: UiState['helpDialog']): void;
   toast(text: string, kind?: Toast['kind']): void;
   dismissToast(id: number): void;
 }
@@ -36,17 +42,22 @@ export const useUi = create<UiState>()((set, get) => ({
   prefs: defaultPrefs(),
   profiles: [],
   wsl: { available: false, reason: 'loading' },
+  windowsDefaultProfile: undefined,
   agents: [],
   agentsLoading: false,
   windowsBuild: 19045,
   settingsOpen: false,
+  cloneOpen: false,
+  helpDialog: null,
   toasts: [],
   setPrefs: (prefs) => set({ prefs }),
-  setProfiles: (profiles, wsl) => set({ profiles, wsl }),
+  setProfiles: (profiles, wsl, defaultProfileId) => set({ profiles, wsl, windowsDefaultProfile: defaultProfileId }),
   setAgents: (agents) => set({ agents }),
   setAgentsLoading: (agentsLoading) => set({ agentsLoading }),
   setWindowsBuild: (windowsBuild) => set({ windowsBuild }),
   openSettings: (settingsOpen) => set({ settingsOpen }),
+  setCloneOpen: (cloneOpen) => set({ cloneOpen }),
+  setHelpDialog: (helpDialog) => set({ helpDialog }),
   toast: (text, kind = 'info') => {
     const id = ++toastId;
     set((s) => ({ toasts: [...s.toasts, { id, text, kind }].slice(-4) }));

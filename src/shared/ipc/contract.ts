@@ -59,6 +59,12 @@ export const requestSchemas = {
   'app:pickFiles': z.object({ sessionId: id }),
   'app:pickFolder': z.undefined().or(z.null()),
   'git:headText': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
+  'git:refs': z.object({ sessionId: id }),
+  'git:log': z.object({ sessionId: id, limit: z.number().int().min(1).max(500) }),
+  'git:commitFiles': z.object({ sessionId: id, hash: z.string().regex(/^[0-9a-f]{7,40}$/) }),
+  'git:revText': z.object({
+    sessionId: id, rel: z.string().min(1).max(4096), rev: z.string().regex(/^[0-9a-f]{7,40}\^?$/)
+  }),
   'agents:codexNotifications': z.object({ sessionId: id, action: z.enum(['status', 'enable']) }),
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),

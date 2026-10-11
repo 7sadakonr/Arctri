@@ -13,6 +13,10 @@ export interface ShellProfile {
   shell: ShellKind;
   /** Windows executable that is spawned (pwsh.exe, cmd.exe, wsl.exe). */
   executable: string;
+  /** Arguments for shells that are started as a plain program (Git Bash and other Windows Terminal profiles). */
+  args?: string[];
+  /** WSL only: the distribution's own login shell is used (zsh when it is the login shell and installed, else bash). */
+  autoShell?: boolean;
   integration: 'blocks' | 'cwd-only' | 'none';
 }
 

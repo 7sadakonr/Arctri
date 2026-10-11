@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ShellProfile } from '@shared/types/env';
+import type { WslDistro } from '@shared/types/wsl';
 import type { WslManager } from '../wsl/wsl-manager';
 
 const winExists = (p: string | undefined): p is string => !!p && existsSync(p);
@@ -41,17 +42,43 @@ export function discoverWindowsProfiles(): ShellProfile[] {
   return profiles;
 }
 
-export async function discoverWslProfiles(wsl: WslManager, wslExe: string): Promise<ShellProfile[]> {
-  const distros = await wsl.listDistros(true);
+/** What is known about zsh per distribution, kept between runs so a stopped distribution never has to be started to find out. */
+export interface ZshCache {
+  get(): Record<string, boolean>;
+  set(value: Record<string, boolean>): void;
+}
+
+/** One automatic entry per distribution, plus explicit zsh and bash entries where zsh is known to be installed. */
+export function wslProfilesFor(distros: WslDistro[], wslExe: string, zsh: Record<string, boolean>): ShellProfile[] {
   const out: ShellProfile[] = [];
   for (const d of distros) {
+    if (d.hidden) continue;
     const base = { env: { kind: 'wsl', distro: d.name } as const, executable: wslExe, integration: 'blocks' as const };
-    out.push({ ...base, id: `wsl:${d.name}:bash`, label: `${d.name} · bash`, shell: 'bash' });
-    // zsh is probed only on running distributions so discovery never boots a stopped one.
-    if (d.state === 'Running') {
-      const z = await wsl.exec(d.name, ['sh', '-c', 'command -v zsh >/dev/null 2>&1'], 5000);
-      if (z.code === 0) out.push({ ...base, id: `wsl:${d.name}:zsh`, label: `${d.name} · zsh`, shell: 'zsh' });
+    // The shell of the automatic entry is chosen when it starts (see buildShellLaunch).
+    out.push({ ...base, id: `wsl:${d.name}`, label: d.name, shell: 'bash', autoShell: true });
+    if (zsh[d.name]) {
+      out.push({ ...base, id: `wsl:${d.name}:zsh`, label: `${d.name} · zsh`, shell: 'zsh' });
+      out.push({ ...base, id: `wsl:${d.name}:bash`, label: `${d.name} · bash`, shell: 'bash' });
     }
   }
   return out;
+}
+
+/** undefined when the answer is unclear (timeout, WSL busy): a failed probe must never be taken for "no zsh". */
+export async function probeZsh(wsl: WslManager, distro: string): Promise<boolean | undefined> {
+  const r = await wsl.exec(distro, ['sh', '-c', 'command -v zsh >/dev/null 2>&1 && echo yes || echo no'], 20000);
+  const out = r.stdout.trim();
+  return out === 'yes' ? true : out === 'no' ? false : undefined;
+}
+
+/** A running distribution is asked again; a stopped one is only started when nothing is known about it yet. */
+export async function probeZshAll(wsl: WslManager, distros: WslDistro[], cache: ZshCache): Promise<void> {
+  const known = { ...cache.get() };
+  for (const d of distros) {
+    if (d.hidden || (d.state !== 'Running' && known[d.name] !== undefined)) continue;
+    const found = await probeZsh(wsl, d.name);
+    if (found === undefined) continue;
+    known[d.name] = found;
+    cache.set({ ...known });
+  }
 }

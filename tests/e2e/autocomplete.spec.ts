@@ -86,5 +86,5 @@ test('keys go straight to a running program, including Thai text', async ({ ad }
   await page.keyboard.insertText('สวัสดี น้ำ');
   await page.keyboard.press('Enter');
   await settled(page, 1);
-  await expect(activeBlocks(page).first().locator('.block-output')).toContainText('got:สวัสดี น้ำ');
+  await expect(activeBlocks(page).first().locator('.block-output').last()).toContainText('got:สวัสดี น้ำ');
 });

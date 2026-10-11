@@ -7,18 +7,24 @@ import { closeSession, defaultProfile, openShell, openSimilarTab, wasClosedHere 
 import { refreshAgents } from '@/features/launcher/NewTabMenu';
 import { SettingsDialog } from '@/features/settings/SettingsDialog';
 import { TabBar } from '@/features/tabs/TabBar';
+import { TitleBar } from '@/features/titlebar/TitleBar';
+import { HelpDialogs } from '@/features/titlebar/HelpDialogs';
+import { CloneDialog } from '@/features/launcher/CloneDialog';
+import { stepZoom } from '@/lib/zoom';
+import { toggleSidebar } from '@/features/sidebar/toggle';
 import { SessionView } from '@/features/terminal/SessionView';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
+import { isHomeFolder, pushRecent, toRecent } from '@/features/welcome/recent';
 import { Toasts } from '@/features/toasts/Toasts';
 import { TOGGLE_RICH_EVENT } from '@/features/agents/AgentBar';
 
 async function bootstrap(): Promise<void> {
   const ui = useUi.getState();
   const [prefs, profiles0, diag] = await Promise.all([api.prefs.get(), api.profiles.list(false), api.app.diagnostics()]);
-  let profiles = profiles0;
+  const profiles = profiles0;
   ui.setPrefs(prefs);
-  ui.setProfiles(profiles.profiles, profiles.wsl);
+  ui.setProfiles(profiles.profiles, profiles.wsl, profiles.defaultProfileId);
   const build = Number(String(diag['os'] ?? '').split('.')[2]);
   if (Number.isFinite(build) && build > 0) ui.setWindowsBuild(build);
   if (diag['e2e']) {
@@ -34,22 +40,27 @@ async function bootstrap(): Promise<void> {
   for (const info of live) useSessions.getState().upsert(info);
   if (live.length > 0) return;
 
-  if (prefs.restoreTabs) {
-    const savedTabs = await api.sessions.saved();
-    // WSL is probed in the background; wait for it only when a saved tab needs it.
-    if (savedTabs.some((x) => x.profileId.startsWith('wsl:'))) {
-      profiles = await api.profiles.list(false, true);
-      ui.setProfiles(profiles.profiles, profiles.wsl);
-    }
-    for (const saved of savedTabs) {
-      const profile = useUi.getState().profiles.find((p) => p.id === saved.profileId);
-      if (profile) await openShell(profile, { ...(saved.cwd ? { cwd: saved.cwd } : {}), ...(saved.titleSource === 'user' ? { title: saved.title } : {}) });
+  // Tabs from the last run are not reopened: their folders go to the recent list on the welcome page instead.
+  const savedTabs = await api.sessions.saved();
+  let recent = prefs.recentProjects;
+  for (const saved of [...savedTabs].reverse()) {
+    if (saved.cwd && !isHomeFolder(saved.cwd.path)) recent = pushRecent(recent, toRecent(saved.cwd));
+  }
+  if (recent !== prefs.recentProjects) {
+    try {
+      useUi.getState().setPrefs(await api.prefs.set({ recentProjects: recent }));
+    } catch {
+      /* the list is a convenience */
     }
   }
-  // With nothing to restore, the welcome page is shown instead of a terminal nobody asked for.
+  // The welcome page is shown instead of a terminal nobody asked for.
   // The e2e suite still starts with one tab (ARCTRI_E2E_WELCOME keeps the welcome page for its own test).
-  if (diag['e2e'] && !diag['welcome'] && useSessions.getState().order.length === 0) await openShell(defaultProfile());
-  void api.profiles.list(false, true).then((r) => useUi.getState().setProfiles(r.profiles, r.wsl));
+  if (diag['e2e'] && !diag['welcome'] && useSessions.getState().order.length === 0) {
+    // The suite is written for PowerShell; it must not depend on which shell the machine's Windows Terminal starts.
+    const ps = useUi.getState().profiles;
+    await openShell(ps.find((p) => p.id === 'pwsh') ?? ps.find((p) => p.id === 'powershell') ?? defaultProfile());
+  }
+  void api.profiles.list(false, true).then((r) => useUi.getState().setProfiles(r.profiles, r.wsl, r.defaultProfileId));
   void refreshAgents(false);
 }
 
@@ -114,13 +125,16 @@ export function App() {
         }
       } else if (e.ctrlKey && e.shiftKey && k === 'e') {
         e.preventDefault();
-        if (s.activeId) s.setExplorer(s.activeId, !s.explorer[s.activeId]);
+        toggleSidebar();
       } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g') {
         const info = s.activeId ? s.infos[s.activeId] : undefined;
         if (info && (info.kind === 'agent' || info.runningAgent)) {
           e.preventDefault();
           window.dispatchEvent(new Event(TOGGLE_RICH_EVENT));
         }
+      } else if (e.ctrlKey && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+        e.preventDefault();
+        void stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1);
       } else if (e.key === 'F2') {
         e.preventDefault();
         window.dispatchEvent(new Event('arctri:rename-tab'));
@@ -136,6 +150,7 @@ export function App() {
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col bg-bg pt-9 text-fg">
+        <TitleBar />
         <TabBar />
         <main className="relative min-h-0 flex-1">
           {order.map((id) => {
@@ -146,6 +161,8 @@ export function App() {
         </main>
       </div>
       <SettingsDialog />
+      <CloneDialog />
+      <HelpDialogs />
       <Toasts />
     </TooltipProvider>
   );

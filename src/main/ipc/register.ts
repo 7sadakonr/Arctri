@@ -9,7 +9,7 @@ import type { SessionManager } from '../pty/session-manager';
 import type { SavedSession } from '../persistence/session-repo';
 import type { ProfileRegistry } from '../shell/registry';
 import { Router } from './router';
-import type { EnvironmentQuery } from '../env-query/service';
+import type { EnvironmentQuery, GitHistoryQuery } from '../env-query/service';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
 import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
 import type { WslManager } from '../wsl/wsl-manager';
@@ -26,7 +26,7 @@ export interface Services {
   savedSessions: () => SavedSession[];
   onPrefsChanged?: (prefs: import('@shared/prefs').Prefs) => void;
   diagnostics: () => Record<string, unknown>;
-  envQuery: EnvironmentQuery;
+  envQuery: EnvironmentQuery & GitHistoryQuery;
   wsl: WslManager;
   getWindow: () => BrowserWindow | undefined;
   origins: () => string[];
@@ -221,6 +221,26 @@ export function registerIpc(s: Services, hub: PortHub): void {
     return { env: 'windows' as const, path: dir };
   });
 
+  const repo = (sessionId: string) => {
+    const info = s.sessions.get(sessionId);
+    return info?.cwd ? { info, cwd: info.cwd.path } : undefined;
+  };
+  r.handle('git:refs', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? ((await s.envQuery.gitRefs(t.info.env, t.cwd)) ?? null) : null;
+  });
+  r.handle('git:log', async ({ sessionId, limit }) => {
+    const t = repo(sessionId);
+    return t ? ((await s.envQuery.gitLog(t.info.env, t.cwd, limit)) ?? null) : null;
+  });
+  r.handle('git:commitFiles', async ({ sessionId, hash }) => {
+    const t = repo(sessionId);
+    return t ? ((await s.envQuery.gitCommitFiles(t.info.env, t.cwd, hash)) ?? null) : null;
+  });
+  r.handle('git:revText', async ({ sessionId, rel, rev }) => {
+    const t = target(sessionId, rel);
+    return t ? ((await s.envQuery.gitRevText(t.info.env, t.root, rel, rev)) ?? null) : null;
+  });
   r.handle('git:headText', async ({ sessionId, rel }) => {
     const t = target(sessionId, rel);
     return t ? ((await s.envQuery.gitHeadText(t.info.env, t.root, rel)) ?? null) : null;

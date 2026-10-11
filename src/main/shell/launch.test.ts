@@ -8,6 +8,8 @@ const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({ sessionId: 
 const pwsh: ShellProfile = { id: 'pwsh', label: 'PowerShell 7', env: { kind: 'windows' }, shell: 'pwsh', executable: 'C:\\pwsh.exe', integration: 'blocks' };
 const cmd: ShellProfile = { ...pwsh, id: 'cmd', shell: 'cmd', executable: 'C:\\cmd.exe', integration: 'cwd-only' };
 const bash: ShellProfile = { id: 'wsl:Ubuntu:bash', label: 'x', env: { kind: 'wsl', distro: 'Ubuntu' }, shell: 'bash', executable: 'C:\\wsl.exe', integration: 'blocks' };
+const auto: ShellProfile = { ...bash, id: 'wsl:Ubuntu', autoShell: true };
+const gitBash: ShellProfile = { ...pwsh, id: 'gitbash', shell: 'other', executable: 'C:\\Git\\bash.exe', args: ['--login', '-i'], integration: 'none' };
 const zsh: ShellProfile = { ...bash, id: 'wsl:Ubuntu:zsh', shell: 'zsh' };
 
 describe('buildShellLaunch', () => {
@@ -48,6 +50,23 @@ describe('buildShellLaunch', () => {
     expect(a[7]).toContain('exec zsh -i');
     expect(a.at(-1)).toMatch(/^\/mnt\/.*\/zsh$/);
     expect(a.slice(2, 5)).toEqual(['--cd', '~', '--exec']);
+  });
+
+  it('WSL auto: the login shell decides between the zsh shim and the bash rcfile', async () => {
+    const a = (await buildShellLaunch(auto, ctx())).args as string[];
+    expect(a.slice(5, 7)).toEqual(['sh', '-c']);
+    expect(a[7]).toContain('exec zsh -i');
+    expect(a[7]).toContain('exec bash --rcfile "$2" -i');
+    expect(a[7]).toContain('.zshrc');
+    expect(a[7]).toContain('*/zsh');
+    expect(a.at(-2)).toMatch(/\/zsh$/);
+    expect(a.at(-1)).toMatch(/arctri\.bash$/);
+  });
+
+  it('other Windows shells start as a plain program with their own arguments', async () => {
+    const p = await buildShellLaunch(gitBash, ctx());
+    expect(p.file).toBe('C:\\Git\\bash.exe');
+    expect(p.args).toEqual(['--login', '-i']);
   });
 
   it('keeps a WSL folder only for the matching distribution and falls back with a note when mapping fails', async () => {

@@ -74,10 +74,45 @@ $out"
       })
       ;;
     headtext)
-      # a1 = folder, a2 = path relative to it: the file as committed in HEAD ("x" keeps the trailing newline through $(...))
+      # a1 = folder, a2 = path relative to it, a3 = revision (default HEAD): the file as committed ("x" keeps the trailing newline through $(...))
       d=$(expand_home "$(dec "$a1")")
       r=$(dec "$a2")
-      out=$(cd "$d" 2>/dev/null && t=$(git -c core.quotepath=off --no-optional-locks show "HEAD:./$r" 2>/dev/null && printf x) && printf 'OK\n%s' "${t%x}")
+      rev=$(dec "$a3")
+      case "$rev" in ""|"=") rev=HEAD ;; esac
+      case "$rev" in HEAD|HEAD^|[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;; *) rev="" ;; esac
+      case "$rev" in *[!0-9a-fHEAD^]*) rev="" ;; esac
+      if [ -n "$rev" ]; then
+        out=$(cd "$d" 2>/dev/null && t=$(git -c core.quotepath=off --no-optional-locks show "$rev:./$r" 2>/dev/null && printf x) && printf 'OK\n%s' "${t%x}")
+      fi
+      ;;
+    refs)
+      d=$(expand_home "$(dec "$a1")")
+      out=$(cd "$d" 2>/dev/null && git --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 2>&1 && {
+        printf 'OK\n'
+        git --no-optional-locks for-each-ref --format='%(refname)%09%(HEAD)%09%(upstream:short)%09%(upstream:track,nobracket)' refs/heads refs/remotes 2>/dev/null
+      })
+      ;;
+    gitlog)
+      d=$(expand_home "$(dec "$a1")")
+      n=$(dec "$a2")
+      case "$n" in ""|*[!0-9]*) n=100 ;; esac
+      out=$(cd "$d" 2>/dev/null && git --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 2>&1 && {
+        printf 'OK\n'
+        git -c core.quotepath=off --no-optional-locks log -n "$n" --format='%H%x09%h%x09%an%x09%at%x09%D%x09%s' 2>/dev/null
+      })
+      ;;
+    gitshow)
+      d=$(expand_home "$(dec "$a1")")
+      h=$(dec "$a2")
+      case "$h" in ""|*[!0-9a-f]*) h="" ;; esac
+      if [ -n "$h" ]; then
+        out=$(cd "$d" 2>/dev/null && git --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 2>&1 && {
+          printf '##STATUS\n'
+          git -c core.quotepath=off --no-optional-locks show --format= --relative --name-status -M "$h" 2>/dev/null
+          printf '##NUMSTAT\n'
+          git -c core.quotepath=off --no-optional-locks show --format= --relative --numstat -M "$h" 2>/dev/null
+        })
+      fi
       ;;
     gitall)
       d=$(expand_home "$(dec "$a1")")

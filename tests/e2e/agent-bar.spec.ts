@@ -87,7 +87,7 @@ test('typing codex in a shell tab switches to the Codex bar, with working contro
     expect(await screen(page)).not.toMatch(/submitted:/);
 
     // the file panel lists the folder (read-only), a click opens the file beside the terminal, Alt+click inserts the path
-    await page.getByRole('button', { name: /^Files/ }).click();
+    // (the sidebar is open from the start)
     const panel = active(page).getByTestId('file-panel');
     await expect(panel.getByRole('treeitem', { name: /main\.ts|src/ }).first()).toBeVisible();
     await panel.getByRole('treeitem', { name: /^src/ }).click();

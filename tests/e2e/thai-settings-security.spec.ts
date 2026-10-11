@@ -21,7 +21,7 @@ test('Thai text in the editor: composition does not trigger actions, commit and 
   await editor.fill('Write-Output "ผู้ใหญ่ ที่นี่ ฤๅษี กำลัง"');
   await editor.press('Enter');
   await settled(page, 1);
-  await expect(activeBlocks(page).first().locator('.block-output')).toHaveText('ผู้ใหญ่ ที่นี่ ฤๅษี กำลัง');
+  await expect(activeBlocks(page).first().locator('.block-output').last()).toHaveText('ผู้ใหญ่ ที่นี่ ฤๅษี กำลัง');
 
   // Thai command history: Up arrow brings the Thai command back intact
   await editor.press('ArrowUp');
@@ -40,7 +40,7 @@ test('settings: Thai UI, light theme and persistence across restarts', async () 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.getByRole('dialog').getByRole('button', { name: 'ปิด' }).click();
     await expect(page.getByRole('button', { name: 'แท็บใหม่' }).first()).toBeVisible();
-    await expect(activeEditor(page)).toHaveAttribute('placeholder', 'พิมพ์คำสั่ง');
+    await expect(activeEditor(page)).toHaveAttribute('aria-label', 'คำสั่ง');
   } finally {
     await f.app.close();
   }
@@ -48,7 +48,7 @@ test('settings: Thai UI, light theme and persistence across restarts', async () 
   try {
     await waitForEditor(again.page);
     await expect(again.page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await expect(activeEditor(again.page)).toHaveAttribute('placeholder', 'พิมพ์คำสั่ง');
+    await expect(activeEditor(again.page)).toHaveAttribute('aria-label', 'คำสั่ง');
     // tab layout is restored (as a new shell; processes do not survive a restart)
     await expect(again.page.getByRole('tab')).toHaveCount(1);
   } finally {

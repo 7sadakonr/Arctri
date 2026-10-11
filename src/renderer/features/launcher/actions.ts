@@ -10,9 +10,40 @@ import { pushRecent, toRecent } from '../welcome/recent';
 
 const INITIAL = { cols: 120, rows: 30 };
 
+/** The shell the user asked for: the one chosen in Settings, otherwise Windows Terminal's default. */
+function wantedDefaultId(): string | undefined {
+  const { profiles, prefs, windowsDefaultProfile } = useUi.getState();
+  return prefs.defaultProfile && profiles.some((p) => p.id === prefs.defaultProfile) ? prefs.defaultProfile : windowsDefaultProfile;
+}
+
+/** Only shells that can show command blocks are offered; Command Prompt, Git Bash and the like are left out. */
+export const blockProfiles = (profiles: ShellProfile[]): ShellProfile[] => profiles.filter((p) => p.integration === 'blocks');
+
 export function defaultProfile(): ShellProfile | undefined {
-  const { profiles, prefs } = useUi.getState();
-  return profiles.find((p) => p.id === prefs.defaultProfile) ?? profiles[0];
+  const profiles = blockProfiles(useUi.getState().profiles);
+  const want = wantedDefaultId()?.toLowerCase();
+  return profiles.find((p) => p.id.toLowerCase() === want) ?? profiles[0];
+}
+
+/**
+ * Like `defaultProfile`, but when the default is a WSL distribution that is not known yet it makes WSL answer
+ * (asking again once), so a project or a new tab never silently lands in another shell.
+ */
+export async function resolveDefaultProfile(): Promise<ShellProfile | undefined> {
+  const want = wantedDefaultId();
+  const missing = () => !!want && !useUi.getState().profiles.some((p) => p.id.toLowerCase() === want.toLowerCase());
+  for (let attempt = 0; attempt < 2 && missing(); attempt++) {
+    try {
+      const r = await api.profiles.list(true, true);
+      useUi.getState().setProfiles(r.profiles, r.wsl, r.defaultProfileId);
+    } catch {
+      /* fall back to what is known */
+    }
+    if (missing() && attempt === 0) await new Promise((res) => setTimeout(res, 1500));
+  }
+  const found = defaultProfile();
+  if (want && missing() && found) useUi.getState().toast(tNow('launcher.defaultMissing', { want: want.replace(/^wsl(app)?:/, ''), used: found.label }), 'error');
+  return found;
 }
 
 function errText(e: unknown): string {
@@ -22,16 +53,15 @@ function errText(e: unknown): string {
 
 export async function openShell(
   profile: ShellProfile | undefined,
-  opts: { classic?: boolean; cwd?: EnvPath; title?: string } = {}
+  opts: { cwd?: EnvPath; title?: string } = {}
 ): Promise<SessionInfo | undefined> {
   if (!profile) return undefined;
-  const { prefs } = useUi.getState();
   try {
     const info = await api.sessions.create({
       profileId: profile.id,
       kind: 'shell',
       ...INITIAL,
-      presentation: opts.classic ? 'classic' : prefs.defaultPresentation,
+      presentation: 'blocks',
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
       ...(opts.title ? { title: opts.title } : {})
     });
@@ -49,7 +79,7 @@ export async function openSimilarTab(): Promise<void> {
   const { activeId, infos } = useSessions.getState();
   const cur = activeId ? infos[activeId] : undefined;
   const profile = cur && cur.kind === 'shell' ? useUi.getState().profiles.find((p) => p.id === cur.profileId) : undefined;
-  await openShell(profile ?? defaultProfile(), cur?.cwd && cur.kind === 'shell' ? { cwd: cur.cwd } : {});
+  await openShell(profile ?? (await resolveDefaultProfile()), cur?.cwd && cur.kind === 'shell' ? { cwd: cur.cwd } : {});
 }
 
 /** What each agent tab was started with, so Restart and Resume can start the same agent again. */
@@ -110,7 +140,7 @@ export async function restartSession(info: SessionInfo): Promise<void> {
     if (l) next = await openAgent(l.adapterId, l.profileId, l.displayName, l.options, cwd);
   } else {
     const profile = useUi.getState().profiles.find((p) => p.id === info.profileId);
-    next = await openShell(profile, { ...(cwd ? { cwd } : {}), classic: info.presentation === 'classic' });
+    next = await openShell(profile, cwd ? { cwd } : {});
   }
   if (next) await closeSession(info.id);
 }
@@ -118,20 +148,31 @@ export async function restartSession(info: SessionInfo): Promise<void> {
 /** A plain shell in the environment and folder of the given session. */
 export async function openShellHere(info: SessionInfo): Promise<void> {
   const { profiles } = useUi.getState();
+  const fallback = info.env.kind === 'wsl' ? undefined : await resolveDefaultProfile();
   const profile =
     info.env.kind === 'wsl'
-      ? profiles.find((p) => p.env.kind === 'wsl' && p.env.distro === (info.env as { distro: string }).distro && p.shell === 'bash') ??
+      ? profiles.find((p) => p.env.kind === 'wsl' && p.env.distro === (info.env as { distro: string }).distro) ??
         profiles.find((p) => p.env.kind === 'wsl')
-      : defaultProfile();
+      : fallback;
   await openShell(profile, info.cwd ? { cwd: info.cwd } : {});
 }
 
 /** The profile to use for a folder: a WSL folder gets a shell of its own distribution, anything else the default. */
-function profileForFolder(folder: EnvPath): ShellProfile | undefined {
+async function profileForFolder(folder: EnvPath): Promise<ShellProfile | undefined> {
+  if (folder.env !== 'wsl') return resolveDefaultProfile();
+  const mineIn = (list: ShellProfile[]) =>
+    list.filter((p) => p.env.kind === 'wsl' && p.env.distro.toLowerCase() === folder.distro.toLowerCase());
+  if (mineIn(useUi.getState().profiles).length === 0) {
+    // WSL has not been asked about yet (or did not answer): make it answer before settling for another shell.
+    try {
+      const r = await api.profiles.list(true, true);
+      useUi.getState().setProfiles(r.profiles, r.wsl, r.defaultProfileId);
+    } catch {
+      /* fall back to what is known */
+    }
+  }
   const { profiles } = useUi.getState();
-  if (folder.env !== 'wsl') return defaultProfile();
-  const mine = profiles.filter((p) => p.env.kind === 'wsl' && p.env.distro.toLowerCase() === folder.distro.toLowerCase());
-  return mine.find((p) => p.shell === 'bash') ?? mine[0] ?? profiles.find((p) => p.env.kind === 'wsl') ?? defaultProfile();
+  return mineIn(profiles)[0] ?? profiles.find((p) => p.env.kind === 'wsl') ?? (await resolveDefaultProfile());
 }
 
 async function rememberProject(folder: EnvPath): Promise<void> {
@@ -145,7 +186,7 @@ async function rememberProject(folder: EnvPath): Promise<void> {
 
 /** A new tab in the folder, which is also put on top of the recent projects. */
 export async function openProject(folder: EnvPath): Promise<SessionInfo | undefined> {
-  const info = await openShell(profileForFolder(folder), { cwd: folder });
+  const info = await openShell(await profileForFolder(folder), { cwd: folder });
   if (info) void rememberProject(folder);
   return info;
 }
@@ -158,7 +199,7 @@ export async function pickAndOpenProject(): Promise<void> {
 
 /** A tab in `parent` that runs `git clone <url>` so the user sees the progress (and any error) themselves. */
 export async function cloneRepository(url: string, parent: EnvPath): Promise<void> {
-  const info = await openShell(profileForFolder(parent), { cwd: parent });
+  const info = await openShell(await profileForFolder(parent), { cwd: parent });
   if (!info) return;
   const command = `git clone ${url}`;
   for (let i = 0; i < 40; i++) {

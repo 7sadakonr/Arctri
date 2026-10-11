@@ -7,6 +7,8 @@ import { cn } from '@/lib/cn';
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
+import { useUi } from '@/stores/ui';
+import { toggleSidebar } from '../sidebar/toggle';
 import { closeSession, openSimilarTab } from '../launcher/actions';
 import { NewTabMenu } from '../launcher/NewTabMenu';
 
@@ -129,18 +131,12 @@ export function TabBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const activeId = useSessions((s) => s.activeId);
   const hasFolder = useSessions((s) => !!(s.activeId && s.infos[s.activeId]?.cwd));
-  const filesOpen = useSessions((s) => !!(s.activeId && s.explorer[s.activeId]));
+  const filesOpen = useUi((s) => s.prefs.sidebarOpen);
+
+  if (order.length === 0) return null;
 
   return (
-    <div
-      className="drag fixed z-30 flex items-center gap-1 pl-2"
-      style={{
-        left: 'env(titlebar-area-x, 0px)',
-        top: 0,
-        width: 'env(titlebar-area-width, 100%)',
-        height: 'env(titlebar-area-height, 36px)'
-      }}
-    >
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border pl-2">
       <div role="tablist" className="flex min-w-0 flex-1 items-center gap-1">
         {order.map((id, i) => (
           <Tab key={id} id={id} index={i} />
@@ -167,7 +163,7 @@ export function TabBar() {
               aria-label={t('agent.files')}
               aria-pressed={filesOpen}
               onClick={() => {
-                useSessions.getState().setExplorer(activeId, !filesOpen);
+                toggleSidebar();
                 focusActiveSession();
               }}
             >

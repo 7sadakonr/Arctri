@@ -95,6 +95,19 @@ const api = {
       ipcRenderer.invoke('fs:list', { sessionId, rel }),
     pick: (sessionId: SessionId): Promise<string[]> => ipcRenderer.invoke('app:pickFiles', { sessionId }),
     headText: (sessionId: SessionId, rel: string): Promise<string | null> => ipcRenderer.invoke('git:headText', { sessionId, rel }),
+    refs: (sessionId: SessionId): Promise<{
+      current?: string;
+      local: Array<{ name: string; upstream?: string; ahead?: number; behind?: number }>;
+      remote: Array<{ name: string; upstream?: string; ahead?: number; behind?: number }>;
+    } | null> => ipcRenderer.invoke('git:refs', { sessionId }),
+    log: (sessionId: SessionId, limit = 100): Promise<Array<{
+      hash: string; short: string; author: string; time: number; refs: string[]; subject: string;
+    }> | null> => ipcRenderer.invoke('git:log', { sessionId, limit }),
+    commitFiles: (sessionId: SessionId, hash: string): Promise<Array<{
+      path: string; status: string; added: number; deleted: number;
+    }> | null> => ipcRenderer.invoke('git:commitFiles', { sessionId, hash }),
+    revText: (sessionId: SessionId, rel: string, rev: string): Promise<string | null> =>
+      ipcRenderer.invoke('git:revText', { sessionId, rel, rev }),
     status: (sessionId: SessionId): Promise<Array<{ path: string; status: string }> | null> =>
       ipcRenderer.invoke('git:status', { sessionId }),
     read: (sessionId: SessionId, rel: string): Promise<

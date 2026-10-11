@@ -64,7 +64,11 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   const t = useT();
   const view = useSessions((s) => s.viewer[info.id]);
   const rel = view?.active ?? '';
-  const mode = view?.tabs.find((x) => x.rel === rel)?.mode ?? 'file';
+  const curTab = view?.tabs.find((x) => x.rel === rel);
+  const mode = curTab?.mode ?? 'file';
+  // `rel` is the tab's identity; the file is `path`, and with `rev` it is shown as that commit changed it (read-only)
+  const path = curTab?.path ?? rel;
+  const rev = curTab?.rev;
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | undefined>(undefined);
   const lang = useRef(new Compartment());
@@ -135,7 +139,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   // (re)load the file and build the editor
   useEffect(() => {
     if (!rel) return;
-    if (isImage(rel)) {
+    if (!rev && isImage(path)) {
       // an image has no editor: park the text file we leave so its unsaved edits survive
       const left = shown.current;
       if (left && editor.current) cache.current.set(left, { state: editor.current.state, ...meta.current, mtime: mtime.current });
@@ -165,15 +169,22 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     }
     setDoc({ state: 'loading' });
     void (async () => {
-      const r = await api.files.read(info.id, rel);
+      let r: Awaited<ReturnType<typeof api.files.read>>;
+      if (rev) {
+        const at = await api.files.revText(info.id, path, rev);
+        const before = at === null ? await api.files.revText(info.id, path, `${rev}^`) : null;
+        r = at !== null || before !== null
+          ? { ok: true, text: at ?? '', eol: 'lf', bom: false, mtimeMs: 0, size: (at ?? '').length }
+          : { ok: false, error: 'not-found' };
+      } else r = await api.files.read(info.id, path);
       if (dead) return;
       if (!r.ok) {
         setDoc({ state: 'error', error: r.error });
         return;
       }
-      const head = mode === 'diff' ? await api.files.headText(info.id, rel) : undefined;
+      const head = rev ? await api.files.revText(info.id, path, `${rev}^`) : mode === 'diff' ? await api.files.headText(info.id, path) : undefined;
       const base = head === undefined ? undefined : (head ?? '').replace(/\r\n/g, '\n');
-      const language = await languageFor(baseName(rel));
+      const language = await languageFor(baseName(path));
       if (dead || !host.current) return;
       const carried = textRef.current;
       textRef.current = undefined;
@@ -190,6 +201,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       const extensions: Extension[] = [
         lineNumbers(), history(), drawSelection(), highlightActiveLine(), search({ top: true }),
         theme, syntaxHighlighting(highlight), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        ...(rev ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
         lang.current.of(language ?? []),
         wrapC.current.of(wrapRef.current ? EditorView.lineWrapping : []),
         keymap.of([
@@ -229,7 +241,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     if (!ev) return;
     const d = docRef.current;
     if (d.state !== 'ready') return;
-    const r = await api.files.write(info.id, rel, ev.state.doc.toString(), d.eol, d.bom, mtime.current);
+    const r = await api.files.write(info.id, path, ev.state.doc.toString(), d.eol, d.bom, mtime.current);
     if (r.ok) {
       mtime.current = r.mtimeMs;
       dirtyRef.current = false;
@@ -241,22 +253,22 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       setStale(true);
       useUi.getState().toast(t('viewer.conflict'), 'error');
     } else useUi.getState().toast(t('viewer.failed'), 'error');
-  }, [info.id, rel, t]);
+  }, [info.id, rel, path, t]);
   const docRef = useRef(doc);
   docRef.current = doc;
 
   // follow the file on disk (an agent keeps editing it)
   useEffect(() => {
-    if (!rel || !active || doc.state !== 'ready') return;
+    if (!rel || !active || doc.state !== 'ready' || rev) return;
     const i = setInterval(() => {
-      void api.files.stat(info.id, rel).then((s) => {
+      void api.files.stat(info.id, path).then((s) => {
         if (!s || s.mtimeMs === mtime.current) return;
         if (dirtyRef.current) setStale(true);
         else reload(rel);
       }, () => undefined);
     }, 1500);
     return () => clearInterval(i);
-  }, [info.id, rel, active, doc.state]);
+  }, [info.id, rel, active, doc.state, rev]);
 
   if (!view) return null;
 
@@ -265,9 +277,9 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     if (dirtyRef.current && editor.current) textRef.current = editor.current.state.doc.toString();
     cache.current.delete(rel);
     shown.current = rel; // same file, other mode: rebuild in place
-    useSessions.getState().openViewer(info.id, rel, m);
+    useSessions.getState().openViewer(info.id, rel, m, { path, ...(rev ? { rev } : {}) });
   };
-  const image = isImage(rel);
+  const image = !rev && isImage(path);
   const unchanged = !image && mode === 'diff' && noChange && !stale;
   const errorText = doc.state === 'error'
     ? t(doc.error === 'binary' ? 'viewer.binary' : doc.error === 'too-large' ? 'viewer.tooLarge' : doc.error === 'not-found' ? 'viewer.notFound' : 'viewer.failed')
@@ -306,16 +318,16 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
             key={tab.rel}
             role="tab"
             aria-selected={tab.rel === rel}
-            title={tab.rel}
-            onClick={() => useSessions.getState().openViewer(info.id, tab.rel, tab.mode)}
+            title={tab.path ?? tab.rel}
+            onClick={() => useSessions.getState().openViewer(info.id, tab.rel, tab.mode, { path: tab.path ?? tab.rel, ...(tab.rev ? { rev: tab.rev } : {}) })}
             onAuxClick={(e) => e.button === 1 && closeTab(tab.rel)}
             className={cn(
               'group flex shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2',
               tab.rel === rel ? 'bg-bg text-fg' : 'text-fg-muted hover:text-fg'
             )}
           >
-            <img src={iconUrl(baseName(tab.rel), false)} alt="" width={14} height={14} draggable={false} />
-            <span className="max-w-[160px] truncate">{baseName(tab.rel)}</span>
+            <img src={iconUrl(baseName(tab.path ?? tab.rel), false)} alt="" width={14} height={14} draggable={false} />
+            <span className="max-w-[160px] truncate">{baseName(tab.path ?? tab.rel)}{tab.rev ? ` @${tab.rev.slice(0, 7)}` : ''}</span>
             {dirtySet.has(tab.rel) && <span className="text-warn">●</span>}
             <button
               type="button"
@@ -330,11 +342,12 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
         ))}
       </div>
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border bg-panel px-2 text-[12px]">
-        <span className="min-w-0 flex-1 truncate font-mono text-fg" title={rel}>
-          {rel}
+        <span className="min-w-0 flex-1 truncate font-mono text-fg" title={path}>
+          {path}
+          {rev && <span className="ml-1 text-fg-muted">@{rev.slice(0, 7)}</span>}
           {dirty && !image && <span className="ml-1 text-warn">●</span>}
         </span>
-        {!image && (['file', 'diff'] as const).map((m) => (
+        {!image && !rev && (['file', 'diff'] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -344,10 +357,10 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
             {t(m === 'file' ? 'viewer.file' : 'viewer.diff')}
           </button>
         ))}
-        <Button variant="ghost" size="sm" title={t('viewer.insertPath')} aria-label={t('viewer.insertPath')} onClick={() => insertText(info.id, refOf(rel.replace(/\\/g, '/')))}>
+        <Button variant="ghost" size="sm" title={t('viewer.insertPath')} aria-label={t('viewer.insertPath')} onClick={() => insertText(info.id, refOf(path.replace(/\\/g, '/')))}>
           <AtSign size={12} />
         </Button>
-        {!image && (
+        {!image && !rev && (
           <>
             <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (Ctrl+S)`} aria-label={t('viewer.save')} onClick={() => void save()}>
               <Save size={12} />
@@ -376,7 +389,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       )}
       <div className="relative min-h-0 flex-1">
         <div ref={host} className={cn('absolute inset-0', (image || unchanged || doc.state !== 'ready') && 'invisible')} />
-        {image && <ImageView key={rel} sessionId={info.id} rel={rel} active={active} />}
+        {image && <ImageView key={rel} sessionId={info.id} rel={path} active={active} />}
         {unchanged && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.noChanges')}</div>}
         {!image && doc.state === 'loading' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.loading')}</div>}
         {!image && doc.state === 'error' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{errorText}</div>}

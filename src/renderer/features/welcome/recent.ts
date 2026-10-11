@@ -34,3 +34,8 @@ export function projectName(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
   return parts.at(-1) ?? path;
 }
+
+/** A user's home folder ("C:\\Users\\me", "/home/me", "/root") says nothing about a project, so it is not remembered. */
+export function isHomeFolder(path: string): boolean {
+  return /^[a-z]:[\\/]+users[\\/]+[^\\/]+[\\/]*$/i.test(path) || /^\/(home\/[^/]+|root)\/*$/.test(path);
+}

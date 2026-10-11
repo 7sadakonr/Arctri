@@ -211,6 +211,14 @@ export class SessionManager {
       if (s.helloTimer) clearTimeout(s.helloTimer);
       changed = true;
     }
+    // A WSL tab chooses between zsh and bash when it starts: show (and complete for) the one that is running.
+    if (evType === 'hello' && s.info.kind === 'shell' && s.info.env.kind === 'wsl') {
+      const real = s.sm.helloShell;
+      if ((real === 'zsh' || real === 'bash') && real !== s.info.shell) {
+        s.info.shell = real;
+        changed = true;
+      }
+    }
     if (evType === 'cwd' && s.sm.cwd) changed = this.setCwd(s, s.sm.cwd) || changed;
     if (tr.kind === 'blockStarted' && s.info.kind === 'shell') {
       const agentId = detectAgentCommand(tr.command.text, s.info.shell);
