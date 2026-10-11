@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { accessSync, constants, existsSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { delimiter, extname, join } from 'node:path';
 import type { WslManager } from '../wsl/wsl-manager';
 
 const EXT_ORDER = ['.exe', '.com', '.cmd', '.bat'];
@@ -80,3 +81,42 @@ export async function probeWsl(wsl: WslManager, distro: string, command: string,
   const r = await wsl.exec(distro, ['bash', '-lic', 'exec "$0" "$@"', command, ...args], timeoutMs);
   return { code: r.code, out: r.stdout };
 }
+
+const isExecutable = (p: string): boolean => {
+  try {
+    accessSync(p, constants.X_OK);
+    return isFile(p);
+  } catch {
+    return false;
+  }
+};
+
+/** Where tools installed by npm, Homebrew, bun or the vendors' own installers usually end up on a Mac. */
+const wellKnownDirs = (): string[] => {
+  const h = homedir();
+  return [
+    join(h, '.local', 'bin'), join(h, '.claude', 'local'), join(h, '.bun', 'bin'), join(h, '.npm-global', 'bin'),
+    '/opt/homebrew/bin', '/usr/local/bin'
+  ];
+};
+
+/**
+ * Finds a command on this machine (macOS). An app started from Finder has a minimal PATH, so the usual install folders
+ * are looked at too, and last the user's login shell is asked, because tools from nvm are set up in its startup files.
+ */
+export async function findLocal(
+  command: string, shell: string, pathEnv: string, override?: string
+): Promise<{ path: string; source: 'path' | 'login-shell' } | undefined> {
+  if (override) return isExecutable(override) ? { path: override, source: 'path' } : undefined;
+  for (const dir of [...pathEnv.split(delimiter).filter(Boolean), ...wellKnownDirs()]) {
+    const candidate = join(dir, command);
+    if (isExecutable(candidate)) return { path: candidate, source: 'path' };
+  }
+  const r = await run(shell, ['-lic', 'command -v "$0"', command], 15000);
+  const line = r.out.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('/')).pop();
+  return r.code === 0 && line && isExecutable(line) ? { path: line, source: 'login-shell' } : undefined;
+}
+
+/** `--version` and `--help` of an agent, run the way the agent will be launched: through a login shell, so `node` is found. */
+export const probeLocal = (shell: string, command: string, args: string[], timeoutMs = 15000) =>
+  run(shell, ['-lic', 'exec "$0" "$@"', command, ...args], timeoutMs);

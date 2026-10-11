@@ -18,6 +18,32 @@ interface TrackerTerm {
   registerMarker(offset?: number): MarkerLike | undefined;
 }
 
+const MAX_PROMPT_LINES = 4;
+
+/**
+ * Some shells (zsh) pad the prompt line with spaces out to the width of the terminal. Taken as they are, those spaces
+ * would make the prompt as wide as the window and leave no room for the input after it.
+ */
+export function trimLineEnds(snap: BlockSnapshot): BlockSnapshot {
+  let charCount = 0;
+  const lines = snap.lines.map((line) => {
+    const runs = [...line.runs];
+    while (runs.length > 0) {
+      const last = runs[runs.length - 1]!;
+      const text = last.text.replace(/\s+$/, '');
+      if (text) {
+        runs[runs.length - 1] = { ...last, text };
+        break;
+      }
+      runs.pop();
+    }
+    for (const r of runs) charCount += r.text.length;
+    return { runs };
+  });
+  return { ...snap, lines, charCount };
+}
+const MAX_COMMAND_ROWS = 40;
+
 export interface TrackerEvents {
   onBlockStarted(block: CommandBlock): void;
   onBlockFinished(block: CommandBlock): void;
@@ -43,6 +69,7 @@ export class BlockTracker {
   private marker: MarkerLike | undefined;
   private current: CommandBlock | undefined;
   private altSeen = false;
+  private pendingPrompt: BlockSnapshot | undefined;
   private seq = 0;
   private disposables: Disposable[] = [];
 
@@ -69,6 +96,8 @@ export class BlockTracker {
   private handle(id: number, data: string): boolean {
     const ev = parseOsc(id, data, this.session.nonce);
     if (!ev) return false; // not ours (or forged): let xterm treat it as an ordinary OSC
+    // The shell has echoed the command but has not wiped the screen yet: this is the one moment the prompt and the command are both on it.
+    if (ev.t === 'commandLine') this.pendingPrompt = this.promptSnapshot(MAX_COMMAND_ROWS, true);
     const tr = this.sm.apply(ev, this.now());
     if (ev.t === 'cwd') this.events.onCwd?.(this.sm.cwd ?? '');
     this.handleTransition(tr);
@@ -94,8 +123,10 @@ export class BlockTracker {
           status: 'running',
           startedAt: tr.command.startedAt,
           usedAltScreen: false,
-          collapsed: false
+          collapsed: false,
+          ...(this.pendingPrompt ? { prompt: this.pendingPrompt } : {})
         };
+        this.pendingPrompt = undefined;
         this.current = block;
         this.events.onBlockStarted({ ...block });
         break;
@@ -128,9 +159,12 @@ export class BlockTracker {
   private cwdPath(): EnvPath | undefined {
     const p = this.sm.cwd;
     if (!p) return undefined;
-    return this.session.env.kind === 'windows'
+    const env = this.session.env;
+    return env.kind === 'windows'
       ? { env: 'windows', path: p as never }
-      : { env: 'wsl', distro: this.session.env.distro, path: p as never };
+      : env.kind === 'local'
+        ? { env: 'local', path: p as never }
+        : { env: 'wsl', distro: env.distro, path: p as never };
   }
 
   /** Output of the command that just ended: from its marker to the cursor, normal buffer only. */
@@ -141,6 +175,18 @@ export class BlockTracker {
     const gone = !this.marker || this.marker.isDisposed || this.marker.line < 0;
     const start = gone ? 0 : this.marker!.line;
     return snapshotRange(buf, start, end, gone);
+  }
+
+  /** The rows from the top of the screen to the cursor: the prompt (and whatever is typed after it). */
+  promptSnapshot(maxLines = MAX_PROMPT_LINES, dropTrailingEmpty = false): BlockSnapshot | undefined {
+    const buf = this.term.buffer.normal;
+    const end = buf.baseY + buf.cursorY + 1;
+    const snap = trimLineEnds(snapshotRange(buf, buf.baseY, end));
+    // After Enter the cursor has moved to the row below the command.
+    if (dropTrailingEmpty) while (snap.lines.length > 1 && snap.lines[snap.lines.length - 1]!.runs.length === 0) snap.lines.pop();
+    if (snap.charCount === 0) return undefined;
+    if (snap.lines.length <= maxLines) return snap;
+    return { ...snap, lines: snap.lines.slice(-maxLines) };
   }
 
   /** The PTY closed while a command was running. */

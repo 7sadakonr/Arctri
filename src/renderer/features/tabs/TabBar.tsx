@@ -7,6 +7,8 @@ import { cn } from '@/lib/cn';
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
+import { useUi } from '@/stores/ui';
+import { toggleSidebar } from '../sidebar/toggle';
 import { closeSession, openSimilarTab } from '../launcher/actions';
 import { NewTabMenu } from '../launcher/NewTabMenu';
 
@@ -84,8 +86,11 @@ function Tab({ id, index }: { id: string; index: number }) {
         setEditing(true);
       }}
       className={cn(
-        'no-drag group relative flex h-7 min-w-[110px] max-w-[220px] flex-1 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
-        active ? 'bg-panel text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
+        // square tabs divided by thin lines, as in Zed; the active one is the colour of the terminal and open to it below
+        'no-drag group relative flex h-full min-w-[110px] max-w-[220px] flex-1 items-center gap-1.5 border-r border-border px-3 text-xs transition-colors',
+        active
+          ? 'bg-bg text-fg after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-bg'
+          : 'text-fg-muted hover:bg-hover hover:text-fg'
       )}
     >
       <StatusDot id={id} />
@@ -129,23 +134,17 @@ export function TabBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const activeId = useSessions((s) => s.activeId);
   const hasFolder = useSessions((s) => !!(s.activeId && s.infos[s.activeId]?.cwd));
-  const filesOpen = useSessions((s) => !!(s.activeId && s.explorer[s.activeId]));
+  const filesOpen = useUi((s) => s.prefs.sidebarOpen);
+
+  if (order.length === 0) return null;
 
   return (
-    <div
-      className="drag fixed z-30 flex items-center gap-1 pl-2"
-      style={{
-        left: 'env(titlebar-area-x, 0px)',
-        top: 0,
-        width: 'env(titlebar-area-width, 100%)',
-        height: 'env(titlebar-area-height, 36px)'
-      }}
-    >
-      <div role="tablist" className="flex min-w-0 flex-1 items-center gap-1">
+    <div className="flex h-9 shrink-0 items-stretch border-b border-border bg-panel">
+      <div role="tablist" className="flex min-w-0 flex-1 items-stretch">
         {order.map((id, i) => (
           <Tab key={id} id={id} index={i} />
         ))}
-        <div className="no-drag flex shrink-0 items-center">
+        <div className="no-drag flex shrink-0 items-center px-1">
           <Tip label={t('tab.new')} side="bottom">
             <Button variant="ghost" size="icon" aria-label={t('tab.new')} onClick={() => void openSimilarTab()}>
               <Plus size={14} />
@@ -159,7 +158,7 @@ export function TabBar() {
         </div>
       </div>
       {activeId && hasFolder && (
-        <div className="no-drag flex shrink-0 items-center pr-1">
+        <div className="no-drag flex shrink-0 items-center border-l border-border px-1">
           <Tip label={t('agent.filesHint')} side="bottom">
             <Button
               variant={filesOpen ? 'outline' : 'ghost'}
@@ -167,7 +166,7 @@ export function TabBar() {
               aria-label={t('agent.files')}
               aria-pressed={filesOpen}
               onClick={() => {
-                useSessions.getState().setExplorer(activeId, !filesOpen);
+                toggleSidebar();
                 focusActiveSession();
               }}
             >

@@ -1,6 +1,6 @@
 import type { ITheme } from '@xterm/xterm';
 
-export const TERMINAL_FONT = "'JetBrains Mono', 'Noto Sans Thai', 'Leelawadee UI', Tahoma, 'Cascadia Mono', Consolas, monospace";
+export const TERMINAL_FONT = "'JetBrains Mono', 'Noto Sans Thai', 'Leelawadee UI', Tahoma, Thonburi, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, Monaco, monospace";
 
 const ANSI_DARK = [
   '#2b2e3b', '#f2777a', '#8fcf8f', '#e5c07b', '#6fa8f0', '#c792ea', '#5fc9d6', '#c9ccd6',

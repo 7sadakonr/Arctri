@@ -3,7 +3,8 @@ import { prefsPatchSchema } from '../prefs';
 
 const envPath = z.union([
   z.object({ env: z.literal('windows'), path: z.string().max(4096) }),
-  z.object({ env: z.literal('wsl'), distro: z.string().max(200), path: z.string().max(4096) })
+  z.object({ env: z.literal('wsl'), distro: z.string().max(200), path: z.string().max(4096) }),
+  z.object({ env: z.literal('local'), path: z.string().max(4096) })
 ]);
 
 const launchOptions = z.object({
@@ -59,6 +60,21 @@ export const requestSchemas = {
   'app:pickFiles': z.object({ sessionId: id }),
   'app:pickFolder': z.undefined().or(z.null()),
   'git:headText': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
+  'git:refs': z.object({ sessionId: id }),
+  'git:stage': z.object({ sessionId: id, paths: z.union([z.literal('all'), z.array(z.string().min(1).max(4096)).min(1).max(5000)]) }),
+  'git:unstage': z.object({ sessionId: id, paths: z.union([z.literal('all'), z.array(z.string().min(1).max(4096)).min(1).max(5000)]) }),
+  'git:commit': z.object({ sessionId: id, message: z.string().min(1).max(10_000) }),
+  'git:createBranch': z.object({ sessionId: id, name: z.string().min(1).max(200) }),
+  'git:branchPreflight': z.object({ sessionId: id }),
+  'git:push': z.object({ sessionId: id }),
+  'git:fetch': z.object({ sessionId: id }),
+  'git:pull': z.object({ sessionId: id }),
+  'git:switch': z.object({ sessionId: id, name: z.string().min(1).max(200), remote: z.boolean() }),
+  'git:log': z.object({ sessionId: id, limit: z.number().int().min(1).max(500) }),
+  'git:commitFiles': z.object({ sessionId: id, hash: z.string().regex(/^[0-9a-f]{7,40}$/) }),
+  'git:revText': z.object({
+    sessionId: id, rel: z.string().min(1).max(4096), rev: z.string().regex(/^[0-9a-f]{7,40}\^?$/)
+  }),
   'agents:codexNotifications': z.object({ sessionId: id, action: z.enum(['status', 'enable']) }),
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),

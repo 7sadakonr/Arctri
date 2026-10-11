@@ -41,7 +41,9 @@ export class SessionRepo {
           ? { env: 'windows', path: r['cwd_path'] as never }
           : r['cwd_env'] === 'wsl'
             ? { env: 'wsl', distro: r['cwd_distro'] as string, path: r['cwd_path'] as never }
-            : undefined;
+            : r['cwd_env'] === 'local'
+              ? { env: 'local', path: r['cwd_path'] as never }
+              : undefined;
       return {
         id: r['id'] as string, position: r['position'] as number, title: r['title'] as string,
         titleSource: r['title_source'] as 'user' | 'auto', profileId: r['profile_id'] as string,

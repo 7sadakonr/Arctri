@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- **macOS (Apple Silicon and Intel).** Arctri finds the shells of the Mac (zsh, bash, Homebrew bash), opens the login shell by
+  default and gives it the same command blocks, completion, Files/Changes/Branches/History and agent support as on Windows.
+  The window uses the traffic lights, a menu in the system menu bar for Cmd+Q / Cmd+H / Edit, and Cmd shortcuts (Cmd+T, Cmd+W,
+  Cmd+1…9, Cmd+, and zoom, Cmd+C / Cmd+V). The `.dmg` and `.zip` are ad-hoc signed and not notarized.
+- Releases: a `Release` workflow builds the Windows installer and the macOS dmg/zip for a `v*` tag and attaches them to a GitHub Release.
+- New environment kind `local` (the machine itself, POSIX paths) next to `windows` and `wsl`; recent projects and saved tabs keep working.
+
+## 0.2.0-beta
+
+- **Menu bar** (File, Edit, View, Terminal, Help) in the title bar, with the current folder in the middle and the git branch
+  next to the window buttons. The tab row sits below it. Open Folder, Open Recent, Clone, Settings, zoom (Ctrl+= / Ctrl+- /
+  Ctrl+0), theme and a shortcuts list are all reachable from the menus.
+- **Sidebar, open by default**, with four views: Files, Changes (click a file for its diff), Branches (click one to run
+  `git switch` in the terminal) and History (commits of the branch; a file of a commit opens as a diff of that commit).
+- Command blocks only: the Native prompt and Classic modes are gone, and shells that cannot show blocks (Command Prompt,
+  Git Bash) are no longer offered. Blocks now look like the terminal: full-width rows headed by the shell's own prompt and
+  command, failures in red, newest at the bottom, and a fold button only for long output. The command editor shows the
+  shell's real prompt.
+- **New tab menu** follows Windows Terminal: its profiles in its order, and a "Terminal" entry that opens its default
+  profile. WSL distributions appear once each (zsh when you use it, bash otherwise) with explicit zsh and bash entries below.
+- The app opens on the welcome page; tabs from the last session are listed under Recent instead of being reopened. Open
+  Project and Recent open in the same shell as "Terminal".
+- WSL is remembered between runs and a failed probe no longer makes distributions disappear.
+- Git queries for a repository on a Windows drive (`/mnt/d/...`) go through git for Windows, which is much faster than git
+  inside WSL for big repositories.
+- AI agents are no longer started from the new tab menu; type the agent's command in a terminal.
+
 ## 0.1.3-beta
 
 - Multi-tab file viewer on the left side of the terminal: several files open at once, image preview, word wrap,

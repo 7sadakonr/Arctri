@@ -1,6 +1,7 @@
 // Starts a built/installed Arctri, waits until a real shell session reaches its prompt with
 // shell integration active, and checks that the native modules loaded.
-//   node scripts/smoke-installed.mjs [path-to-Arctri.exe] [--install <Setup.exe>]
+//   Windows: node scripts/smoke-installed.mjs [path-to-Arctri.exe] [--install <Setup.exe>]
+//   macOS:   node scripts/smoke-installed.mjs [path-to-Arctri.app/Contents/MacOS/Arctri]
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,13 @@ import { join, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
 const installIdx = args.indexOf('--install');
-let exe = args.find((a) => !a.startsWith('--') && a !== args[installIdx + 1]) ?? 'release/win-unpacked/Arctri.exe';
+// the unpacked build of this platform (electron-builder --dir, or the app inside a dmg/zip build)
+const defaultExe =
+  process.platform === 'darwin'
+    ? ['release/mac-arm64', 'release/mac'].map((d) => `${d}/Arctri.app/Contents/MacOS/Arctri`).find((p) => existsSync(p)) ??
+      'release/mac-arm64/Arctri.app/Contents/MacOS/Arctri'
+    : 'release/win-unpacked/Arctri.exe';
+let exe = args.find((a) => !a.startsWith('--') && a !== args[installIdx + 1]) ?? defaultExe;
 let installDir;
 
 if (installIdx >= 0) {

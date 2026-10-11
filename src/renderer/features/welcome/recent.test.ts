@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_RECENT, projectName, pushRecent, type RecentProject } from './recent';
+import { MAX_RECENT, isHomeFolder, projectName, toEnvPath, toRecent, pushRecent, type RecentProject } from './recent';
 
 const win = (path: string, openedAt = 1): RecentProject => ({ env: 'windows', path, openedAt });
 
@@ -28,5 +28,18 @@ describe('projectName', () => {
   it('takes the last segment', () => {
     expect(projectName('C:\\Users\\me\\Arctri')).toBe('Arctri');
     expect(projectName('/home/me/app/')).toBe('app');
+  });
+});
+
+describe('folders on a Mac', () => {
+  it('keeps the local environment through the recent list', () => {
+    const r = toRecent({ env: 'local', path: '/Users/me/app' as never }, 7);
+    expect(r).toEqual({ env: 'local', path: '/Users/me/app', openedAt: 7 });
+    expect(toEnvPath(r)).toEqual({ env: 'local', path: '/Users/me/app' });
+  });
+  it('does not remember the home folder', () => {
+    expect(isHomeFolder('/Users/me')).toBe(true);
+    expect(isHomeFolder('/Users/me/')).toBe(true);
+    expect(isHomeFolder('/Users/me/app')).toBe(false);
   });
 });

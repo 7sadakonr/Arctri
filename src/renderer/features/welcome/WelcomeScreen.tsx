@@ -1,13 +1,11 @@
+import { kbd, modKey } from '@/lib/platform';
 import { FolderOpen, GitFork, Plus, TerminalSquare, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { useEffect, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { useUi } from '@/stores/ui';
-import { cloneRepository, defaultProfile, openProject, openShell, pickAndOpenProject } from '../launcher/actions';
+import { openProject, openShell, pickAndOpenProject, resolveDefaultProfile } from '../launcher/actions';
 import { projectName, removeRecent, toEnvPath, type RecentProject } from './recent';
-import type { EnvPath } from '@shared/types/env';
 
 const RECENT_SHOWN = 5;
 
@@ -50,72 +48,26 @@ function Row({ icon, label, hint, detail, onClick, onRemove, removeLabel }: {
   );
 }
 
-const SAFE_URL = /^[\w.@:/~+%=?#-]+$/;
-
-function CloneDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const t = useT();
-  const [url, setUrl] = useState('');
-  const valid = SAFE_URL.test(url.trim());
-  const submit = async () => {
-    if (!valid) return;
-    const parent = await api.app.pickFolder();
-    if (!parent) return;
-    onOpenChange(false);
-    setUrl('');
-    await cloneRepository(url.trim(), parent as EnvPath);
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={t('welcome.cloneTitle')} closeLabel={t('welcome.cloneCancel')}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-          className="flex flex-col gap-3"
-        >
-          <input
-            autoFocus
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder={t('welcome.cloneUrl')}
-            spellCheck={false}
-            className="rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] text-fg outline-none focus:border-accent"
-          />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              {t('welcome.cloneCancel')}
-            </Button>
-            <Button type="submit" variant="outline" disabled={!valid}>
-              {t('welcome.cloneStart')}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /** The page shown while no tab is open: start something new, or go back to a recent folder. */
 export function WelcomeScreen() {
   const t = useT();
   const recent = useUi((s) => s.prefs.recentProjects);
   const shown = recent.slice(0, RECENT_SHOWN);
-  const [cloning, setCloning] = useState(false);
+  const cloning = useUi((s) => s.cloneOpen);
 
   useEffect(() => {
     let chordAt = 0;
     const h = (e: KeyboardEvent) => {
       if (cloning) return;
       const k = e.key.toLowerCase();
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'k') {
+      if (modKey(e) && !e.shiftKey && !e.altKey && k === 'k') {
         chordAt = Date.now();
         e.preventDefault();
-      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'o' && Date.now() - chordAt < 1500) {
+      } else if (modKey(e) && !e.shiftKey && !e.altKey && k === 'o' && Date.now() - chordAt < 1500) {
         chordAt = 0;
         e.preventDefault();
         void pickAndOpenProject();
-      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && /^[1-5]$/.test(e.key)) {
+      } else if (modKey(e) && !e.shiftKey && !e.altKey && /^[1-5]$/.test(e.key)) {
         const r = shown[Number(e.key) - 1];
         if (r) {
           e.preventDefault();
@@ -134,9 +86,9 @@ export function WelcomeScreen() {
     <div className="flex h-full items-center justify-center overflow-auto p-8">
       <div className="w-[min(520px,100%)]">
         <Section title={t('welcome.getStarted')}>
-          <Row icon={<Plus size={14} />} label={t('welcome.newTerminal')} hint="Ctrl+Shift+T" onClick={() => void openShell(defaultProfile())} />
-          <Row icon={<FolderOpen size={14} />} label={t('welcome.openProject')} hint="Ctrl+K Ctrl+O" onClick={() => void pickAndOpenProject()} />
-          <Row icon={<GitFork size={14} />} label={t('welcome.cloneRepo')} onClick={() => setCloning(true)} />
+          <Row icon={<Plus size={14} />} label={t('welcome.newTerminal')} hint={kbd("Ctrl+Shift+T")} onClick={() => void resolveDefaultProfile().then(openShell)} />
+          <Row icon={<FolderOpen size={14} />} label={t('welcome.openProject')} hint={kbd("Ctrl+K Ctrl+O")} onClick={() => void pickAndOpenProject()} />
+          <Row icon={<GitFork size={14} />} label={t('welcome.cloneRepo')} onClick={() => useUi.getState().setCloneOpen(true)} />
         </Section>
         <Section title={t('welcome.recent')}>
           {shown.length === 0 && <div className="px-2 py-1.5 text-[12px] text-fg-muted">{t('welcome.noRecent')}</div>}
@@ -146,7 +98,7 @@ export function WelcomeScreen() {
               icon={<TerminalSquare size={14} />}
               label={projectName(r.path)}
               detail={r.env === 'wsl' ? `${r.distro}: ${r.path}` : r.path}
-              hint={`Ctrl+${i + 1}`}
+              hint={kbd(`Ctrl+${i + 1}`)}
               onClick={() => void openProject(toEnvPath(r))}
               onRemove={() => forget(r)}
               removeLabel={t('welcome.removeRecent')}
@@ -154,7 +106,6 @@ export function WelcomeScreen() {
           ))}
         </Section>
       </div>
-      <CloneDialog open={cloning} onOpenChange={setCloning} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
+import { modKey } from '@/lib/platform';
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import { tNow, useT } from '@/lib/i18n';
+import { tNow } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useUi } from '@/stores/ui';
 
@@ -11,7 +12,6 @@ const EMPTY: never[] = [];
 export function BlockList({ sessionId, active }: { sessionId: string; active: boolean }) {
   const blocks = useBlocks((s) => s.blocks[sessionId]) ?? EMPTY;
   const selected = useBlocks((s) => s.selected[sessionId]);
-  const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -33,11 +33,11 @@ export function BlockList({ sessionId, active }: { sessionId: string; active: bo
     [sessionId]
   );
 
-  // Ctrl+Up / Ctrl+Down move the selection between blocks.
+  // Ctrl+Up / Ctrl+Down (Cmd on a Mac, where Control+arrows belong to Mission Control) move the selection between blocks.
   useEffect(() => {
     if (!active) return;
     const h = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.shiftKey || e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      if (!modKey(e) || e.shiftKey || e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
       const list = useBlocks.getState().blocks[sessionId] ?? [];
       if (list.length === 0) return;
       e.preventDefault();
@@ -53,8 +53,8 @@ export function BlockList({ sessionId, active }: { sessionId: string; active: bo
   }, [active, sessionId]);
 
   return (
-    <div ref={scroller} onScroll={onScroll} className="absolute inset-0 overflow-y-auto overflow-x-hidden py-2">
-      {blocks.length === 0 && <div className="mx-6 mt-8 text-center text-[12px] text-fg-muted">{t('editor.placeholder')}</div>}
+    <div ref={scroller} onScroll={onScroll} className="absolute inset-0 overflow-y-auto overflow-x-hidden">
+      <div className="flex min-h-full flex-col justify-end">
       {blocks.map((b) => (
         <BlockCard
           key={b.id}
@@ -66,6 +66,7 @@ export function BlockList({ sessionId, active }: { sessionId: string; active: bo
           onCopied={() => useUi.getState().toast(tNow('block.copied'))}
         />
       ))}
+      </div>
     </div>
   );
 }

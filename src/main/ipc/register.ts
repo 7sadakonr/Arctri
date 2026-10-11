@@ -9,11 +9,12 @@ import type { SessionManager } from '../pty/session-manager';
 import type { SavedSession } from '../persistence/session-repo';
 import type { ProfileRegistry } from '../shell/registry';
 import { Router } from './router';
-import type { EnvironmentQuery } from '../env-query/service';
+import type { EnvironmentQuery, GitHistoryQuery } from '../env-query/service';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
 import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
 import type { WslManager } from '../wsl/wsl-manager';
 import { mark } from '../timing';
+import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
 import { applyUiScale } from '../window';
 
 export interface Services {
@@ -26,7 +27,7 @@ export interface Services {
   savedSessions: () => SavedSession[];
   onPrefsChanged?: (prefs: import('@shared/prefs').Prefs) => void;
   diagnostics: () => Record<string, unknown>;
-  envQuery: EnvironmentQuery;
+  envQuery: EnvironmentQuery & GitHistoryQuery;
   wsl: WslManager;
   getWindow: () => BrowserWindow | undefined;
   origins: () => string[];
@@ -197,6 +198,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const refs: string[] = [];
     for (const f of picked) {
       if (info.env.kind === 'windows') refs.push(formatRef(info.cwd.path, f, 'windows'));
+      else if (info.env.kind === 'local') refs.push(formatRef(info.cwd.path, f, 'local'));
       else {
         const posixPath = uncToPosix(f, info.env.distro) ?? (f.startsWith('/') ? f : await s.wsl.toPosix(info.env.distro, f));
         if (posixPath) refs.push(formatRef(info.cwd.path, posixPath, 'wsl'));
@@ -218,9 +220,92 @@ export function registerIpc(s: Services, hub: PortHub): void {
     if (!dir) return null;
     const m = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)(\\.*)?$/i.exec(dir);
     if (m) return { env: 'wsl' as const, distro: m[1]!, path: (m[2] ?? '\\').replace(/\\/g, '/') };
+    if (process.platform !== 'win32') return { env: 'local' as const, path: dir };
     return { env: 'windows' as const, path: dir };
   });
 
+  const repo = (sessionId: string) => {
+    const info = s.sessions.get(sessionId);
+    return info?.cwd ? { info, cwd: info.cwd.path } : undefined;
+  };
+  // Git actions that write (stage, commit, branch, push). Paths are checked to stay below the tab's folder.
+  const afterGit = (sessionId: string, res: GitResult): GitResult => {
+    const target = repo(sessionId);
+    for (const tab of s.sessions.list()) {
+      if (target && tab.cwd?.path === target.cwd && tab.env.kind === target.info.env.kind &&
+          (tab.env.kind !== 'wsl' || (target.info.env.kind === 'wsl' && tab.env.distro === target.info.env.distro))) {
+        s.sessions.refreshBranch(tab.id);
+      }
+    }
+    return res;
+  };
+  const NO_TAB: GitResult = { ok: false, error: 'no folder' };
+  const branchPreflight = async (sessionId: string) => {
+    const t = repo(sessionId);
+    if (!t) return { ok: false, dirty: false, runningAgent: false, error: 'no folder' };
+    const status = await runGit(t.info.env, t.cwd, ['status', '--porcelain', '--untracked-files=normal']);
+    if (status.code !== 0) return { ok: false, dirty: false, runningAgent: false, error: status.stderr || 'git status failed' };
+    const runningAgent = s.sessions.list().some((i) => i.state === 'running' && (i.kind === 'agent' || !!i.runningAgent) &&
+      i.cwd?.path === t.cwd && i.env.kind === t.info.env.kind &&
+      (i.env.kind !== 'wsl' || (t.info.env.kind === 'wsl' && i.env.distro === t.info.env.distro)));
+    return { ok: true, dirty: !!status.stdout.trim(), runningAgent };
+  };
+  r.handle('git:branchPreflight', ({ sessionId }) => branchPreflight(sessionId));
+  r.handle('git:stage', async ({ sessionId, paths }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitStage(t.info.env, t.cwd, paths)) : NO_TAB;
+  });
+  r.handle('git:unstage', async ({ sessionId, paths }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitUnstage(t.info.env, t.cwd, paths)) : NO_TAB;
+  });
+  r.handle('git:commit', async ({ sessionId, message }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitCommit(t.info.env, t.cwd, message)) : NO_TAB;
+  });
+  r.handle('git:createBranch', async ({ sessionId, name }) => {
+    const t = repo(sessionId);
+    if (!t) return NO_TAB;
+    const gate = await branchPreflight(sessionId);
+    if (!gate.ok || gate.runningAgent) return { ok: false as const, error: gate.error ?? 'An agent is running in this folder' };
+    return afterGit(sessionId, await gitCreateBranch(t.info.env, t.cwd, name));
+  });
+  r.handle('git:push', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitPush(t.info.env, t.cwd)) : NO_TAB;
+  });
+  r.handle('git:fetch', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitFetch(t.info.env, t.cwd)) : NO_TAB;
+  });
+  r.handle('git:pull', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitPull(t.info.env, t.cwd)) : NO_TAB;
+  });
+  r.handle('git:switch', async ({ sessionId, name, remote }) => {
+    const t = repo(sessionId);
+    if (!t) return NO_TAB;
+    const gate = await branchPreflight(sessionId);
+    if (!gate.ok || gate.runningAgent) return { ok: false as const, error: gate.error ?? 'An agent is running in this folder' };
+    return afterGit(sessionId, await gitSwitch(t.info.env, t.cwd, name, remote));
+  });
+
+  r.handle('git:refs', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? ((await s.envQuery.gitRefs(t.info.env, t.cwd)) ?? null) : null;
+  });
+  r.handle('git:log', async ({ sessionId, limit }) => {
+    const t = repo(sessionId);
+    return t ? ((await s.envQuery.gitLog(t.info.env, t.cwd, limit)) ?? null) : null;
+  });
+  r.handle('git:commitFiles', async ({ sessionId, hash }) => {
+    const t = repo(sessionId);
+    return t ? ((await s.envQuery.gitCommitFiles(t.info.env, t.cwd, hash)) ?? null) : null;
+  });
+  r.handle('git:revText', async ({ sessionId, rel, rev }) => {
+    const t = target(sessionId, rel);
+    return t ? ((await s.envQuery.gitRevText(t.info.env, t.root, rel, rev)) ?? null) : null;
+  });
   r.handle('git:headText', async ({ sessionId, rel }) => {
     const t = target(sessionId, rel);
     return t ? ((await s.envQuery.gitHeadText(t.info.env, t.root, rel)) ?? null) : null;
@@ -259,7 +344,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
   });
   r.handle('app:openPath', ({ sessionId }) => {
     const cwd = s.sessions.get(sessionId)?.cwd;
-    if (cwd?.env === 'windows') return shell.openPath(cwd.path);
+    if (cwd?.env === 'windows' || cwd?.env === 'local') return shell.openPath(cwd.path);
     if (cwd?.env === 'wsl') return shell.openPath(`\\\\wsl.localhost\\${cwd.distro}${cwd.path.replace(/\//g, '\\')}`);
     return undefined;
   });

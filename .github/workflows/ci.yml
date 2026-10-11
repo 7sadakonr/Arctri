@@ -32,3 +32,29 @@ jobs:
         with:
           name: installer
           path: release/Arctri-Setup-*.exe
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # npm 12 blocks install scripts; Electron's binary download is run explicitly.
+      - run: node node_modules/electron/install.js
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # dmg and zip for Apple Silicon and Intel; ad-hoc signed, not notarized
+      - run: npm run dist:mac
+      - name: Smoke test of the app (opens a real zsh and waits for its prompt)
+        run: node scripts/smoke-installed.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            release/Arctri-*.dmg
+            release/Arctri-*.zip

@@ -18,19 +18,22 @@ export function removeRecent(list: RecentProject[], entry: RecentProject): Recen
 }
 
 export function toRecent(p: EnvPath, now = Date.now()): RecentProject {
-  return p.env === 'wsl'
-    ? { env: 'wsl', distro: p.distro, path: p.path, openedAt: now }
-    : { env: 'windows', path: p.path, openedAt: now };
+  if (p.env === 'wsl') return { env: 'wsl', distro: p.distro, path: p.path, openedAt: now };
+  return { env: p.env, path: p.path, openedAt: now };
 }
 
 export function toEnvPath(r: RecentProject): EnvPath {
-  return r.env === 'wsl'
-    ? ({ env: 'wsl', distro: r.distro ?? '', path: r.path } as EnvPath)
-    : ({ env: 'windows', path: r.path } as EnvPath);
+  if (r.env === 'wsl') return { env: 'wsl', distro: r.distro ?? '', path: r.path } as EnvPath;
+  return { env: r.env, path: r.path } as EnvPath;
 }
 
 /** The last folder name ("C:\a\b" and "/a/b" both give "b"). */
 export function projectName(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
   return parts.at(-1) ?? path;
+}
+
+/** A user's home folder ("C:\\Users\\me", "/home/me", "/Users/me", "/root") says nothing about a project, so it is not remembered. */
+export function isHomeFolder(path: string): boolean {
+  return /^[a-z]:[\\/]+users[\\/]+[^\\/]+[\\/]*$/i.test(path) || /^\/(home\/[^/]+|Users\/[^/]+|root)\/*$/.test(path);
 }

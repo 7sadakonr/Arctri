@@ -6,6 +6,49 @@ export interface ProcRef {
   startedAt: string;
 }
 
+interface PsRow {
+  pid: number;
+  ppid: number;
+  started: string;
+}
+
+/** `ps -A -o pid=,ppid=,lstart=` lines, e.g. `  412     1 Mon Jan  1 12:00:00 2024`. */
+export function parsePs(text: string): PsRow[] {
+  const rows: PsRow[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S.*?)\s*$/.exec(line);
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), started: m[3]!.replace(/\s+/g, ' ') });
+  }
+  return rows;
+}
+
+/** The root and everything below it, as recorded in the process table. */
+export function descendants(root: number, rows: PsRow[]): PsRow[] {
+  const byParent = new Map<number, PsRow[]>();
+  for (const r of rows) byParent.set(r.ppid, [...(byParent.get(r.ppid) ?? []), r]);
+  const out: PsRow[] = rows.filter((r) => r.pid === root);
+  for (let i = 0; i < out.length; i++) {
+    for (const c of byParent.get(out[i]!.pid) ?? []) if (!out.some((o) => o.pid === c.pid)) out.push(c);
+  }
+  return out;
+}
+
+function psTable(): Promise<PsRow[]> {
+  return new Promise((resolve) => {
+    execFile('ps', ['-A', '-o', 'pid=,ppid=,lstart='], { timeout: 8000, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } }, (_e, out) =>
+      resolve(parsePs(String(out ?? '')))
+    );
+  });
+}
+
+const signal = (pid: number): void => {
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    /* already gone */
+  }
+};
+
 function powershell(script: string, timeoutMs: number): Promise<string> {
   return new Promise((resolve) => {
     execFile(
@@ -23,7 +66,12 @@ function powershell(script: string, timeoutMs: number): Promise<string> {
  */
 export async function snapshotTrees(roots: number[]): Promise<Map<number, ProcRef[]>> {
   const out = new Map<number, ProcRef[]>();
-  if (process.platform !== 'win32' || roots.length === 0) return out;
+  if (roots.length === 0) return out;
+  if (process.platform !== 'win32') {
+    const rows = await psTable();
+    for (const root of roots) out.set(root, descendants(root, rows).map((r) => ({ pid: r.pid, startedAt: r.started })));
+    return out;
+  }
   const text = await powershell(
     `$all = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue; ` +
       `foreach ($root in @(${roots.map((r) => Math.trunc(r)).join(',')})) { ` +
@@ -43,7 +91,13 @@ export async function snapshotTrees(roots: number[]): Promise<Map<number, ProcRe
 
 /** Ends the recorded processes that are still the same processes. Safe to call on ones that already exited. */
 export async function killRecorded(procs: ProcRef[]): Promise<void> {
-  if (process.platform !== 'win32' || procs.length === 0) return;
+  if (procs.length === 0) return;
+  if (process.platform !== 'win32') {
+    const now = new Map((await psTable()).map((r) => [r.pid, r.started]));
+    // children first, so a shell cannot start new ones while it is still alive
+    for (const p of [...procs].reverse()) if (now.get(p.pid) === p.startedAt) signal(p.pid);
+    return;
+  }
   const items = procs.map((p) => `@(${Math.trunc(p.pid)},${p.startedAt})`).join(',');
   await powershell(
     `foreach ($x in @(${items})) { $p = Get-Process -Id $x[0] -ErrorAction SilentlyContinue; ` +
@@ -52,10 +106,17 @@ export async function killRecorded(procs: ProcRef[]): Promise<void> {
   );
 }
 
-/** Kills a process and everything it spawned (Windows). Safe to call on a dead pid. */
+/** Kills a process and everything it spawned. Safe to call on a dead pid. */
 export function killTree(pid: number): Promise<void> {
   return new Promise((resolve) => {
-    if (process.platform !== 'win32' || !pid) return resolve();
+    if (!pid) return resolve();
+    if (process.platform !== 'win32') {
+      void psTable().then((rows) => {
+        for (const r of descendants(pid, rows).reverse()) signal(r.pid);
+        resolve();
+      });
+      return;
+    }
     execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => resolve());
   });
 }

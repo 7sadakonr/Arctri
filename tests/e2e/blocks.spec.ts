@@ -17,11 +17,8 @@ test.describe('command blocks (PowerShell 7)', () => {
     const second = blocks(page).nth(1);
     await expect(second).toContainText('line two');
 
-    // collapse hides the output, expand shows it again
-    await second.getByRole('button', { name: /collapse/i }).click();
-    await expect(second.locator('.block-output')).toHaveCount(0);
-    await second.getByRole('button', { name: /expand/i }).click();
-    await expect(second.locator('.block-output')).toContainText('line two');
+    // short output has nothing to fold away: no button
+    await expect(second.getByRole('button', { name: /collapse|expand/i })).toHaveCount(0);
 
     // copy command and copy output
     await second.hover();
@@ -29,13 +26,25 @@ test.describe('command blocks (PowerShell 7)', () => {
     expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('Write-Output "line one"; Write-Output "line two"');
     await second.getByRole('button', { name: /copy output/i }).click();
     // the Windows clipboard stores line breaks as CRLF
-    expect((await app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, '\n')).toBe('line one\nline two');
+    await expect
+      .poll(async () => (await app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, '\n'))
+      .toBe('line one\nline two');
 
     // rerun creates a fresh block with the same command
     await second.hover();
     await second.getByRole('button', { name: /run again/i }).click();
     await settled(page, 3);
-    await expect(blocks(page).nth(2).locator('.block-output')).toContainText('line two');
+    await expect(blocks(page).nth(2).locator('.block-output').last()).toContainText('line two');
+
+    // long output can be folded away and shown again
+    await run(page, '1..15 | ForEach-Object { "row $_" }');
+    await settled(page, 4);
+    const long = blocks(page).nth(3);
+    await expect(long).toContainText('row 15');
+    await long.getByRole('button', { name: /collapse/i }).click();
+    await expect(long).not.toContainText('row 15');
+    await long.getByRole('button', { name: /expand/i }).click();
+    await expect(long).toContainText('row 15');
   });
 
   test('keyboard navigation between blocks', async ({ ad }) => {
@@ -47,9 +56,9 @@ test.describe('command blocks (PowerShell 7)', () => {
     }
     await page.keyboard.press('Control+ArrowUp');
     await page.keyboard.press('Control+ArrowUp');
-    await expect(blocks(page).nth(1)).toHaveClass(/border-accent/);
+    await expect(blocks(page).nth(1)).toHaveClass(/ring-accent/);
     await page.keyboard.press('Control+ArrowDown');
-    await expect(blocks(page).nth(2)).toHaveClass(/border-accent/);
+    await expect(blocks(page).nth(2)).toHaveClass(/ring-accent/);
   });
 
   test('multi-line input, Thai text and long output', async ({ ad }) => {

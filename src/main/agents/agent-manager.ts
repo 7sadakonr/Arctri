@@ -1,14 +1,15 @@
 import type { AgentCapabilities, AgentEntry, AgentInstallation } from '@shared/types/agent';
-import type { EnvironmentRef } from '@shared/types/env';
+import { envLabel, envSettingKey, type EnvironmentRef } from '@shared/types/env';
 import type { SessionSpec } from '@shared/types/session';
 import { baseLaunchEnv, resolveLinuxCwd, windowsCwd, WSL_ENV_FORWARD, type LaunchPlan } from '../shell/launch';
 import type { AgentLaunch } from '../pty/session-manager';
 import type { ProfileRegistry } from '../shell/registry';
 import { wslExePath, type WslManager } from '../wsl/wsl-manager';
 import { ADAPTERS, adapterById, isSafeValue, isUnsafeArgs, type AgentAdapter } from './adapters';
-import { findInWsl, findOnWindowsPath, isCmdShim, parseVersion, probeWindows, probeWsl } from './detect';
+import { userShell, localCwd } from '../shell/local';
+import { findInWsl, findLocal, findOnWindowsPath, isCmdShim, parseVersion, probeLocal, probeWindows, probeWsl } from './detect';
 
-const envKey = (e: EnvironmentRef): string => (e.kind === 'windows' ? 'windows' : `wsl:${e.distro}`);
+const envKey = envSettingKey;
 
 interface Detected {
   installation: AgentInstallation | null;
@@ -32,15 +33,18 @@ export class AgentManager {
   }
 
   async detect(refresh = false): Promise<AgentEntry[]> {
-    const distros = await this.wsl.listDistros(refresh);
-    const envs: EnvironmentRef[] = [{ kind: 'windows' }, ...distros.map((d) => ({ kind: 'wsl', distro: d.name }) as const)];
+    const onWindows = process.platform === 'win32';
+    const distros = onWindows ? await this.wsl.listDistros(refresh) : [];
+    const envs: EnvironmentRef[] = onWindows
+      ? [{ kind: 'windows' }, ...distros.map((d) => ({ kind: 'wsl', distro: d.name }) as const)]
+      : [{ kind: 'local' }];
     const stale = Date.now() - this.loadedAt > 60_000;
     const work: Promise<void>[] = [];
     for (const a of ADAPTERS) {
       for (const env of envs) {
         const key = AgentManager.overrideKey(a.id, env);
         if (refresh || stale || !this.cache.has(key)) {
-          const running = env.kind === 'windows' || distros.find((d) => d.name === env.distro)?.state === 'Running';
+          const running = env.kind !== 'wsl' || distros.find((d) => d.name === env.distro)?.state === 'Running';
           work.push(
             (running ? this.probe(a, env) : Promise.resolve<Detected>({ installation: null, stopped: true })).then((d) => {
               this.cache.set(key, d);
@@ -69,6 +73,13 @@ export class AgentManager {
   private async probe(a: AgentAdapter, env: EnvironmentRef): Promise<Detected> {
     const override = this.overrides()[AgentManager.overrideKey(a.id, env)]?.trim() || undefined;
     try {
+      if (env.kind === 'local') {
+        const shell = userShell();
+        const hit = await findLocal(a.command, shell, process.env['PATH'] ?? '', override);
+        if (!hit) return { installation: null };
+        const [v, h] = await Promise.all([probeLocal(shell, hit.path, ['--version']), probeLocal(shell, hit.path, ['--help'], 20000)]);
+        return this.found(a, env, hit.path, override ? 'user-configured' : hit.source, v.out, h.out);
+      }
       if (env.kind === 'windows') {
         const path = findOnWindowsPath(a.command, process.env['PATH'] ?? '', override);
         if (!path) return { installation: null };
@@ -110,7 +121,7 @@ export class AgentManager {
     const profile = this.registry.get(spec.profileId);
     if (!profile) throw new Error(`Unknown profile: ${spec.profileId}`);
     const env = profile.env;
-    const envName = env.kind === 'windows' ? 'Windows' : env.distro;
+    const envName = envLabel(env);
     const key = AgentManager.overrideKey(a.id, env);
 
     let d = this.cache.get(key);
@@ -128,7 +139,15 @@ export class AgentManager {
     const unsafe = isUnsafeArgs(o.extraArgs);
 
     let plan: LaunchPlan;
-    if (env.kind === 'windows') {
+    if (env.kind === 'local') {
+      // through a login shell, so `node` and the rest of the user's PATH are there (an app started from Finder has a minimal one)
+      plan = {
+        file: userShell(),
+        args: ['-lic', 'exec "$0" "$@"', inst.resolvedPath ?? inst.command, ...args],
+        cwd: localCwd(spec.cwd),
+        env: baseEnv
+      };
+    } else if (env.kind === 'windows') {
       const { cwd } = windowsCwd(spec.cwd);
       const path = inst.resolvedPath ?? inst.command;
       if (isCmdShim(path)) {

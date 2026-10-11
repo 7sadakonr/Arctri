@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Store from 'electron-store';
@@ -12,11 +12,13 @@ import { migrateLegacyUserData } from './persistence/migrate-legacy';
 import { SessionRepo } from './persistence/session-repo';
 import { WorkerPtyBackend } from './pty/pty-worker-backend';
 import { SessionManager } from './pty/session-manager';
+import type { WslDistro } from '@shared/types/wsl';
 import { ProfileRegistry } from './shell/registry';
 import { WslManager } from './wsl/wsl-manager';
 import { AgentManager } from './agents/agent-manager';
 import { CompletionEngine } from './completion/engine';
 import { EnvironmentQueryService } from './env-query/service';
+import { installAppMenu } from './app-menu';
 import { setResourcesDir } from './paths';
 import { logger } from './logger';
 import { mark, timing } from './timing';
@@ -39,7 +41,7 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
     if (!started && Date.now() > deadline - 85_000 && sessions.list().length === 0) {
       started = true;
       const all = (await registry.refresh(false)).profiles;
-      const profile = all.find((p) => p.id === 'pwsh') ?? all.find((p) => !p.id.startsWith('wsl:'));
+      const profile = all.find((p) => p.id === 'pwsh') ?? all.find((p) => p.id === 'local:zsh') ?? all.find((p) => !p.id.startsWith('wsl:'));
       if (profile) {
         await sessions.create({ profileId: profile.id, kind: 'shell', cols: 100, rows: 30, presentation: 'blocks' }).catch((e) => logger.error('smoke shell failed', e));
       }
@@ -71,7 +73,7 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
     // say what the app did see, so a timeout on a bare CI machine is not a blank
     result = {
       ...result,
-      sessions: sessions.list().map((x) => ({ shell: x.shell, state: x.state, phase: x.phase, integration: x.integration, kind: x.kind })),
+      sessions: sessions.list().map((x) => ({ shell: x.shell, state: x.state, phase: x.phase, integration: x.integration, kind: x.kind, ...(x.exit ? { exit: x.exit } : {}) })),
       profiles: registry.snapshot().profiles.map((p) => p.id)
     };
   }
@@ -83,19 +85,28 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
 async function start(): Promise<void> {
   if (app.isPackaged) setResourcesDir(process.resourcesPath);
   app.setAppUserModelId('dev.arctri.app');
-  Menu.setApplicationMenu(null);
+  installAppMenu();
   await app.whenReady();
   mark('appReady');
 
   if (!process.env['ARCTRI_USER_DATA']) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
-  const store = new Store<{ prefs: unknown }>({ name: 'preferences' });
+  const store = new Store<{ prefs: unknown; wslZsh: Record<string, boolean>; wslDistros: WslDistro[] }>({ name: 'preferences' });
   const prefs = new PrefsStore({ get: () => store.get('prefs'), set: (v) => store.set('prefs', v) });
   const { db, recovered } = openDb(join(app.getPath('userData'), 'arctri.db'));
   if (recovered) logger.warn('database was corrupt and has been recreated');
   const history = new HistoryRepo(db, prefs.get().historyLimit);
   const sessionRepo = new SessionRepo(db);
   const wsl = new WslManager();
-  const registry = new ProfileRegistry(wsl);
+  const registry = new ProfileRegistry(wsl, {
+    zsh: {
+      get: () => (store.get('wslZsh') as Record<string, boolean> | undefined) ?? {},
+      set: (v) => store.set('wslZsh', v)
+    },
+    distros: {
+      get: () => (store.get('wslDistros') as WslDistro[] | undefined) ?? [],
+      set: (v) => store.set('wslDistros', v)
+    }
+  });
   mark('storesOpen');
   // Windows shells are known at once; WSL is probed in the background so it never delays the window.
   registry.startBackgroundRefresh();
@@ -103,7 +114,7 @@ async function start(): Promise<void> {
   let win: BrowserWindow | undefined;
   const hub = new PortHub(() => win);
 
-  const startupSaved = prefs.get().restoreTabs ? sessionRepo.load().filter((x) => x.kind === 'shell') : [];
+  const startupSaved = sessionRepo.load().filter((x) => x.kind === 'shell');
   const agents = new AgentManager(wsl, registry, () => prefs.get().agentPaths);
   const envQuery = new EnvironmentQueryService();
 
@@ -120,7 +131,7 @@ async function start(): Promise<void> {
       if (info.integration === 'active') {
         mark('shellHello');
         // the first completion should not have to scan PATH: do it now, once per environment
-        const key = info.env.kind === 'windows' ? 'windows' : info.env.distro;
+        const key = info.env.kind === 'wsl' ? info.env.distro : info.env.kind;
         if (!warmed.has(key)) {
           warmed.add(key);
           void envQuery.listExecutables(info.env).catch(() => undefined);
@@ -152,7 +163,7 @@ async function start(): Promise<void> {
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
         const dark = p.theme === 'dark';
-        win?.setTitleBarOverlay({ color: dark ? '#0e0f13' : '#fbfbfd', symbolColor: dark ? '#c9ccd6' : '#23252e' });
+        if (process.platform !== 'darwin') win?.setTitleBarOverlay({ color: dark ? '#15171d' : '#f1f2f6', symbolColor: dark ? '#c9ccd6' : '#23252e' });
       },
       diagnostics: () => ({
         app: app.getVersion(), electron: process.versions.electron, node: process.versions.node,

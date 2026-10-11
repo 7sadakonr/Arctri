@@ -72,6 +72,12 @@ export class SessionManager {
     return [...this.sessions.values()].map((s) => ({ ...s.info }));
   }
 
+  /** Reads the branch of the tab's folder again (after a commit or a branch switch made outside the shell). */
+  refreshBranch(id: SessionId): void {
+    const s = this.sessions.get(id);
+    if (s?.info.cwd) void this.resolveBranch(s, s.info.cwd);
+  }
+
   get(id: SessionId): SessionInfo | undefined {
     const s = this.sessions.get(id);
     return s ? { ...s.info } : undefined;
@@ -211,6 +217,14 @@ export class SessionManager {
       if (s.helloTimer) clearTimeout(s.helloTimer);
       changed = true;
     }
+    // A WSL tab chooses between zsh and bash when it starts: show (and complete for) the one that is running.
+    if (evType === 'hello' && s.info.kind === 'shell' && s.info.env.kind === 'wsl') {
+      const real = s.sm.helloShell;
+      if ((real === 'zsh' || real === 'bash') && real !== s.info.shell) {
+        s.info.shell = real;
+        changed = true;
+      }
+    }
     if (evType === 'cwd' && s.sm.cwd) changed = this.setCwd(s, s.sm.cwd) || changed;
     if (tr.kind === 'blockStarted' && s.info.kind === 'shell') {
       const agentId = detectAgentCommand(tr.command.text, s.info.shell);
@@ -245,7 +259,9 @@ export class SessionManager {
     const cwd: EnvPath =
       env.kind === 'windows'
         ? { env: 'windows', path: raw as never }
-        : { env: 'wsl', distro: env.distro, path: raw as never };
+        : env.kind === 'local'
+          ? { env: 'local', path: raw as never }
+          : { env: 'wsl', distro: env.distro, path: raw as never };
     if (s.info.cwd && s.info.cwd.path === cwd.path) return false;
     s.info.cwd = cwd;
     if (s.info.titleSource === 'auto' && s.info.kind === 'shell') {
@@ -263,7 +279,7 @@ export class SessionManager {
   private async resolveBranch(s: Session, cwd: EnvPath): Promise<void> {
     let branch: string | undefined;
     try {
-      branch = cwd.env === 'windows' ? gitBranchOf(cwd.path) : await this.deps.wslBranch?.(cwd);
+      branch = cwd.env !== 'wsl' ? gitBranchOf(cwd.path) : await this.deps.wslBranch?.(cwd);
     } catch {
       branch = undefined;
     }

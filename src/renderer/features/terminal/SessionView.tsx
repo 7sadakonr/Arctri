@@ -6,20 +6,19 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { FOCUS_SESSION_EVENT } from '@/lib/focus';
-import { copyText } from '@/lib/clipboard';
-import { tNow, useT } from '@/lib/i18n';
+import { useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { Asterisk, Hexagon } from 'lucide-react';
 import { AGENT_META } from '@shared/agents/meta';
-import { FileExplorer } from '../agents/FileExplorer';
+import { Sidebar } from '../sidebar/Sidebar';
 import { FileViewer } from '../viewer/FileViewer';
 import { BlockList } from '../blocks/BlockList';
 import { CommandEditor } from '../editor/CommandEditor';
-import { closeSession, openShell, restartSession } from '../launcher/actions';
-import { BottomToolbar } from '../toolbar/BottomToolbar';
-import { getHost, peekHost } from './xterm-host';
+import { closeSession, restartSession } from '../launcher/actions';
+import { AgentBar } from '../agents/AgentBar';
+import { getHost } from './xterm-host';
 
 function Elapsed({ since }: { since: number }) {
   const [now, setNow] = useState(Date.now());
@@ -30,51 +29,20 @@ function Elapsed({ since }: { since: number }) {
   return <>{formatDuration(now - since)}</>;
 }
 
-function ClassicBar({ info }: { info: SessionInfo }) {
-  const t = useT();
-  const last = useBlocks((s) => s.blocks[info.id]?.at(-1));
-  if (info.integration !== 'active' || !last || last.status === 'running') return null;
-  const h = peekHost(info.id);
-  return (
-    <div className="flex h-6 shrink-0 items-center gap-1 border-t border-border px-3 text-[11px] text-fg-muted">
-      <span className="min-w-0 flex-1 truncate font-mono" title={last.command}>
-        {last.command}
-      </span>
-      <Button variant="ghost" size="sm" onClick={() => void copyText(last.command)}>
-        {t('classic.copyCommand')}
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => void copyText(h?.lastOutputText ?? '')}>
-        {t('classic.copyOutput')}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={async () => {
-          const r = await api.sessions.submit(info.id, last.command);
-          if (!r.ok) useUi.getState().toast(tNow('editor.notReady'), 'error');
-        }}
-      >
-        {t('classic.rerun')}
-      </Button>
-    </div>
-  );
-}
-
 export function SessionView({ info, active }: { info: SessionInfo; active: boolean }) {
   const t = useT();
   const mountRef = useRef<HTMLDivElement>(null);
   const host = getHost(info);
   const uiPhase = useSessions((s) => s.uiPhase[info.id] ?? 'unknown');
-  const native = useSessions((s) => !!s.nativePrompt[info.id]);
-  const explorerOpen = useSessions((s) => !!s.explorer[info.id]);
+  const sidebarOpen = useUi((s) => s.prefs.sidebarOpen);
   const viewerOpen = useSessions((s) => !!s.viewer[info.id]);
   const viewerMax = useSessions((s) => !!s.viewer[info.id]?.maximized);
   const running = useBlocks((s) => s.blocks[info.id]?.findLast((b) => b.status === 'running'));
 
   const blockMode = info.kind === 'shell' && info.presentation === 'blocks' && info.integration === 'active';
   const ended = info.state === 'exited' || info.state === 'failed';
-  const liveVisible = !blockMode || uiPhase === 'executing' || native || ended;
-  const canType = blockMode && !ended && (uiPhase === 'prompt' || uiPhase === 'editing') && !native;
+  const liveVisible = !blockMode || uiPhase === 'executing' || ended;
+  const canType = blockMode && !ended && (uiPhase === 'prompt' || uiPhase === 'editing');
 
   useEffect(() => {
     if (mountRef.current) host.mount(mountRef.current);
@@ -100,7 +68,6 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       aria-hidden={!active}
       className={cn('absolute inset-0 flex', !active && 'pointer-events-none invisible')}
     >
-      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
       <div className={cn('flex flex-col overflow-hidden', viewerOpen && viewerMax ? 'w-0 min-w-0 flex-none' : 'min-w-[320px] flex-1')}>
       <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 min-w-0 flex-1">
@@ -121,15 +88,6 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
             data-testid="running-bar"
             className="absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-2 border-b border-border bg-panel px-3 text-[11px] text-fg-muted"
           >
-            {native && uiPhase !== 'executing' ? (
-              <>
-                <span>{t('toolbar.nativePrompt')}</span>
-                <span className="flex-1" />
-                <Button variant="ghost" size="sm" onClick={() => useSessions.getState().setNativePrompt(info.id, false)}>
-                  {t('common.close')}
-                </Button>
-              </>
-            ) : (
               <>
                 {info.runningAgent ? (
                   <>
@@ -153,7 +111,6 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
                   {t('live.stop')}
                 </Button>
               </>
-            )}
           </div>
         )}
         {info.presentation === 'blocks' && info.kind === 'shell' && !ended && info.state === 'starting' && (
@@ -171,16 +128,6 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
           <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 border-t border-border bg-panel px-3 py-1 text-[11px] text-warn">
             <TriangleAlert size={12} />
             <span className="flex-1">{t('banner.degraded')}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const profile = useUi.getState().profiles.find((p) => p.id === info.profileId);
-                void openShell(profile, { classic: true, ...(info.cwd ? { cwd: info.cwd } : {}) });
-              }}
-            >
-              {t('banner.openClassic')}
-            </Button>
           </div>
         )}
         {ended && (
@@ -201,11 +148,11 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
         )}
       </div>
       </div>
-      {info.presentation === 'classic' && info.kind === 'shell' && <ClassicBar info={info} />}
       {canType && <CommandEditor sessionId={info.id} focused={active} />}
-      <BottomToolbar info={info} active={active} />
+      {(info.kind === 'agent' || info.runningAgent) && <AgentBar info={info} active={active} />}
       </div>
-      {explorerOpen && info.cwd && <FileExplorer info={info} active={active} />}
+      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
+      {sidebarOpen && info.cwd && <Sidebar info={info} active={active} />}
     </div>
   );
 }

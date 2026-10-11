@@ -74,4 +74,10 @@ describe('ShellStateMachine', () => {
     m.apply({ t: 'cwd', path: '/tmp' }, 0);
     expect(m.cwd).toBe('/tmp');
   });
+
+  it('remembers which shell said hello', () => {
+    const m = new ShellStateMachine();
+    m.apply({ t: 'hello', shell: 'zsh', version: '5.9', blocks: true }, 0);
+    expect(m.helloShell).toBe('zsh');
+  });
 });

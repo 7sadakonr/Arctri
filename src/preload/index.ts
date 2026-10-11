@@ -5,6 +5,7 @@ import type { CompletionResponse } from '@shared/types/completion';
 import type { AgentEntry } from '@shared/types/agent';
 import type { ProfilesResult } from '../main/shell/registry';
 
+type GitActionResult = { ok: true; out: string } | { ok: false; error: string };
 type Unsub = () => void;
 type DataHandler = (chunk: string) => void;
 
@@ -95,6 +96,30 @@ const api = {
       ipcRenderer.invoke('fs:list', { sessionId, rel }),
     pick: (sessionId: SessionId): Promise<string[]> => ipcRenderer.invoke('app:pickFiles', { sessionId }),
     headText: (sessionId: SessionId, rel: string): Promise<string | null> => ipcRenderer.invoke('git:headText', { sessionId, rel }),
+    stage: (sessionId: SessionId, paths: string[] | 'all'): Promise<GitActionResult> => ipcRenderer.invoke('git:stage', { sessionId, paths }),
+    unstage: (sessionId: SessionId, paths: string[] | 'all'): Promise<GitActionResult> => ipcRenderer.invoke('git:unstage', { sessionId, paths }),
+    commit: (sessionId: SessionId, message: string): Promise<GitActionResult> => ipcRenderer.invoke('git:commit', { sessionId, message }),
+    createBranch: (sessionId: SessionId, name: string): Promise<GitActionResult> => ipcRenderer.invoke('git:createBranch', { sessionId, name }),
+    branchPreflight: (sessionId: SessionId): Promise<{ ok: boolean; dirty: boolean; runningAgent: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:branchPreflight', { sessionId }),
+    push: (sessionId: SessionId): Promise<GitActionResult> => ipcRenderer.invoke('git:push', { sessionId }),
+    fetch: (sessionId: SessionId): Promise<GitActionResult> => ipcRenderer.invoke('git:fetch', { sessionId }),
+    pull: (sessionId: SessionId): Promise<GitActionResult> => ipcRenderer.invoke('git:pull', { sessionId }),
+    switchBranch: (sessionId: SessionId, name: string, remote: boolean): Promise<GitActionResult> =>
+      ipcRenderer.invoke('git:switch', { sessionId, name, remote }),
+    refs: (sessionId: SessionId): Promise<{
+      current?: string;
+      local: Array<{ name: string; upstream?: string; ahead?: number; behind?: number }>;
+      remote: Array<{ name: string; upstream?: string; ahead?: number; behind?: number }>;
+    } | null> => ipcRenderer.invoke('git:refs', { sessionId }),
+    log: (sessionId: SessionId, limit = 100): Promise<Array<{
+      hash: string; short: string; author: string; time: number; refs: string[]; subject: string;
+    }> | null> => ipcRenderer.invoke('git:log', { sessionId, limit }),
+    commitFiles: (sessionId: SessionId, hash: string): Promise<Array<{
+      path: string; status: string; added: number; deleted: number;
+    }> | null> => ipcRenderer.invoke('git:commitFiles', { sessionId, hash }),
+    revText: (sessionId: SessionId, rel: string, rev: string): Promise<string | null> =>
+      ipcRenderer.invoke('git:revText', { sessionId, rel, rev }),
     status: (sessionId: SessionId): Promise<Array<{ path: string; status: string }> | null> =>
       ipcRenderer.invoke('git:status', { sessionId }),
     read: (sessionId: SessionId, rel: string): Promise<

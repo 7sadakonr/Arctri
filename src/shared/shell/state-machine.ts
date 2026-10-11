@@ -1,4 +1,5 @@
 import type { ShellEvent } from '../osc/protocol';
+import type { ShellKind } from '../types/env';
 import type { ShellPhase } from '../types/session';
 
 export interface PendingCommand {
@@ -32,6 +33,8 @@ export class ShellStateMachine {
   cwd?: string;
   blocksCapable = false;
   helloSeen = false;
+  /** The shell that said hello (a WSL profile picks its shell when it starts, so this is the one actually running). */
+  helloShell: ShellKind | undefined;
   private pending: PendingCommand | undefined;
   private running: (PendingCommand & { startedAt: number }) | undefined;
 
@@ -43,6 +46,7 @@ export class ShellStateMachine {
     switch (ev.t) {
       case 'hello':
         this.helloSeen = true;
+        this.helloShell = ev.shell;
         this.blocksCapable = ev.blocks;
         if (this.phase === 'unknown') this.phase = 'prompt';
         return { kind: 'none' };

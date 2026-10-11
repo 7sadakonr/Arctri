@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Prefs } from '@shared/prefs';
+import { envLabel, envSettingKey } from '@shared/types/env';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
@@ -7,7 +8,9 @@ import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { focusActiveSession } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
+import { isMac, isWindows } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
+import { blockProfiles } from '../launcher/actions';
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -101,33 +104,22 @@ export function SettingsDialog() {
             value={prefs.defaultProfile ?? ''}
             onChange={(e) => void save({ defaultProfile: e.target.value || undefined } as Partial<Prefs>)}
           >
-            <option value="">—</option>
-            {profiles.map((p) => (
+            <option value="">{t(isMac ? 'settings.defaultProfile.autoMac' : 'settings.defaultProfile.auto')}</option>
+            {blockProfiles(profiles).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
               </option>
             ))}
           </select>
         </Row>
-        <Row label={t('settings.defaultPresentation')}>
-          <select
-            className={field}
-            value={prefs.defaultPresentation}
-            onChange={(e) => void save({ defaultPresentation: e.target.value as Prefs['defaultPresentation'] })}
-          >
-            <option value="blocks">{t('settings.presentation.blocks')}</option>
-            <option value="classic">{t('settings.presentation.classic')}</option>
-          </select>
-        </Row>
-        <Row label={t('settings.restoreTabs')}>
-          <Switch checked={prefs.restoreTabs} onCheckedChange={(v) => void save({ restoreTabs: v })} />
-        </Row>
-        <Row label={t('settings.conpty')} hint={t('settings.restartNote')}>
-          <select className={field} value={prefs.conptyMode} onChange={(e) => void save({ conptyMode: e.target.value as Prefs['conptyMode'] })}>
-            <option value="bundled">{t('settings.conpty.bundled')}</option>
-            <option value="inbox">{t('settings.conpty.inbox')}</option>
-          </select>
-        </Row>
+        {isWindows && (
+          <Row label={t('settings.conpty')} hint={t('settings.restartNote')}>
+            <select className={field} value={prefs.conptyMode} onChange={(e) => void save({ conptyMode: e.target.value as Prefs['conptyMode'] })}>
+              <option value="bundled">{t('settings.conpty.bundled')}</option>
+              <option value="inbox">{t('settings.conpty.inbox')}</option>
+            </select>
+          </Row>
+        )}
         <Row label={t('settings.osc52')}>
           <Switch checked={prefs.osc52} onCheckedChange={(v) => void save({ osc52: v })} />
         </Row>
@@ -152,8 +144,8 @@ export function SettingsDialog() {
           a.environments
             .filter((e) => !e.stopped)
             .map((e) => {
-              const envName = e.env.kind === 'windows' ? 'Windows' : e.env.distro;
-              const key = `${a.adapterId}:${e.env.kind === 'windows' ? 'windows' : `wsl:${e.env.distro}`}`;
+              const envName = envLabel(e.env);
+              const key = `${a.adapterId}:${envSettingKey(e.env)}`;
               return (
                 <Row key={key} label={t('settings.agentPath', { agent: a.displayName, env: envName })} hint={t('settings.agentPathHint')}>
                   <input

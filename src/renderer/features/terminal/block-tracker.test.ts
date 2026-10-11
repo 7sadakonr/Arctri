@@ -125,4 +125,26 @@ describe('BlockTracker', () => {
     expect(blockText(finished[1]!.output)).toBe('two');
     expect(finished[0]!.output!.lines).toHaveLength(2);
   });
+
+  it('keeps the prompt and the echoed command (with colours) as the block header, taken before the screen is wiped', async () => {
+    const { write, started, finished } = setup(40, 6);
+    await write(hello + mark('A') + mark('B') + `${ESC}[32m>${ESC}[0m proj $ ls\r\n` + cmd(1, 'ls') + clear + mark('C') + 'a b\r\n' + mark('D', ';0') + clear);
+    const p = started[0]!.prompt!;
+    expect(blockText(p)).toBe('> proj $ ls');
+    expect(p.styles[p.lines[0]!.runs[0]!.style]!.fg).toBe('p2');
+    expect(finished[0]!.prompt).toEqual(p);
+    expect(blockText(finished[0]!.output)).toBe('a b');
+  });
+
+  it('reads the prompt that is waiting for input', async () => {
+    const { write, tracker } = setup(40, 6);
+    await write(hello + mark('A') + mark('B') + `line one\r\n> `);
+    expect(blockText(tracker.promptSnapshot())).toBe('line one\n>');
+  });
+
+  it('drops the spaces a shell pads the prompt line with, so the prompt is as wide as its text', async () => {
+    const { write, tracker } = setup(40, 6);
+    await write(hello + mark('A') + mark('B') + '> proj' + ' '.repeat(30) + '\r\x1b[7C');
+    expect(blockText(tracker.promptSnapshot())).toBe('> proj');
+  });
 });

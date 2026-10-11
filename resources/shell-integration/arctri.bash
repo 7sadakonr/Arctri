@@ -1,11 +1,22 @@
 # Arctri shell integration for bash (>= 4.4, uses PS0).
 # Loaded with `bash --rcfile`. Inert unless ARCTRI_NONCE is set.
-[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+if [ "$(uname)" = Darwin ]; then
+  # Terminal on a Mac starts login shells: Homebrew and friends set PATH in the profile files, not in .bashrc
+  if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"
+  elif [ -f "$HOME/.profile" ]; then . "$HOME/.profile"
+  elif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi
+else
+  [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+fi
 [ -n "$ARCTRI_NONCE" ] || return 0 2>/dev/null
 [ -z "$__AD_LOADED" ] || return 0 2>/dev/null
 __AD_LOADED=1
 
 __ad_b64() { if base64 -w0 </dev/null >/dev/null 2>&1; then base64 -w0; else base64 | tr -d '\n'; fi; }
+# macOS before 13 only knows `base64 -D`
+if [ "$(uname)" = Darwin ] && ! printf '' | base64 -d >/dev/null 2>&1; then
+  base64() { if [ "$1" = -d ]; then command base64 -D; else command base64 "$@"; fi; }
+fi
 
 # Multi-line commands arrive as one line: eval "$(printf %s 'BASE64' | base64 -d)". The original text is what
 # gets reported (and what ends up in history).

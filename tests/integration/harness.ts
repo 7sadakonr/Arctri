@@ -6,13 +6,16 @@ import type { CommandBlock } from '@shared/types/block';
 import { BlockTracker } from '../../src/renderer/features/terminal/block-tracker';
 import { NodePtyBackend } from '../../src/main/pty/pty-backend';
 import { SessionManager, type FinishedCommand } from '../../src/main/pty/session-manager';
-import { discoverWindowsProfiles, discoverWslProfiles } from '../../src/main/shell/discovery';
-import { WslManager, wslExePath } from '../../src/main/wsl/wsl-manager';
+import { ProfileRegistry } from '../../src/main/shell/registry';
+import { WslManager } from '../../src/main/wsl/wsl-manager';
 
 export const wsl = new WslManager();
 
+const registry = new ProfileRegistry(wsl);
+
+/** The shells of this machine, found the way the application finds them (WSL included when it is there). */
 export async function allProfiles(): Promise<ShellProfile[]> {
-  return [...discoverWindowsProfiles(), ...(await discoverWslProfiles(wsl, wslExePath()))];
+  return (await registry.refresh(true)).profiles;
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { EnvPath, ShellProfile } from '@shared/types/env';
 import { integrationDir } from '../paths';
+import { localCwd } from './local';
 
 export interface LaunchContext {
   sessionId: string;
@@ -76,6 +77,9 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
       env['PROMPT'] = `$E]6973;${ctx.nonce};cwdp;$P$E\\$P$G`;
       return { file: profile.executable, args: [], cwd, env };
     }
+    if (profile.shell === 'other') {
+      return { file: profile.executable, args: profile.args ?? [], cwd, env };
+    }
     const script = readFileSync(join(integrationDir(), 'arctri.ps1'), 'utf8');
     return {
       file: profile.executable,
@@ -85,13 +89,27 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
     };
   }
 
+  if (profile.env.kind === 'local') return buildLocalLaunch(profile, env, ctx);
+
   // WSL: spawn wsl.exe, which hands the PTY to a Linux shell in the chosen distro.
   const distro = profile.env.distro;
   env['WSLENV'] = [env['WSLENV'], ...WSL_FORWARD].filter(Boolean).join(':');
   const { cwd: linuxCwd, note } = await resolveLinuxCwd(distro, ctx.cwd, ctx.toPosix);
   const dir = integrationDir();
   const args = ['-d', distro, '--cd', linuxCwd, '--exec'];
-  if (profile.shell === 'zsh') {
+  if (profile.autoShell) {
+    const shim = await ctx.toPosix(distro, join(dir, 'zsh'));
+    const rc = await ctx.toPosix(distro, join(dir, 'arctri.bash'));
+    if (!shim || !rc) throw new Error(`Cannot map integration scripts into ${distro}`);
+    // zsh when it is installed and the user uses it (it is the login shell, or there is a .zshrc), otherwise bash.
+    const script =
+      'if command -v zsh >/dev/null 2>&1; then use=; ' +
+      'case "$(getent passwd "$(id -un)" | cut -d: -f7)" in */zsh) use=1;; esac; ' +
+      '[ -f "${ZDOTDIR:-$HOME}/.zshrc" ] && use=1; ' +
+      'if [ -n "$use" ]; then USER_ZDOTDIR="${ZDOTDIR:-$HOME}" ZDOTDIR="$1" exec zsh -i; fi; fi; ' +
+      'exec bash --rcfile "$2" -i';
+    args.push('sh', '-c', script, 'sh', shim, rc);
+  } else if (profile.shell === 'zsh') {
     const shim = await ctx.toPosix(distro, join(dir, 'zsh'));
     if (!shim) throw new Error(`Cannot map integration scripts into ${distro}`);
     // zsh reads $ZDOTDIR/.zshenv first; that shim hands ZDOTDIR back to the user straight away.
@@ -104,4 +122,22 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
   const plan: LaunchPlan = { file: profile.executable, args, cwd: homedir(), env };
   if (note) plan.note = note;
   return plan;
+}
+
+/** A shell on this machine (macOS): started directly as a login shell, with the integration script handed over by environment. */
+function buildLocalLaunch(profile: ShellProfile, env: Record<string, string>, ctx: LaunchContext): LaunchPlan {
+  const dir = integrationDir();
+  // Finder starts apps without a UTF-8 locale; the terminal needs one
+  if (!env['LANG'] && !env['LC_ALL']) env['LANG'] = 'en_US.UTF-8';
+  const cwd = localCwd(ctx.cwd);
+  if (profile.shell === 'zsh') {
+    // zsh reads $ZDOTDIR/.zshenv first; that shim hands ZDOTDIR back to the user straight away.
+    env['USER_ZDOTDIR'] = process.env['ZDOTDIR'] ?? homedir();
+    env['ZDOTDIR'] = join(dir, 'zsh');
+    return { file: profile.executable, args: ['-l', '-i'], cwd, env };
+  }
+  if (profile.shell === 'bash') {
+    return { file: profile.executable, args: ['--rcfile', join(dir, 'arctri.bash'), '-i'], cwd, env };
+  }
+  return { file: profile.executable, args: profile.args ?? ['-l'], cwd, env };
 }

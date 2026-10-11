@@ -7,7 +7,7 @@ import { wslExePath } from '../wsl/wsl-manager';
 
 export type WslOp =
   | 'ls' | 'lsd' | 'cmds' | 'branches' | 'cat' | 'branch' | 'home' | 'ping' | 'gitstat' | 'codexcfg' | 'codexcfgw'
-  | 'gitall' | 'headtext' | 'statfile' | 'readfile' | 'writefile';
+  | 'gitall' | 'headtext' | 'statfile' | 'readfile' | 'writefile' | 'refs' | 'gitlog' | 'gitshow';
 
 type Proc = ChildProcessByStdio<Writable, Readable, null>;
 
