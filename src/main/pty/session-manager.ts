@@ -72,6 +72,12 @@ export class SessionManager {
     return [...this.sessions.values()].map((s) => ({ ...s.info }));
   }
 
+  /** Reads the branch of the tab's folder again (after a commit or a branch switch made outside the shell). */
+  refreshBranch(id: SessionId): void {
+    const s = this.sessions.get(id);
+    if (s?.info.cwd) void this.resolveBranch(s, s.info.cwd);
+  }
+
   get(id: SessionId): SessionInfo | undefined {
     const s = this.sessions.get(id);
     return s ? { ...s.info } : undefined;

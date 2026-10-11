@@ -105,14 +105,14 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
     {
       id: 'terminal', label: t('menu.terminal'),
       entries: [
-        // Same as Ctrl+Shift+T: a new tab like the current one, in the same folder
+        // Same as Ctrl+Shift+T: a new tab with the current shell, starting at the shell's first folder
         { label: t('menu.newTerminal'), shortcut: 'Ctrl+Shift+T', run: () => void openSimilarTab() },
         {
           label: t('menu.newWithProfile'),
           sub: blockProfiles(profiles).map((p) => ({
             label: p.label,
             checked: p.id.toLowerCase() === defaultId,
-            run: () => void openShell(p, info?.cwd ? { cwd: info.cwd } : {})
+            run: () => void openShell(p)
           }))
         },
         SEP,

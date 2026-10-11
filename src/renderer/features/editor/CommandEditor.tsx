@@ -225,10 +225,10 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
         </div>
       )}
       <div className="flex items-start gap-2">
-        <div className="shrink-0 whitespace-pre font-mono leading-[1.45]" style={fontSize}>
+        <div className="max-w-[65%] shrink-0 overflow-hidden whitespace-pre font-mono leading-[1.45]" style={fontSize}>
           {tail ? <SnapshotView snapshot={tail} dark={dark} /> : <span className="text-fg-muted">›</span>}
         </div>
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-[8ch] flex-1">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words font-mono leading-[1.45]"

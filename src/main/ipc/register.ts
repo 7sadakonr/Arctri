@@ -14,6 +14,7 @@ import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex
 import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
 import type { WslManager } from '../wsl/wsl-manager';
 import { mark } from '../timing';
+import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
 import { applyUiScale } from '../window';
 
 export interface Services {
@@ -225,6 +226,68 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const info = s.sessions.get(sessionId);
     return info?.cwd ? { info, cwd: info.cwd.path } : undefined;
   };
+  // Git actions that write (stage, commit, branch, push). Paths are checked to stay below the tab's folder.
+  const afterGit = (sessionId: string, res: GitResult): GitResult => {
+    const target = repo(sessionId);
+    for (const tab of s.sessions.list()) {
+      if (target && tab.cwd?.path === target.cwd && tab.env.kind === target.info.env.kind &&
+          (tab.env.kind !== 'wsl' || (target.info.env.kind === 'wsl' && tab.env.distro === target.info.env.distro))) {
+        s.sessions.refreshBranch(tab.id);
+      }
+    }
+    return res;
+  };
+  const NO_TAB: GitResult = { ok: false, error: 'no folder' };
+  const branchPreflight = async (sessionId: string) => {
+    const t = repo(sessionId);
+    if (!t) return { ok: false, dirty: false, runningAgent: false, error: 'no folder' };
+    const status = await runGit(t.info.env, t.cwd, ['status', '--porcelain', '--untracked-files=normal']);
+    if (status.code !== 0) return { ok: false, dirty: false, runningAgent: false, error: status.stderr || 'git status failed' };
+    const runningAgent = s.sessions.list().some((i) => i.state === 'running' && (i.kind === 'agent' || !!i.runningAgent) &&
+      i.cwd?.path === t.cwd && i.env.kind === t.info.env.kind &&
+      (i.env.kind !== 'wsl' || (t.info.env.kind === 'wsl' && i.env.distro === t.info.env.distro)));
+    return { ok: true, dirty: !!status.stdout.trim(), runningAgent };
+  };
+  r.handle('git:branchPreflight', ({ sessionId }) => branchPreflight(sessionId));
+  r.handle('git:stage', async ({ sessionId, paths }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitStage(t.info.env, t.cwd, paths)) : NO_TAB;
+  });
+  r.handle('git:unstage', async ({ sessionId, paths }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitUnstage(t.info.env, t.cwd, paths)) : NO_TAB;
+  });
+  r.handle('git:commit', async ({ sessionId, message }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitCommit(t.info.env, t.cwd, message)) : NO_TAB;
+  });
+  r.handle('git:createBranch', async ({ sessionId, name }) => {
+    const t = repo(sessionId);
+    if (!t) return NO_TAB;
+    const gate = await branchPreflight(sessionId);
+    if (!gate.ok || gate.runningAgent) return { ok: false as const, error: gate.error ?? 'An agent is running in this folder' };
+    return afterGit(sessionId, await gitCreateBranch(t.info.env, t.cwd, name));
+  });
+  r.handle('git:push', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitPush(t.info.env, t.cwd)) : NO_TAB;
+  });
+  r.handle('git:fetch', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitFetch(t.info.env, t.cwd)) : NO_TAB;
+  });
+  r.handle('git:pull', async ({ sessionId }) => {
+    const t = repo(sessionId);
+    return t ? afterGit(sessionId, await gitPull(t.info.env, t.cwd)) : NO_TAB;
+  });
+  r.handle('git:switch', async ({ sessionId, name, remote }) => {
+    const t = repo(sessionId);
+    if (!t) return NO_TAB;
+    const gate = await branchPreflight(sessionId);
+    if (!gate.ok || gate.runningAgent) return { ok: false as const, error: gate.error ?? 'An agent is running in this folder' };
+    return afterGit(sessionId, await gitSwitch(t.info.env, t.cwd, name, remote));
+  });
+
   r.handle('git:refs', async ({ sessionId }) => {
     const t = repo(sessionId);
     return t ? ((await s.envQuery.gitRefs(t.info.env, t.cwd)) ?? null) : null;

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0
+## 0.2.0-beta
 
 - **Menu bar** (File, Edit, View, Terminal, Help) in the title bar, with the current folder in the middle and the git branch
   next to the window buttons. The tab row sits below it. Open Folder, Open Recent, Clone, Settings, zoom (Ctrl+= / Ctrl+- /

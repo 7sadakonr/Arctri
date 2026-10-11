@@ -13,15 +13,22 @@ interface Poller {
   timer: ReturnType<typeof setInterval>;
   inflight: boolean;
   misses: number;
+  /** Callers that need an answer that started after they asked (a stage just ran), waiting for the next load. */
+  again?: Array<() => void>;
 }
 
 // One poller per session, shared by everything that shows changes, running only while something is looking and never
 // overlapping itself: a slow git on a big repository must not pile up processes.
 const pollers = new Map<string, Poller>();
 
-async function load(sessionId: string): Promise<void> {
+async function load(sessionId: string, fresh = false): Promise<void> {
   const p = pollers.get(sessionId);
-  if (!p || p.inflight) return;
+  if (!p) return;
+  if (p.inflight) {
+    // a load that began before the caller's change may not show it: run another one afterwards
+    if (fresh) await new Promise<void>((res) => (p.again ??= []).push(res));
+    return;
+  }
   p.inflight = true;
   try {
     const d = await api.files.changes(sessionId);
@@ -34,6 +41,9 @@ async function load(sessionId: string): Promise<void> {
     /* keep what we have */
   } finally {
     p.inflight = false;
+    const waiting = p.again;
+    p.again = undefined;
+    if (waiting) void load(sessionId).then(() => waiting.forEach((r) => r()));
   }
 }
 
@@ -57,7 +67,10 @@ function subscribe(sessionId: string, fn: (d: ChangesData | null) => void): () =
 }
 
 /** Ask for a fresh answer now (a command or an agent turn just ended). */
-export const refreshChanges = (sessionId: string): void => void load(sessionId);
+export const refreshChanges = (sessionId: string): void => void load(sessionId, true);
+
+/** Same, resolving once the answer reflects the change that was just made. */
+export const refreshChangesNow = (sessionId: string): Promise<void> => load(sessionId, true);
 
 /** Changed files of the tab's repository; polls only while `enabled` (the tab is on screen and shows them). */
 export function useChanges(sessionId: string, enabled: boolean): ChangesData | null {

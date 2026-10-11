@@ -19,6 +19,29 @@ interface TrackerTerm {
 }
 
 const MAX_PROMPT_LINES = 4;
+
+/**
+ * Some shells (zsh) pad the prompt line with spaces out to the width of the terminal. Taken as they are, those spaces
+ * would make the prompt as wide as the window and leave no room for the input after it.
+ */
+export function trimLineEnds(snap: BlockSnapshot): BlockSnapshot {
+  let charCount = 0;
+  const lines = snap.lines.map((line) => {
+    const runs = [...line.runs];
+    while (runs.length > 0) {
+      const last = runs[runs.length - 1]!;
+      const text = last.text.replace(/\s+$/, '');
+      if (text) {
+        runs[runs.length - 1] = { ...last, text };
+        break;
+      }
+      runs.pop();
+    }
+    for (const r of runs) charCount += r.text.length;
+    return { runs };
+  });
+  return { ...snap, lines, charCount };
+}
 const MAX_COMMAND_ROWS = 40;
 
 export interface TrackerEvents {
@@ -155,7 +178,7 @@ export class BlockTracker {
   promptSnapshot(maxLines = MAX_PROMPT_LINES, dropTrailingEmpty = false): BlockSnapshot | undefined {
     const buf = this.term.buffer.normal;
     const end = buf.baseY + buf.cursorY + 1;
-    const snap = snapshotRange(buf, buf.baseY, end);
+    const snap = trimLineEnds(snapshotRange(buf, buf.baseY, end));
     // After Enter the cursor has moved to the row below the command.
     if (dropTrailingEmpty) while (snap.lines.length > 1 && snap.lines[snap.lines.length - 1]!.runs.length === 0) snap.lines.pop();
     if (snap.charCount === 0) return undefined;

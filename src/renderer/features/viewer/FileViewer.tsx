@@ -1,11 +1,11 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { unifiedMergeView } from '@codemirror/merge';
+import { MergeView, unifiedMergeView } from '@codemirror/merge';
 import { search, searchKeymap } from '@codemirror/search';
 import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
-import { AtSign, Maximize2, Minimize2, Save, WrapText, X } from 'lucide-react';
+import { AtSign, Columns2, FileDiff, FileText, Maximize2, Minimize2, Rows2, Save, WrapText, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SessionInfo } from '@shared/types/session';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { insertText, refOf } from '../agents/insert';
+import { refreshChanges, useChanges } from '../agents/useChanges';
 import { iconUrl } from '@/lib/file-icon';
 import { ImageView, isImage } from './ImageView';
 import { languageFor } from './language';
@@ -33,7 +34,23 @@ const theme = EditorView.theme({
   '.cm-insertedLine, .cm-deletedLine': { textDecoration: 'none' },
   '.cm-changedText': { backgroundColor: 'rgba(63,162,76,0.3)' },
   '.cm-deletedChunk .cm-deletedText': { backgroundColor: 'rgba(224,85,76,0.32)' },
-  '.cm-panels': { backgroundColor: 'var(--ad-panel)', color: 'var(--ad-fg)' }
+  '.cm-panels': { backgroundColor: 'var(--ad-panel)', color: 'var(--ad-fg)' },
+  // "12 unchanged lines": a quiet bar in the panel colour instead of the library's white strip (made for light themes;
+  // its rules are more specific than ours, hence !important)
+  '.cm-collapsedLines': {
+    background: 'var(--ad-panel) !important',
+    backgroundImage: 'none !important',
+    color: 'var(--ad-fg-muted) !important',
+    fontFamily: 'var(--font-sans, system-ui, sans-serif)',
+    fontSize: '11px',
+    lineHeight: '1.4',
+    padding: '4px 10px',
+    borderTop: '1px solid var(--ad-border)',
+    borderBottom: '1px solid var(--ad-border)',
+    textAlign: 'center'
+  },
+  '.cm-collapsedLines:hover': { background: 'var(--ad-hover) !important', color: 'var(--ad-fg) !important' },
+  '.cm-collapsedLines:before, .cm-collapsedLines:after': { opacity: '0.5' }
 });
 
 // Mid-tone colours that read on both the dark and the light theme.
@@ -71,6 +88,8 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   const rev = curTab?.rev;
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | undefined>(undefined);
+  const split = useRef<MergeView | undefined>(undefined);
+  const [sideBySide, setSideBySide] = useState(false);
   const lang = useRef(new Compartment());
   const [doc, setDoc] = useState<Doc>({ state: 'loading' });
   const [dirty, setDirty] = useState(false);
@@ -80,6 +99,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   const savedWidth = useUi((s) => s.prefs.viewerWidth);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const maximized = !!view?.maximized;
+  const changes = useChanges(info.id, active);
   const setMaximized = (on: boolean) => useSessions.getState().setViewerMaximized(info.id, on);
   const [wrap, setWrap] = useState(true);
   const wrapC = useRef(new Compartment());
@@ -153,7 +173,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       cache.current.set(prev, { state: editor.current.state, ...meta.current, mtime: mtime.current });
     }
     const hit = prev !== rel ? cache.current.get(rel) : undefined;
-    if (hit && editor.current) {
+    if (hit && editor.current && !split.current) {
       editor.current.setState(hit.state);
       editor.current.dispatch({ effects: wrapC.current.reconfigure(wrapRef.current ? EditorView.lineWrapping : []) });
       meta.current = { eol: hit.eol, bom: hit.bom, noHead: hit.noHead };
@@ -167,6 +187,9 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       setDoc({ state: 'ready', eol: hit.eol, bom: hit.bom, mtimeMs: hit.mtime });
       return;
     }
+    // A cached editor state cannot update MergeView's original (left) document.
+    // Rebuild both panes for this file, carrying any unsaved text with it.
+    if (hit && split.current) textRef.current = hit.state.doc.toString();
     setDoc({ state: 'loading' });
     void (async () => {
       let r: Awaited<ReturnType<typeof api.files.read>>;
@@ -178,11 +201,16 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
           : { ok: false, error: 'not-found' };
       } else r = await api.files.read(info.id, path);
       if (dead) return;
-      if (!r.ok) {
+      if (!r.ok && !(r.error === 'not-found' && (mode === 'diff' || !!rev))) {
         setDoc({ state: 'error', error: r.error });
         return;
       }
-      const head = rev ? await api.files.revText(info.id, path, `${rev}^`) : mode === 'diff' ? await api.files.headText(info.id, path) : undefined;
+      if (!r.ok) r = { ok: true, text: '', eol: 'lf', bom: false, mtimeMs: 0, size: 0 };
+      const head = rev
+        ? await api.files.revText(info.id, path, `${rev}^`)
+        : mode === 'diff'
+          ? await api.files.headText(info.id, path)
+          : undefined;
       const base = head === undefined ? undefined : (head ?? '').replace(/\r\n/g, '\n');
       const language = await languageFor(baseName(path));
       if (dead || !host.current) return;
@@ -201,7 +229,8 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       const extensions: Extension[] = [
         lineNumbers(), history(), drawSelection(), highlightActiveLine(), search({ top: true }),
         theme, syntaxHighlighting(highlight), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        ...(rev ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
+        // a diff is for reading: editing happens in the whole file ("Open file")
+        ...(rev || mode === 'diff' ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
         lang.current.of(language ?? []),
         wrapC.current.of(wrapRef.current ? EditorView.lineWrapping : []),
         keymap.of([
@@ -215,11 +244,28 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
           dirtyRef.current = true;
           setDirty(true);
           markDirty(rel, true);
+          useSessions.getState().pinViewer(info.id, rel); // someone is editing it: it stays
         }),
-        ...(base !== undefined ? [unifiedMergeView({ original: base, mergeControls: false, gutter: true, collapseUnchanged: { margin: 3, minSize: 6 } })] : [])
+        ...(base !== undefined && !sideBySide ? [unifiedMergeView({ original: base, mergeControls: false, gutter: true, collapseUnchanged: { margin: 3, minSize: 6 } })] : [])
       ];
       const state = EditorState.create({ doc: text, extensions });
-      if (editor.current) editor.current.setState(state);
+      if (split.current) {
+        split.current.destroy();
+        split.current = undefined;
+        editor.current = undefined;
+      }
+      if (sideBySide && base !== undefined) {
+        editor.current?.destroy();
+        editor.current = undefined;
+        split.current = new MergeView({
+          parent: host.current,
+          a: { doc: base, extensions: [lineNumbers(), theme, syntaxHighlighting(highlight), syntaxHighlighting(defaultHighlightStyle, { fallback: true }), lang.current.of(language ?? []), EditorState.readOnly.of(true), EditorView.editable.of(false)] },
+          b: { doc: text, extensions },
+          gutter: true,
+          collapseUnchanged: { margin: 3, minSize: 6 }
+        });
+        editor.current = split.current.b;
+      } else if (editor.current) editor.current.setState(state);
       else editor.current = new EditorView({ parent: host.current, state });
       shown.current = rel;
       setDoc({ state: 'ready', eol: r.eol, bom: r.bom, mtimeMs: r.mtimeMs });
@@ -227,9 +273,12 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     return () => {
       dead = true;
     };
-  }, [info.id, rel, mode, nonce]);
+  }, [info.id, rel, mode, nonce, sideBySide]);
 
-  useEffect(() => () => editor.current?.destroy(), []);
+  useEffect(() => () => {
+    if (split.current) split.current.destroy();
+    else editor.current?.destroy();
+  }, []);
 
   // soft wrap follows the toggle; cached tabs pick it up when they come back
   useEffect(() => {
@@ -237,6 +286,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
   }, [wrap]);
 
   const save = useCallback(async () => {
+    if (rev || mode === 'diff') return;
     const ev = editor.current;
     if (!ev) return;
     const d = docRef.current;
@@ -248,12 +298,13 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
       setDirty(false);
       markDirty(rel, false);
       setStale(false);
+      refreshChanges(info.id); // the "Changes" button appears once the saved file differs from HEAD
       useUi.getState().toast(t('viewer.saved'));
     } else if (r.error === 'conflict') {
       setStale(true);
       useUi.getState().toast(t('viewer.conflict'), 'error');
     } else useUi.getState().toast(t('viewer.failed'), 'error');
-  }, [info.id, rel, path, t]);
+  }, [info.id, rel, path, rev, mode, t]);
   const docRef = useRef(doc);
   docRef.current = doc;
 
@@ -277,7 +328,15 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     if (dirtyRef.current && editor.current) textRef.current = editor.current.state.doc.toString();
     cache.current.delete(rel);
     shown.current = rel; // same file, other mode: rebuild in place
+    if (m === 'file') useSessions.getState().pinViewer(info.id, rel);
     useSessions.getState().openViewer(info.id, rel, m, { path, ...(rev ? { rev } : {}) });
+  };
+  const switchLayout = (splitView: boolean) => {
+    if (splitView === sideBySide) return;
+    if (dirtyRef.current && editor.current) textRef.current = editor.current.state.doc.toString();
+    cache.current.delete(rel);
+    shown.current = rel;
+    setSideBySide(splitView);
   };
   const image = !rev && isImage(path);
   const unchanged = !image && mode === 'diff' && noChange && !stale;
@@ -285,12 +344,15 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     ? t(doc.error === 'binary' ? 'viewer.binary' : doc.error === 'too-large' ? 'viewer.tooLarge' : doc.error === 'not-found' ? 'viewer.notFound' : 'viewer.failed')
     : '';
 
+  const norm = (p: string) => p.replace(/\\/g, '/');
+  const fileChange = changes?.files.find((f) => norm(f.path) === norm(path));
+
   return (
     <aside
       data-testid="file-viewer"
       style={maximized ? undefined : { width }}
       className={cn(
-        'relative flex min-h-0 min-w-0 flex-col border-r border-border bg-bg',
+        'relative flex min-h-0 min-w-0 flex-col border-l border-border bg-bg',
         maximized ? 'flex-1' : 'min-w-[280px] max-w-[70%] shrink-0'
       )}
     >
@@ -298,7 +360,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
         role="separator"
         aria-orientation="vertical"
         aria-label={t('viewer.resize')}
-        className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
+        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
         onPointerDown={(e) => {
           if (maximized) return;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -306,8 +368,8 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
         }}
         onPointerMove={(e) => {
           if (dragWidth === null) return;
-          const left = e.currentTarget.parentElement!.getBoundingClientRect().left;
-          setDragWidth(Math.round(Math.min(1600, Math.max(280, e.clientX - left))));
+          const right = e.currentTarget.parentElement!.getBoundingClientRect().right;
+          setDragWidth(Math.round(Math.min(1600, Math.max(280, right - e.clientX))));
         }}
         onPointerUp={() => dragWidth !== null && saveWidth(dragWidth)}
         onDoubleClick={() => saveWidth(560)}
@@ -320,6 +382,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
             aria-selected={tab.rel === rel}
             title={tab.path ?? tab.rel}
             onClick={() => useSessions.getState().openViewer(info.id, tab.rel, tab.mode, { path: tab.path ?? tab.rel, ...(tab.rev ? { rev: tab.rev } : {}) })}
+            onDoubleClick={() => useSessions.getState().pinViewer(info.id, tab.rel)}
             onAuxClick={(e) => e.button === 1 && closeTab(tab.rel)}
             className={cn(
               'group flex shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2',
@@ -327,7 +390,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
             )}
           >
             <img src={iconUrl(baseName(tab.path ?? tab.rel), false)} alt="" width={14} height={14} draggable={false} />
-            <span className="max-w-[160px] truncate">{baseName(tab.path ?? tab.rel)}{tab.rev ? ` @${tab.rev.slice(0, 7)}` : ''}</span>
+            <span className={cn('max-w-[160px] truncate', tab.preview && 'italic')}>{baseName(tab.path ?? tab.rel)}{tab.rev ? ` @${tab.rev.slice(0, 7)}` : ''}</span>
             {dirtySet.has(tab.rel) && <span className="text-warn">●</span>}
             <button
               type="button"
@@ -347,34 +410,58 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
           {rev && <span className="ml-1 text-fg-muted">@{rev.slice(0, 7)}</span>}
           {dirty && !image && <span className="ml-1 text-warn">●</span>}
         </span>
-        {!image && !rev && (['file', 'diff'] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => switchMode(m)}
-            className={cn('rounded px-2 py-0.5', mode === m ? 'bg-hover text-fg' : 'text-fg-muted hover:text-fg')}
-          >
-            {t(m === 'file' ? 'viewer.file' : 'viewer.diff')}
-          </button>
-        ))}
-        <Button variant="ghost" size="sm" title={t('viewer.insertPath')} aria-label={t('viewer.insertPath')} onClick={() => insertText(info.id, refOf(path.replace(/\\/g, '/')))}>
-          <AtSign size={12} />
-        </Button>
-        {!image && !rev && (
+        {mode === 'diff' && !rev && !image && (
           <>
-            <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (Ctrl+S)`} aria-label={t('viewer.save')} onClick={() => void save()}>
-              <Save size={12} />
-            </Button>
-            <Button variant="ghost" size="sm" title={t('viewer.wrap')} aria-label={t('viewer.wrap')} aria-pressed={wrap} onClick={() => setWrap((v) => !v)} className={cn(wrap && 'bg-hover')}>
-              <WrapText size={12} />
+            <Button variant="ghost" size="sm" data-testid="open-file" title={t('viewer.openFileHint')} onClick={() => switchMode('file')}>
+              <FileText size={12} />
+              {t('viewer.openFile')}
             </Button>
           </>
         )}
+        {mode === 'file' && !rev && !image && fileChange && (
+          <Button variant="ghost" size="sm" data-testid="view-changes" title={t('viewer.viewChangesHint')} onClick={() => switchMode('diff')} className="text-warn">
+            <FileDiff size={12} />
+            {t('viewer.viewChanges')}
+            {(fileChange.added > 0 || fileChange.deleted > 0) && (
+              <span className="font-mono text-[10px]">
+                <span className="text-ok">+{fileChange.added}</span> <span className="text-danger">−{fileChange.deleted}</span>
+              </span>
+            )}
+          </Button>
+        )}
+        {(mode === 'diff' || !!rev) && !image && (
+          <div role="group" aria-label={t('viewer.layout')} className="flex shrink-0 items-center rounded border border-border p-0.5">
+            {([false, true] as const).map((side) => (
+              <button
+                key={String(side)}
+                type="button"
+                data-testid={side ? 'layout-side-by-side' : 'layout-inline'}
+                aria-label={t(side ? 'viewer.sideBySide' : 'viewer.inline')}
+                aria-pressed={sideBySide === side}
+                title={t(side ? 'viewer.sideBySide' : 'viewer.inline')}
+                onClick={() => switchLayout(side)}
+                className={cn('rounded p-1', sideBySide === side ? 'bg-hover text-fg' : 'text-fg-muted hover:text-fg')}
+              >
+                {side ? <Columns2 size={13} /> : <Rows2 size={13} />}
+              </button>
+            ))}
+          </div>
+        )}
+        <Button variant="ghost" size="sm" title={t('viewer.insertPath')} aria-label={t('viewer.insertPath')} onClick={() => insertText(info.id, refOf(path.replace(/\\/g, '/')))}>
+          <AtSign size={12} />
+        </Button>
+        {!image && mode === 'file' && !rev && (
+          <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (Ctrl+S)`} aria-label={t('viewer.save')} onClick={() => void save()}>
+            <Save size={12} />
+          </Button>
+        )}
+        {!image && (
+          <Button variant="ghost" size="sm" title={t('viewer.wrap')} aria-label={t('viewer.wrap')} aria-pressed={wrap} onClick={() => setWrap((v) => !v)} className={cn(wrap && 'bg-hover')}>
+            <WrapText size={12} />
+          </Button>
+        )}
         <Button variant="ghost" size="sm" title={t(maximized ? 'viewer.restore' : 'viewer.maximize')} aria-label={t(maximized ? 'viewer.restore' : 'viewer.maximize')} onClick={() => setMaximized(!maximized)}>
           {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-        </Button>
-        <Button variant="ghost" size="sm" title={t('viewer.close')} aria-label={t('viewer.close')} onClick={close}>
-          <X size={12} />
         </Button>
       </div>
       {!image && (stale || noHead) && (
@@ -388,7 +475,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
         </div>
       )}
       <div className="relative min-h-0 flex-1">
-        <div ref={host} className={cn('absolute inset-0', (image || unchanged || doc.state !== 'ready') && 'invisible')} />
+        <div ref={host} className={cn('absolute inset-0 overflow-auto [&_.cm-mergeView]:h-full [&_.cm-mergeView]:min-w-[560px]', (image || unchanged || doc.state !== 'ready') && 'invisible')} />
         {image && <ImageView key={rel} sessionId={info.id} rel={path} active={active} />}
         {unchanged && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.noChanges')}</div>}
         {!image && doc.state === 'loading' && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-fg-muted">{t('viewer.loading')}</div>}

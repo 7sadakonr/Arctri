@@ -40,7 +40,7 @@ export function ChangesChip({ sessionId, data }: { sessionId: string; data: Chan
       >
         <DropdownMenuLabel>{data.files.length ? t('agent.changes', { n: data.files.length }) : t('agent.changesNone')}</DropdownMenuLabel>
         {data.files.map((f) => (
-          <DropdownMenuItem key={f.path} onSelect={() => useSessions.getState().openViewer(sessionId, f.path, f.status.includes('D') ? 'file' : 'diff')}>
+          <DropdownMenuItem key={f.path} onSelect={() => useSessions.getState().openViewer(sessionId, f.path, f.status.includes('D') ? 'file' : 'diff', { preview: true })}>
             <span className={`w-5 shrink-0 font-mono text-[10px] ${statusColor(f.status)}`}>{f.status.trim() || 'M'}</span>
             <span className="min-w-0 flex-1 truncate font-mono" title={f.path}>
               {f.path}

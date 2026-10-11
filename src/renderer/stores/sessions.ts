@@ -10,6 +10,8 @@ export interface ViewerTab {
   path?: string;
   /** Shows the file as this commit changed it (read-only, against the commit's parent). */
   rev?: string;
+  /** Opened by a single click in the Changes list: the next such click replaces this tab instead of adding another. */
+  preview?: boolean;
 }
 export interface ViewerState {
   tabs: ViewerTab[];
@@ -31,7 +33,9 @@ interface SessionsState {
   attention: Record<string, boolean>;
   /** The files (relative to the tab's folder) shown beside the terminal, each as it is or as a diff against HEAD. */
   viewer: Record<string, ViewerState | undefined>;
-  openViewer(id: string, rel: string, mode: 'file' | 'diff', extra?: { path?: string; rev?: string }): void;
+  openViewer(id: string, rel: string, mode: 'file' | 'diff', extra?: { path?: string; rev?: string; preview?: boolean }): void;
+  /** Keeps a preview tab: it is no longer replaced by the next preview. */
+  pinViewer(id: string, rel: string): void;
   /** Closes one file; without `rel` (or after the last one) the whole panel. */
   closeViewer(id: string, rel?: string): void;
   setViewerMaximized(id: string, on: boolean): void;
@@ -56,10 +60,19 @@ export const useSessions = create<SessionsState>()((set) => ({
     set((s) => {
       const tabs = s.viewer[id]?.tabs ?? [];
       const tab: ViewerTab = { rel, mode, ...(extra?.path ? { path: extra.path } : {}), ...(extra?.rev ? { rev: extra.rev } : {}) };
-      const next = tabs.some((x) => x.rel === rel)
-        ? tabs.map((x) => (x.rel === rel ? { ...x, ...tab } : x))
-        : [...tabs, tab];
+      let next: ViewerTab[];
+      if (tabs.some((x) => x.rel === rel)) next = tabs.map((x) => (x.rel === rel ? { ...x, ...tab } : x));
+      else if (extra?.preview) {
+        const at = tabs.findIndex((x) => x.preview);
+        next = at < 0 ? [...tabs, { ...tab, preview: true }] : tabs.map((x, i) => (i === at ? { ...tab, preview: true } : x));
+      } else next = [...tabs, tab];
       return { viewer: { ...s.viewer, [id]: { ...s.viewer[id], tabs: next, active: rel } } };
+    }),
+  pinViewer: (id, rel) =>
+    set((s) => {
+      const v = s.viewer[id];
+      if (!v?.tabs.some((x) => x.rel === rel && x.preview)) return s;
+      return { viewer: { ...s.viewer, [id]: { ...v, tabs: v.tabs.map((x) => (x.rel === rel ? { ...x, preview: false } : x)) } } };
     }),
   closeViewer: (id, rel) =>
     set((s) => {

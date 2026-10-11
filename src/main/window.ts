@@ -36,12 +36,14 @@ export interface WindowHooks {
 }
 
 const TITLE_BAR_HEIGHT = 36;
+/** The window buttons stop one pixel short, so the page can draw the line under the title bar all the way across. */
+const OVERLAY_HEIGHT = TITLE_BAR_HEIGHT - 1;
 
 /** Zooms the whole interface; the window-control overlay is resized to stay level with the tab bar. */
 export function applyUiScale(win: BrowserWindow, scale: number): void {
   if (win.isDestroyed()) return;
   win.webContents.setZoomFactor(scale);
-  if (process.platform === 'win32') win.setTitleBarOverlay({ height: Math.round(TITLE_BAR_HEIGHT * scale) });
+  if (process.platform === 'win32') win.setTitleBarOverlay({ height: Math.round(OVERLAY_HEIGHT * scale) });
 }
 
 export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): BrowserWindow {
@@ -60,8 +62,8 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     ...(isDev() ? { icon: join(import.meta.dirname, '../../build/icon.png') } : {}),
     titleBarStyle: 'hidden',
     titleBarOverlay: prefs.get().theme === 'light'
-      ? { color: '#fbfbfd', symbolColor: '#23252e', height: Math.round(TITLE_BAR_HEIGHT * prefs.get().uiScale) }
-      : { color: '#0e0f13', symbolColor: '#c9ccd6', height: Math.round(TITLE_BAR_HEIGHT * prefs.get().uiScale) },
+      ? { color: '#f1f2f6', symbolColor: '#23252e', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
+      : { color: '#15171d', symbolColor: '#c9ccd6', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) },
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       contextIsolation: true,

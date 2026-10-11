@@ -68,7 +68,6 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       aria-hidden={!active}
       className={cn('absolute inset-0 flex', !active && 'pointer-events-none invisible')}
     >
-      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
       <div className={cn('flex flex-col overflow-hidden', viewerOpen && viewerMax ? 'w-0 min-w-0 flex-none' : 'min-w-[320px] flex-1')}>
       <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 min-w-0 flex-1">
@@ -152,6 +151,7 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       {canType && <CommandEditor sessionId={info.id} focused={active} />}
       {(info.kind === 'agent' || info.runningAgent) && <AgentBar info={info} active={active} />}
       </div>
+      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
       {sidebarOpen && info.cwd && <Sidebar info={info} active={active} />}
     </div>
   );

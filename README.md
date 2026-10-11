@@ -11,14 +11,14 @@
 
 <p align="center">
   <a href="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml"><img src="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="Version 0.2.0" />
+  <img src="https://img.shields.io/badge/version-0.2.0--beta-blue" alt="Version 0.2.0-beta" />
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4" alt="Windows 10 and 11" />
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
 </p>
 
 Arctri is a Windows-first desktop terminal built around the way developers use **Claude Code**, **OpenAI Codex CLI**, and traditional shells. It combines real PTY-backed execution with command blocks, context-aware autocomplete, project navigation, file editing, Git changes, and a contextual toolbar that appears when an AI agent is running.
 
-**Current release:** `v0.2.0` · **Windows 10 22H2 / Windows 11 (x64)** · Optional WSL2 support.
+**Current release:** `v0.2.0-beta` · **Windows 10 22H2 / Windows 11 (x64)** · Optional WSL2 support.
 
 > [!IMPORTANT]
 > Arctri does **not** include its own AI model, API keys, or cloud inference service. It runs external AI coding CLIs installed and authenticated by the user. Their subscriptions, accounts, permissions, network requests, and usage limits are managed by their respective providers.
@@ -327,7 +327,7 @@ Contributions and bug reports can be submitted through [GitHub Issues](https://g
 
 ## Current scope and limitations
 
-- **MVP 1 (v0.2.0)** focuses on **Windows x64**. Native Linux/macOS installers are not part of this release.
+- **MVP 1 (v0.2.0-beta)** focuses on **Windows x64**. Native Linux/macOS installers are not part of this release.
 - **WSL2 is optional**, but usable WSL distributions must be installed separately.
 - **Shell command blocks depend on integration.** If command boundaries are unavailable, the tab remains a functional classic terminal. Interactive/full-screen programs use the live terminal interface.
 - **Agent integration currently targets Claude Code and Codex CLI.** Their executables must be installed separately, and available toolbar options vary by CLI version.

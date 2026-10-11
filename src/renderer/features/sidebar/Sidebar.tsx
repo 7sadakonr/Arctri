@@ -17,11 +17,11 @@ import { HistoryView } from './HistoryView';
 
 type View = Prefs['sidebarView'];
 
-const VIEWS: Array<{ id: View; label: MessageKey; Icon: ComponentType<{ size?: number }> }> = [
-  { id: 'files', label: 'sidebar.files', Icon: FolderTree },
-  { id: 'changes', label: 'sidebar.changes', Icon: FileDiff },
-  { id: 'branches', label: 'sidebar.branches', Icon: GitBranch },
-  { id: 'history', label: 'sidebar.history', Icon: History }
+const VIEWS: Array<{ id: View; label: MessageKey; tip: MessageKey; Icon: ComponentType<{ size?: number }> }> = [
+  { id: 'files', label: 'sidebar.files', tip: 'sidebar.tip.files', Icon: FolderTree },
+  { id: 'changes', label: 'sidebar.changes', tip: 'sidebar.tip.changes', Icon: FileDiff },
+  { id: 'branches', label: 'sidebar.branches', tip: 'sidebar.tip.branches', Icon: GitBranch },
+  { id: 'history', label: 'sidebar.history', tip: 'sidebar.tip.history', Icon: History }
 ];
 
 /** The panel beside the terminal, open by default: files, changes, branches and history of the tab's folder. */
@@ -41,7 +41,7 @@ export function Sidebar({ info, active }: { info: SessionInfo; active: boolean }
   };
 
   return (
-    <aside data-testid="file-panel" style={{ width }} className="relative flex shrink-0 flex-col border-l border-border bg-panel/60">
+    <aside data-testid="file-panel" style={{ width }} className="relative flex shrink-0 flex-col border-l border-border bg-bg">
       <div
         role="separator"
         aria-orientation="vertical"
@@ -59,11 +59,11 @@ export function Sidebar({ info, active }: { info: SessionInfo; active: boolean }
         onPointerUp={() => dragWidth !== null && saveWidth(dragWidth)}
         onDoubleClick={() => saveWidth(280)}
       />
-      <div role="toolbar" className="flex h-8 shrink-0 items-stretch border-b border-border px-1">
-        {VIEWS.map(({ id, label, Icon }) => {
+      <div role="toolbar" className="flex h-8 shrink-0 items-stretch border-b border-border bg-panel px-1">
+        {VIEWS.map(({ id, label, tip, Icon }) => {
           const on = view === id;
           return (
-            <Tip key={id} label={t(label)} side="bottom">
+            <Tip key={id} label={t(tip)} side="bottom">
               <button
                 type="button"
                 aria-pressed={on}

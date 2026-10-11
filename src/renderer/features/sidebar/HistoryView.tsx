@@ -5,6 +5,8 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/file-icon';
 import { useLang, useT } from '@/lib/i18n';
+import type { MessageKey } from '@shared/i18n';
+import { relativeTime } from '@/lib/relative-time';
 import { useSessions } from '@/stores/sessions';
 import { useChanges } from '../agents/useChanges';
 import { baseName, dirName } from './ChangesView';
@@ -14,16 +16,8 @@ type CommitFile = NonNullable<Awaited<ReturnType<typeof api.files.commitFiles>>>
 
 const statusColor = (s: string) => (s === 'A' ? 'text-ok' : s === 'D' ? 'text-danger' : 'text-warn');
 
-/** "3 h ago" in the interface language. */
-export function relativeTime(sec: number, lang: 'en' | 'th', now = Date.now()): string {
-  const diff = Math.max(0, Math.round(now / 1000 - sec));
-  const unit = (n: number, en: string, th: string) => (lang === 'th' ? `${n} ${th}ที่แล้ว` : `${n} ${en} ago`);
-  if (diff < 60) return lang === 'th' ? 'เมื่อสักครู่' : 'just now';
-  if (diff < 3600) return unit(Math.floor(diff / 60), 'min', 'นาที');
-  if (diff < 86400) return unit(Math.floor(diff / 3600), 'h', 'ชม.');
-  if (diff < 86400 * 30) return unit(Math.floor(diff / 86400), 'd', 'วัน');
-  return new Date(sec * 1000).toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-GB');
-}
+/** What git's one-letter status of a file in a commit means, in words. */
+const fileStatusKey = (s: string): MessageKey => (s === 'A' || s === 'C' ? 'status.added' : s === 'D' ? 'status.deleted' : s === 'R' ? 'status.renamed' : 'status.modified');
 
 /** The latest commits of the current branch. Opening one lists the files it changed; a file opens as a diff. */
 export function HistoryView({ info, active }: { info: SessionInfo; active: boolean }) {
@@ -82,11 +76,10 @@ export function HistoryView({ info, active }: { info: SessionInfo; active: boole
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[12px] text-fg">{c.subject}</span>
                 <span className="flex items-center gap-1.5 text-[10px] text-fg-muted">
-                  <span className="font-mono">{c.short}</span>
                   <span className="truncate">{c.author}</span>
                   <span className="shrink-0">{relativeTime(c.time, lang)}</span>
                   {c.refs.slice(0, 3).map((r) => (
-                    <span key={r} className="shrink-0 rounded bg-accent/15 px-1 text-accent">
+                    <span key={r} title={r.includes('/') ? t('sidebar.remoteTip') : undefined} className="shrink-0 rounded bg-accent/15 px-1 text-accent">
                       {r}
                     </span>
                   ))}
@@ -116,7 +109,7 @@ export function HistoryView({ info, active }: { info: SessionInfo; active: boole
                         <span className="text-ok">+{f.added}</span> <span className="text-danger">−{f.deleted}</span>
                       </span>
                     )}
-                    <span className={cn('w-4 shrink-0 text-center font-mono text-[11px]', statusColor(f.status))}>{f.status}</span>
+                    <span className={cn('shrink-0 text-[10px]', statusColor(f.status))}>{t(fileStatusKey(f.status))}</span>
                   </button>
                 ))}
               </div>

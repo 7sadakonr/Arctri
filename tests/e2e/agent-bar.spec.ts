@@ -101,7 +101,7 @@ test('typing codex in a shell tab switches to the Codex bar, with working contro
     await expect(viewer.getByRole('tab')).toHaveCount(2);
     await viewer.getByRole('button', { name: /close tab/i }).first().click();
     await expect(viewer.getByRole('tab')).toHaveCount(1);
-    await viewer.getByRole('button', { name: /^close$/i }).click();
+    await viewer.getByRole('button', { name: /close tab/i }).click();
     await expect(active(page).getByTestId('file-viewer')).toHaveCount(0);
     await panel.getByLabel(/filter/i).fill('a.t');
     await expect(panel.getByRole('treeitem', { name: /a\.txt/ })).toBeVisible();

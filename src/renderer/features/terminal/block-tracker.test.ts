@@ -139,6 +139,12 @@ describe('BlockTracker', () => {
   it('reads the prompt that is waiting for input', async () => {
     const { write, tracker } = setup(40, 6);
     await write(hello + mark('A') + mark('B') + `line one\r\n> `);
-    expect(blockText(tracker.promptSnapshot())).toBe('line one\n> ');
+    expect(blockText(tracker.promptSnapshot())).toBe('line one\n>');
+  });
+
+  it('drops the spaces a shell pads the prompt line with, so the prompt is as wide as its text', async () => {
+    const { write, tracker } = setup(40, 6);
+    await write(hello + mark('A') + mark('B') + '> proj' + ' '.repeat(30) + '\r\x1b[7C');
+    expect(blockText(tracker.promptSnapshot())).toBe('> proj');
   });
 });

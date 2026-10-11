@@ -2,6 +2,7 @@ import { Folder, GitBranch, TerminalSquare } from 'lucide-react';
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
+import { BRANCH_QUICK_SWITCH_EVENT } from '@/lib/branch-events';
 import { tNow, useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
@@ -18,13 +19,18 @@ export function TitleBar() {
   const branch = useSessions((s) => (s.activeId ? s.infos[s.activeId]?.gitBranch : undefined));
 
   return (
+    <>
+    {/* the bar's colour across the whole window, also behind the window buttons (the bar itself stops before them) */}
+    <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-20 bg-panel" style={{ height: 'env(titlebar-area-height, 35px)' }} />
+    {/* the line under the title bar, across the whole window including under the window buttons */}
+    <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 z-30 h-px bg-border" style={{ top: 'env(titlebar-area-height, 35px)' }} />
     <div
-      className="drag fixed z-30 flex items-center gap-1 pl-3"
+      className="drag fixed z-30 flex items-center gap-1 bg-panel pl-3"
       style={{
         left: 'env(titlebar-area-x, 0px)',
         top: 0,
         width: 'env(titlebar-area-width, 100%)',
-        height: 'env(titlebar-area-height, 36px)'
+        height: 'env(titlebar-area-height, 35px)'
       }}
     >
       <TerminalSquare size={14} className="mr-1 shrink-0 text-accent" />
@@ -50,11 +56,23 @@ export function TitleBar() {
         )}
       </div>
       {branch && (
-        <span data-testid="location-branch" className="flex shrink-0 items-center gap-1 pr-2 text-[11px] text-fg" title={branch}>
+        <button
+          type="button"
+          data-testid="location-branch"
+          className="no-drag flex shrink-0 items-center gap-1 rounded px-1.5 py-1 pr-2 text-[11px] text-fg hover:bg-hover focus-visible:outline focus-visible:outline-accent"
+          title={t('sidebar.switchTo', { name: branch })}
+          aria-label={t('sidebar.quickSwitch')}
+          onClick={() => {
+            useUi.getState().setPrefs({ ...useUi.getState().prefs, sidebarView: 'branches', sidebarOpen: true });
+            void api.prefs.set({ sidebarView: 'branches', sidebarOpen: true });
+            requestAnimationFrame(() => window.dispatchEvent(new Event(BRANCH_QUICK_SWITCH_EVENT)));
+          }}
+        >
           <GitBranch size={12} />
           <span className="max-w-[160px] truncate">{branch}</span>
-        </span>
+        </button>
       )}
     </div>
+    </>
   );
 }

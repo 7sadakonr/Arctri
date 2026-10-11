@@ -162,7 +162,7 @@ async function start(): Promise<void> {
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
         const dark = p.theme === 'dark';
-        win?.setTitleBarOverlay({ color: dark ? '#0e0f13' : '#fbfbfd', symbolColor: dark ? '#c9ccd6' : '#23252e' });
+        win?.setTitleBarOverlay({ color: dark ? '#15171d' : '#f1f2f6', symbolColor: dark ? '#c9ccd6' : '#23252e' });
       },
       diagnostics: () => ({
         app: app.getVersion(), electron: process.versions.electron, node: process.versions.node,

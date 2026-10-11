@@ -74,12 +74,12 @@ export async function openShell(
   }
 }
 
-/** A new tab for the shell the user is currently in, in the same folder. */
+/** A new tab for the shell the user is currently in, starting where that shell starts (not in the folder the tab has moved to). */
 export async function openSimilarTab(): Promise<void> {
   const { activeId, infos } = useSessions.getState();
   const cur = activeId ? infos[activeId] : undefined;
   const profile = cur && cur.kind === 'shell' ? useUi.getState().profiles.find((p) => p.id === cur.profileId) : undefined;
-  await openShell(profile ?? (await resolveDefaultProfile()), cur?.cwd && cur.kind === 'shell' ? { cwd: cur.cwd } : {});
+  await openShell(profile ?? (await resolveDefaultProfile()));
 }
 
 /** What each agent tab was started with, so Restart and Resume can start the same agent again. */
