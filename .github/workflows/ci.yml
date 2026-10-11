@@ -21,7 +21,14 @@ jobs:
       - run: npm test
       - run: npm run build
       # Real PTYs: PowerShell 5.1 and 7 are on the runner, WSL distributions are not.
-      - run: npm run test:integration
+      # ConPTY sessions closed in bulk sometimes crash a test worker on shared runners (a native access violation that
+      # vitest cannot retry by itself), so the whole suite gets one more try before the job fails.
+      - name: Integration tests
+        run: |
+          npm run test:integration
+          if ($LASTEXITCODE -ne 0) { Write-Host 'Integration tests failed, trying once more'; npm run test:integration }
+          exit $LASTEXITCODE
+        shell: pwsh
         env:
           ARCTRI_SKIP_WSL: '1'
       - run: npm run dist

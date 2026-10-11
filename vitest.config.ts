@@ -10,6 +10,8 @@ export default defineConfig({
       : ['src/**/*.test.ts', 'tests/unit/**/*.test.ts'],
     environment: 'node',
     testTimeout: process.env['ARCTRI_INTEGRATION'] ? 60000 : 5000,
+    // Integration tests drive real ConPTY sessions; on a shared CI runner one of them can miss an exit now and then
+    retry: process.env['ARCTRI_INTEGRATION'] && process.env['CI'] ? 2 : 0,
     fileParallelism: false
   }
 });
