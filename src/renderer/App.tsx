@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { useSessions } from '@/stores/sessions';
+import { isMac, modKey } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
 import { closeSession, defaultProfile, openShell, openSimilarTab, wasClosedHere } from '@/features/launcher/actions';
 import { refreshAgents } from '@/features/launcher/NewTabMenu';
@@ -104,10 +105,13 @@ export function App() {
     const h = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       const s = useSessions.getState();
-      if (e.ctrlKey && e.shiftKey && k === 't') {
+      const mod = modKey(e);
+      // Cmd+T / Cmd+W on a Mac, Ctrl+Shift+T / Ctrl+Shift+W elsewhere (the shell uses Ctrl+W and Ctrl+T itself)
+      const tabChord = mod && (isMac ? !e.shiftKey : e.shiftKey);
+      if (tabChord && k === 't') {
         e.preventDefault();
         void openSimilarTab();
-      } else if (e.ctrlKey && e.shiftKey && k === 'w') {
+      } else if (tabChord && k === 'w') {
         e.preventDefault();
         if (s.activeId) void closeSession(s.activeId);
       } else if (e.ctrlKey && k === 'tab') {
@@ -117,13 +121,13 @@ export function App() {
           const next = (i + (e.shiftKey ? -1 : 1) + s.order.length) % s.order.length;
           s.setActive(s.order[next]!);
         }
-      } else if (e.ctrlKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+      } else if (mod && !e.shiftKey && /^[1-9]$/.test(e.key)) {
         const id = s.order[Number(e.key) - 1];
         if (id) {
           e.preventDefault();
           s.setActive(id);
         }
-      } else if (e.ctrlKey && e.shiftKey && k === 'e') {
+      } else if (mod && e.shiftKey && k === 'e') {
         e.preventDefault();
         toggleSidebar();
       } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g') {
@@ -132,13 +136,13 @@ export function App() {
           e.preventDefault();
           window.dispatchEvent(new Event(TOGGLE_RICH_EVENT));
         }
-      } else if (e.ctrlKey && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+      } else if (mod && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
         e.preventDefault();
         void stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1);
       } else if (e.key === 'F2') {
         e.preventDefault();
         window.dispatchEvent(new Event('arctri:rename-tab'));
-      } else if (e.ctrlKey && k === ',') {
+      } else if (mod && k === ',') {
         e.preventDefault();
         useUi.getState().openSettings(true);
       }

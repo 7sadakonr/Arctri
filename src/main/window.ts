@@ -44,6 +44,8 @@ export function applyUiScale(win: BrowserWindow, scale: number): void {
   if (win.isDestroyed()) return;
   win.webContents.setZoomFactor(scale);
   if (process.platform === 'win32') win.setTitleBarOverlay({ height: Math.round(OVERLAY_HEIGHT * scale) });
+  // the traffic lights stay centred in the bar when the interface is zoomed
+  if (process.platform === 'darwin') win.setWindowButtonPosition({ x: 14, y: Math.round((TITLE_BAR_HEIGHT * scale - 12) / 2) });
 }
 
 export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): BrowserWindow {
@@ -61,9 +63,14 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     // the packaged exe embeds its icon; this only gives development runs the same one
     ...(isDev() ? { icon: join(import.meta.dirname, '../../build/icon.png') } : {}),
     titleBarStyle: 'hidden',
-    titleBarOverlay: prefs.get().theme === 'light'
-      ? { color: '#f1f2f6', symbolColor: '#23252e', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
-      : { color: '#15171d', symbolColor: '#c9ccd6', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) },
+    // Windows: the caption buttons are drawn over the page. macOS: the traffic lights sit on the left of our own bar.
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 14, y: Math.round((TITLE_BAR_HEIGHT * prefs.get().uiScale - 12) / 2) } }
+      : {
+          titleBarOverlay: prefs.get().theme === 'light'
+            ? { color: '#f1f2f6', symbolColor: '#23252e', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
+            : { color: '#15171d', symbolColor: '#c9ccd6', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
+        }),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -101,9 +108,10 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     if (!appOrigins().some((o) => url.startsWith(o))) e.preventDefault();
   });
   win.webContents.on('before-input-event', (e, input) => {
-    if (isDev() && input.control && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
-    if (input.control && (input.key === '+' || input.key === '=' || input.key === '-' || input.key === '0')) e.preventDefault();
-    if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) e.preventDefault();
+    const mod = input.control || input.meta; // Cmd on a Mac
+    if (isDev() && ((input.control && input.shift) || (input.meta && input.alt)) && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
+    if (mod && (input.key === '+' || input.key === '=' || input.key === '-' || input.key === '0')) e.preventDefault();
+    if (input.key === 'F5' || (mod && input.key.toLowerCase() === 'r')) e.preventDefault();
   });
 
   let confirmed = false;

@@ -41,8 +41,8 @@ export function startNodePty(o: PtySpawnOptions & { useConptyDll: boolean }) {
     rows: o.rows,
     cwd: o.cwd,
     env: o.env,
-    useConpty: true,
-    useConptyDll: o.useConptyDll
+    // ConPTY is Windows only; on macOS node-pty uses a plain pseudo-terminal
+    ...(process.platform === 'win32' ? { useConpty: true, useConptyDll: o.useConptyDll } : {})
   } as import('node-pty').IWindowsPtyForkOptions);
 }
 

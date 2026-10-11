@@ -1,3 +1,4 @@
+import { kbd, modKey } from '@/lib/platform';
 import { FolderOpen, GitFork, Plus, TerminalSquare, X } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { api } from '@/lib/api';
@@ -59,14 +60,14 @@ export function WelcomeScreen() {
     const h = (e: KeyboardEvent) => {
       if (cloning) return;
       const k = e.key.toLowerCase();
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'k') {
+      if (modKey(e) && !e.shiftKey && !e.altKey && k === 'k') {
         chordAt = Date.now();
         e.preventDefault();
-      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'o' && Date.now() - chordAt < 1500) {
+      } else if (modKey(e) && !e.shiftKey && !e.altKey && k === 'o' && Date.now() - chordAt < 1500) {
         chordAt = 0;
         e.preventDefault();
         void pickAndOpenProject();
-      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && /^[1-5]$/.test(e.key)) {
+      } else if (modKey(e) && !e.shiftKey && !e.altKey && /^[1-5]$/.test(e.key)) {
         const r = shown[Number(e.key) - 1];
         if (r) {
           e.preventDefault();
@@ -85,8 +86,8 @@ export function WelcomeScreen() {
     <div className="flex h-full items-center justify-center overflow-auto p-8">
       <div className="w-[min(520px,100%)]">
         <Section title={t('welcome.getStarted')}>
-          <Row icon={<Plus size={14} />} label={t('welcome.newTerminal')} hint="Ctrl+Shift+T" onClick={() => void resolveDefaultProfile().then(openShell)} />
-          <Row icon={<FolderOpen size={14} />} label={t('welcome.openProject')} hint="Ctrl+K Ctrl+O" onClick={() => void pickAndOpenProject()} />
+          <Row icon={<Plus size={14} />} label={t('welcome.newTerminal')} hint={kbd("Ctrl+Shift+T")} onClick={() => void resolveDefaultProfile().then(openShell)} />
+          <Row icon={<FolderOpen size={14} />} label={t('welcome.openProject')} hint={kbd("Ctrl+K Ctrl+O")} onClick={() => void pickAndOpenProject()} />
           <Row icon={<GitFork size={14} />} label={t('welcome.cloneRepo')} onClick={() => useUi.getState().setCloneOpen(true)} />
         </Section>
         <Section title={t('welcome.recent')}>
@@ -97,7 +98,7 @@ export function WelcomeScreen() {
               icon={<TerminalSquare size={14} />}
               label={projectName(r.path)}
               detail={r.env === 'wsl' ? `${r.distro}: ${r.path}` : r.path}
-              hint={`Ctrl+${i + 1}`}
+              hint={kbd(`Ctrl+${i + 1}`)}
               onClick={() => void openProject(toEnvPath(r))}
               onRemove={() => forget(r)}
               removeLabel={t('welcome.removeRecent')}

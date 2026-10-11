@@ -1,9 +1,11 @@
-export type EnvironmentRef = { kind: 'windows' } | { kind: 'wsl'; distro: string };
+/** `local` is the machine the app runs on when it is not Windows (macOS): plain POSIX paths and shells. */
+export type EnvironmentRef = { kind: 'windows' } | { kind: 'wsl'; distro: string } | { kind: 'local' };
 export type WinPath = string & { readonly __brand: 'WinPath' };
 export type PosixPath = string & { readonly __brand: 'PosixPath' };
 export type EnvPath =
   | { env: 'windows'; path: WinPath }
-  | { env: 'wsl'; distro: string; path: PosixPath };
+  | { env: 'wsl'; distro: string; path: PosixPath }
+  | { env: 'local'; path: PosixPath };
 export type ShellKind = 'pwsh' | 'powershell' | 'cmd' | 'bash' | 'zsh' | 'other';
 
 export interface ShellProfile {
@@ -21,7 +23,13 @@ export interface ShellProfile {
 }
 
 export const envKeyOf = (env: EnvironmentRef, shell: ShellKind): string =>
-  env.kind === 'windows' ? `windows:${shell}` : `wsl:${env.distro}:${shell}`;
+  env.kind === 'windows' ? `windows:${shell}` : env.kind === 'local' ? `local:${shell}` : `wsl:${env.distro}:${shell}`;
 
 export const sameEnv = (a: EnvironmentRef, b: EnvironmentRef): boolean =>
-  a.kind === b.kind && (a.kind === 'windows' || (b.kind === 'wsl' && a.distro === b.distro));
+  a.kind === b.kind && (a.kind !== 'wsl' || (b.kind === 'wsl' && a.distro === b.distro));
+
+/** The name of an environment as a person reads it. */
+export const envLabel = (env: EnvironmentRef): string => (env.kind === 'windows' ? 'Windows' : env.kind === 'local' ? 'macOS' : env.distro);
+
+/** The part of a setting key that identifies the environment (`windows`, `local`, `wsl:<distro>`). */
+export const envSettingKey = (env: EnvironmentRef): string => (env.kind === 'wsl' ? `wsl:${env.distro}` : env.kind);

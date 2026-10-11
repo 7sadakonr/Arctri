@@ -31,7 +31,7 @@ export interface Invocation {
 /** Which program runs `git` for this folder: git for Windows (also for a Windows drive seen from WSL), else git inside the distribution. */
 export function gitInvocations(env: EnvironmentRef, cwd: string, args: string[], extraEnv: Record<string, string> = {}): Invocation[] {
   const windows = (dir: string): Invocation => ({ file: 'git', argv: ['-C', dir, ...args] });
-  if (env.kind === 'windows') return [windows(cwd)];
+  if (env.kind !== 'wsl') return [windows(cwd)];
   const inWsl: Invocation = {
     file: wslExePath(),
     argv: ['-d', env.distro, '--exec', 'env', 'GIT_TERMINAL_PROMPT=0', ...Object.entries(extraEnv).map(([k, v]) => `${k}=${v}`), 'git', '-C', cwd, ...args]

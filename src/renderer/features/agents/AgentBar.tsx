@@ -1,6 +1,7 @@
 import { Asterisk, ChevronDown, Folder, FolderOpen, GitBranch, Hexagon, History, MessageSquarePlus, Paperclip, RotateCcw, Settings, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AGENT_META } from '@shared/agents/meta';
+import { envLabel } from '@shared/types/env';
 import type { AgentId, SessionInfo } from '@shared/types/session';
 import { Button } from '@/components/ui/button';
 import {
@@ -86,7 +87,7 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
   const [rich, setRich] = useState(false);
   const changes = useChanges(info.id, active && running);
   const launch = agentLaunchOf(info.id);
-  const envName = info.env.kind === 'windows' ? 'Windows' : info.env.distro;
+  const envName = envLabel(info.env);
   const commands = caps?.nativeCommands ?? meta.nativeCommands;
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import type { WslDistro, WslStatus } from '@shared/types/wsl';
 import { logger } from '../logger';
 import type { WslManager } from '../wsl/wsl-manager';
 import { wslExePath } from '../wsl/wsl-manager';
+import { defaultLocalProfileId, discoverLocalProfiles } from './local';
 import { discoverWindowsProfiles, probeZshAll, wslProfilesFor, type ZshCache } from './discovery';
 import { loadWindowsTerminalProfiles, normalizeDistro } from './wt-settings';
 
@@ -44,6 +45,13 @@ export class ProfileRegistry {
   }
 
   private discoverWindows(): void {
+    if (process.platform !== 'win32') {
+      // macOS and others: the shells of this machine stand where the Windows ones do, and the login shell is the default
+      this.windows = discoverLocalProfiles();
+      this.order = [];
+      this.wtDefault = defaultLocalProfileId(this.windows);
+      return;
+    }
     const base = discoverWindowsProfiles();
     const wt = loadWindowsTerminalProfiles(base);
     this.windows = wt ? wt.windows : base;

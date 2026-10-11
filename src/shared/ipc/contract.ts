@@ -3,7 +3,8 @@ import { prefsPatchSchema } from '../prefs';
 
 const envPath = z.union([
   z.object({ env: z.literal('windows'), path: z.string().max(4096) }),
-  z.object({ env: z.literal('wsl'), distro: z.string().max(200), path: z.string().max(4096) })
+  z.object({ env: z.literal('wsl'), distro: z.string().max(200), path: z.string().max(4096) }),
+  z.object({ env: z.literal('local'), path: z.string().max(4096) })
 ]);
 
 const launchOptions = z.object({

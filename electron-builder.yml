@@ -8,11 +8,7 @@ files:
   - out/**
   - package.json
   - '!**/*.{pdb,map}'
-  # x64 only in MVP 1: leave out other platforms' native binaries
-  - '!node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**'
-  - '!node_modules/node-pty/third_party/conpty/*/win10-arm64/**'
-  - '!node_modules/node-pty/prebuilds/win32-x64/winpty*'
-  - '!node_modules/better-sqlite3/prebuilds/{darwin-*,linux*,win32-arm64}.node'
+  # which native binaries ship is decided per platform (win.files, mac.files below)
 # Native modules ship N-API prebuilds inside their packages (ADR-006): nothing is rebuilt.
 npmRebuild: false
 nodeGypRebuild: false
@@ -30,6 +26,12 @@ extraResources:
       - '**/*'
       - '!**/.zcompdump*'
 win:
+  files:
+    # x64 only: leave out the other platforms' native binaries
+    - '!node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**'
+    - '!node_modules/node-pty/third_party/conpty/*/win10-arm64/**'
+    - '!node_modules/node-pty/prebuilds/win32-x64/winpty*'
+    - '!node_modules/better-sqlite3/prebuilds/{darwin-*,linux*,win32-arm64}.node'
   target:
     - target: nsis
       arch: [x64]
@@ -37,6 +39,28 @@ win:
   artifactName: Arctri-Setup-${version}-${arch}.${ext}
   # Unsigned in MVP 1: Windows SmartScreen will warn on first run.
   signAndEditExecutable: true
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  minimumSystemVersion: '12.0'
+  artifactName: Arctri-${version}-${arch}.${ext}
+  # Not notarized (no Apple Developer ID). "-" signs ad hoc: Apple Silicon refuses to run a bundle with no signature at all,
+  # and the fuses and Info.plist edits of the build invalidate the signature Electron ships with.
+  identity: '-'
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  # both architectures of the native modules stay in; only the other platforms' binaries are left out
+  files:
+    - '!node_modules/node-pty/prebuilds/win32-*/**'
+    - '!node_modules/node-pty/third_party/**'
+    - '!node_modules/better-sqlite3/prebuilds/{linux*,win32-*}.node'
+dmg:
+  sign: false
 nsis:
   oneClick: false
   perMachine: false

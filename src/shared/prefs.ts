@@ -29,7 +29,7 @@ const shape = {
   recentProjects: z
     .array(
       z.object({
-        env: z.enum(['windows', 'wsl']),
+        env: z.enum(['windows', 'wsl', 'local']),
         distro: z.string().max(200).optional(),
         path: z.string().max(4096),
         openedAt: z.number()

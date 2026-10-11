@@ -13,12 +13,13 @@
   <a href="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml"><img src="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
   <img src="https://img.shields.io/badge/version-0.2.0--beta-blue" alt="Version 0.2.0-beta" />
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4" alt="Windows 10 and 11" />
+  <img src="https://img.shields.io/badge/platform-macOS%2012%2B-000000" alt="macOS 12 and later" />
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
 </p>
 
-Arctri is a Windows-first desktop terminal built around the way developers use **Claude Code**, **OpenAI Codex CLI**, and traditional shells. It combines real PTY-backed execution with command blocks, context-aware autocomplete, project navigation, file editing, Git changes, and a contextual toolbar that appears when an AI agent is running.
+Arctri is a desktop terminal for Windows and macOS built around the way developers use **Claude Code**, **OpenAI Codex CLI**, and traditional shells. It combines real PTY-backed execution with command blocks, context-aware autocomplete, project navigation, file editing, Git changes, and a contextual toolbar that appears when an AI agent is running.
 
-**Current release:** `v0.2.0-beta` · **Windows 10 22H2 / Windows 11 (x64)** · Optional WSL2 support.
+**Current release:** `v0.2.0-beta` · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
 
 > [!IMPORTANT]
 > Arctri does **not** include its own AI model, API keys, or cloud inference service. It runs external AI coding CLIs installed and authenticated by the user. Their subscriptions, accounts, permissions, network requests, and usage limits are managed by their respective providers.
@@ -97,7 +98,7 @@ The editor supports syntax highlighting, search, and **Ctrl+S** to save. The Git
 
 | Requirement | Details |
 | --- | --- |
-| Operating system | Windows 10 **22H2** or Windows 11 |
+| Operating system | Windows 10 **22H2** or Windows 11 · macOS 12 or later |
 | Architecture | **x64** (MVP 1) |
 | Shell | Windows PowerShell / Command Prompt; PowerShell 7 optional |
 | WSL | **WSL2**, optional; install a Linux distribution to use bash/zsh tabs |
@@ -132,6 +133,12 @@ The installer is written to `release/Arctri-Setup-<version>-x64.exe`. A packaged
 
 > [!NOTE]
 > MVP 1 installers are **not code-signed**. Windows SmartScreen may display a warning on first launch. Download or build only from a source you trust.
+
+To build the **macOS** app (`.dmg` and `.zip`, Apple Silicon and Intel) run `npm run dist:mac` **on a Mac** (a `.dmg` cannot be built on Windows or Linux; the GitHub Actions `macos` job does it for every push).
+
+> The macOS build is **not notarized** (it is ad-hoc signed, which Apple Silicon requires to run at all), so Gatekeeper blocks it the first time: drag Arctri to Applications, then **right-click > Open** (or run `xattr -cr /Applications/Arctri.app` once). Download or build only from a source you trust.
+
+On a Mac Arctri opens your login shell (zsh by default; bash 4.4 or newer from Homebrew gets command blocks, the bash that macOS ships is 3.2 and does not). Shortcuts use ⌘: ⌘T new tab, ⌘W close tab, ⌘1…9 go to a tab, ⌘, settings, ⌘= / ⌘- zoom, ⌘C / ⌘V copy and paste (Ctrl+C is always the shell's interrupt).
 
 ## How to use Arctri
 
@@ -307,6 +314,7 @@ Useful scripts:
 | `npm run build` | Build the Electron application |
 | `npm run test:e2e` | Run desktop Playwright tests (build the app first) |
 | `npm run dist` | Produce the Windows x64 NSIS installer |
+| `npm run dist:mac` | Produce the macOS `.dmg` and `.zip` (run on a Mac) |
 | `npm run dist:dir` | Produce an unpacked Windows build |
 | `npm run test:smoke` | Smoke-test a built application |
 
@@ -327,7 +335,7 @@ Contributions and bug reports can be submitted through [GitHub Issues](https://g
 
 ## Current scope and limitations
 
-- **MVP 1 (v0.2.0-beta)** focuses on **Windows x64**. Native Linux/macOS installers are not part of this release.
+- **Windows x64** is the primary target. **macOS** builds are new, unsigned and have had less testing; Linux installers are not part of this release.
 - **WSL2 is optional**, but usable WSL distributions must be installed separately.
 - **Shell command blocks depend on integration.** If command boundaries are unavailable, the tab remains a functional classic terminal. Interactive/full-screen programs use the live terminal interface.
 - **Agent integration currently targets Claude Code and Codex CLI.** Their executables must be installed separately, and available toolbar options vary by CLI version.

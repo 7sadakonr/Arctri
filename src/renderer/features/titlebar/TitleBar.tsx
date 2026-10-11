@@ -3,6 +3,8 @@ import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { BRANCH_QUICK_SWITCH_EVENT } from '@/lib/branch-events';
+import { cn } from '@/lib/cn';
+import { isMac } from '@/lib/platform';
 import { tNow, useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
@@ -10,7 +12,7 @@ import { MenuBar } from './MenuBar';
 
 /**
  * The window's top strip: the menus, the folder of the tab in front in the middle (click copies it, double-click opens it
- * in Explorer) and its git branch at the right, next to the window buttons. Empty parts of it drag the window.
+ * in Explorer or Finder) and its git branch at the right, next to the window buttons. Empty parts of it drag the window.
  */
 export function TitleBar() {
   const t = useT();
@@ -25,7 +27,8 @@ export function TitleBar() {
     {/* the line under the title bar, across the whole window including under the window buttons */}
     <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 z-30 h-px bg-border" style={{ top: 'env(titlebar-area-height, 35px)' }} />
     <div
-      className="drag fixed z-30 flex items-center gap-1 bg-panel pl-3"
+      // on a Mac the traffic lights sit at the left of the bar and there are no window buttons at the right
+      className={cn('drag fixed z-30 flex items-center gap-1 bg-panel', isMac ? 'pl-[84px] pr-3' : 'pl-3')}
       style={{
         left: 'env(titlebar-area-x, 0px)',
         top: 0,
@@ -33,7 +36,7 @@ export function TitleBar() {
         height: 'env(titlebar-area-height, 35px)'
       }}
     >
-      <TerminalSquare size={14} className="mr-1 shrink-0 text-accent" />
+      {!isMac && <TerminalSquare size={14} className="mr-1 shrink-0 text-accent" />}
       <MenuBar />
       <div className="flex min-w-0 flex-1 justify-center px-3 text-[11px] text-fg-muted">
         {id && cwd ? (

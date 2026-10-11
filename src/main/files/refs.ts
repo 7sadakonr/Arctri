@@ -3,7 +3,7 @@ import { posix, win32 } from 'node:path';
 type Lib = typeof posix;
 
 /** Resolves `rel` below `root`; undefined when it would escape the root (the file panel must not leave the folder). */
-export function resolveWithin(root: string, rel: string, kind: 'windows' | 'wsl'): string | undefined {
+export function resolveWithin(root: string, rel: string, kind: 'windows' | 'wsl' | 'local'): string | undefined {
   const lib: Lib = kind === 'windows' ? win32 : posix;
   const abs = lib.resolve(root, rel);
   const r = lib.relative(root, abs);
@@ -24,7 +24,7 @@ const needsQuotes = (p: string) => /[\s"'`$()&;|<>]/.test(p);
  * How a file is written in a message to an agent: `@relative/path` inside the working folder, `@/absolute/path`
  * outside it, quoted when it contains spaces. No Enter is ever added.
  */
-export function formatRef(cwd: string, abs: string, kind: 'windows' | 'wsl'): string {
+export function formatRef(cwd: string, abs: string, kind: 'windows' | 'wsl' | 'local'): string {
   const lib: Lib = kind === 'windows' ? win32 : posix;
   const rel = lib.relative(cwd, abs);
   const inside = !!rel && rel !== '..' && !rel.startsWith('..' + lib.sep) && !lib.isAbsolute(rel);

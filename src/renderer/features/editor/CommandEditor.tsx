@@ -197,10 +197,10 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
     } else if (e.key === 'ArrowUp' && open && items.length > 0) {
       e.preventDefault();
       setSelected((s) => (s <= 0 ? items.length - 1 : s - 1));
-    } else if (e.key === 'ArrowUp' && !e.ctrlKey && !text.slice(0, el.selectionStart).includes('\n')) {
+    } else if (e.key === 'ArrowUp' && !e.ctrlKey && !e.metaKey && !text.slice(0, el.selectionStart).includes('\n')) {
       e.preventDefault();
       void navigateHistory(-1);
-    } else if (e.key === 'ArrowDown' && !e.ctrlKey && !text.slice(el.selectionEnd).includes('\n')) {
+    } else if (e.key === 'ArrowDown' && !e.ctrlKey && !e.metaKey && !text.slice(el.selectionEnd).includes('\n')) {
       e.preventDefault();
       void navigateHistory(1);
     } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'c' && el.selectionStart === el.selectionEnd) {

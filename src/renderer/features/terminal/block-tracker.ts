@@ -159,9 +159,12 @@ export class BlockTracker {
   private cwdPath(): EnvPath | undefined {
     const p = this.sm.cwd;
     if (!p) return undefined;
-    return this.session.env.kind === 'windows'
+    const env = this.session.env;
+    return env.kind === 'windows'
       ? { env: 'windows', path: p as never }
-      : { env: 'wsl', distro: this.session.env.distro, path: p as never };
+      : env.kind === 'local'
+        ? { env: 'local', path: p as never }
+        : { env: 'wsl', distro: env.distro, path: p as never };
   }
 
   /** Output of the command that just ended: from its marker to the cursor, normal buffer only. */

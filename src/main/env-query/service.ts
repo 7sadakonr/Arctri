@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, win32 } from 'node:path';
+import { delimiter, join, posix, win32 } from 'node:path';
 import type { EnvironmentRef } from '@shared/types/env';
 import { codexConfigBackupName } from '../agents/codex-config';
 import { decodeFile, encodeFile, MAX_EDIT_BYTES, MAX_IMAGE_BYTES, type Eol, type FileReadResult, type FileWriteResult, type ImageReadResult } from '../files/io';
@@ -158,7 +158,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
   }
 
   async listExecutables(env: EnvironmentRef): Promise<string[]> {
-    const k = env.kind === 'windows' ? 'windows' : env.distro;
+    const k = env.kind === 'wsl' ? env.distro : env.kind;
     if (env.kind === 'wsl') {
       const hit = this.exeCache.get(k);
       if (hit && Date.now() - hit.at < TTL) return hit.names;
@@ -170,6 +170,27 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
     const pathEnv = process.env['PATH'] ?? '';
     const hit = this.exeCache.get(k);
     if (hit && hit.key === pathEnv && Date.now() - hit.at < TTL) return hit.names;
+    if (env.kind === 'local') {
+      // a program is any file with an execute bit; there are no extensions to strip
+      const found = new Set<string>();
+      await Promise.all(
+        pathEnv.split(delimiter).filter(Boolean).map(async (dir) => {
+          try {
+            for (const e of await readdir(dir, { withFileTypes: true })) {
+              if (e.name.startsWith('.')) continue;
+              if (e.isDirectory()) continue;
+              const st = await stat(join(dir, e.name)).catch(() => undefined);
+              if (st?.isFile() && (st.mode & 0o111) !== 0) found.add(e.name);
+            }
+          } catch {
+            /* unreadable PATH entry */
+          }
+        })
+      );
+      const list = [...found];
+      this.exeCache.set(k, { at: Date.now(), key: pathEnv, names: list });
+      return list;
+    }
     const exts = (process.env['PATHEXT'] ?? '.EXE;.CMD;.BAT;.COM').toLowerCase().split(';').filter(Boolean);
     const names = new Set<string>();
     await Promise.all(
@@ -190,7 +211,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
   }
 
   async homeDir(env: EnvironmentRef): Promise<string> {
-    if (env.kind === 'windows') return homedir();
+    if (env.kind !== 'wsl') return homedir();
     const hit = this.homeCache.get(env.distro);
     if (hit) return hit;
     const h = (await this.ask(env.distro, 'home', [], 3000)) || '/root';
@@ -308,13 +329,14 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
     }
   }
 
-  private async insideRoot(root: string, abs: string): Promise<boolean> {
+  private async insideRoot(env: EnvironmentRef, root: string, abs: string): Promise<boolean> {
     const { realpath } = await import('node:fs/promises');
-    const rootReal = await realpath(root).catch(() => win32.resolve(root));
+    const lib = env.kind === 'windows' ? win32 : posix;
+    const rootReal = await realpath(root).catch(() => lib.resolve(root));
     // a file that does not exist yet is judged by its folder
-    const target = await realpath(abs).catch(async () => join(await realpath(win32.dirname(abs)).catch(() => win32.dirname(abs)), win32.basename(abs)));
-    const rel = win32.relative(rootReal, target);
-    return !!rel && !rel.startsWith('..') && !win32.isAbsolute(rel);
+    const target = await realpath(abs).catch(async () => lib.join(await realpath(lib.dirname(abs)).catch(() => lib.dirname(abs)), lib.basename(abs)));
+    const rel = lib.relative(rootReal, target);
+    return !!rel && !rel.startsWith('..') && !lib.isAbsolute(rel);
   }
 
   async readTextFile(env: EnvironmentRef, root: string, abs: string): Promise<FileReadResult> {
@@ -332,7 +354,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
       return { ok: true, ...d, mtimeMs: Number(ms), size: Number(size) };
     }
     try {
-      if (!(await this.insideRoot(root, abs))) return { ok: false, error: 'denied' };
+      if (!(await this.insideRoot(env, root, abs))) return { ok: false, error: 'denied' };
       const st = await stat(abs);
       if (!st.isFile()) return { ok: false, error: 'not-found' };
       if (st.size > MAX_EDIT_BYTES) return { ok: false, error: 'too-large' };
@@ -357,7 +379,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
       return { ok: true, base64: out.slice(nl + 1).trim(), mtimeMs: Number(ms), size: Number(size) };
     }
     try {
-      if (!(await this.insideRoot(root, abs))) return { ok: false, error: 'denied' };
+      if (!(await this.insideRoot(env, root, abs))) return { ok: false, error: 'denied' };
       const st = await stat(abs);
       if (!st.isFile()) return { ok: false, error: 'not-found' };
       if (st.size > MAX_IMAGE_BYTES) return { ok: false, error: 'too-large' };
@@ -383,7 +405,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
     }
     const { rename, stat: st, writeFile, unlink } = await import('node:fs/promises');
     try {
-      if (!(await this.insideRoot(root, abs))) return { ok: false, error: 'denied' };
+      if (!(await this.insideRoot(env, root, abs))) return { ok: false, error: 'denied' };
       const cur = await st(abs).catch(() => undefined);
       if (cur && expectMtimeMs !== undefined && Math.round(cur.mtimeMs) !== expectMtimeMs) {
         return { ok: false, error: 'conflict', mtimeMs: Math.round(cur.mtimeMs) };
@@ -410,7 +432,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
       return { mtimeMs: Number(ms), size: Number(size) };
     }
     try {
-      if (!(await this.insideRoot(root, abs))) return null;
+      if (!(await this.insideRoot(env, root, abs))) return null;
       const st = await stat(abs);
       return { mtimeMs: Math.round(st.mtimeMs), size: st.size };
     } catch {
@@ -426,6 +448,7 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
 
 /** Branch names read straight from the repository files; git is never spawned. */
 export async function windowsGitBranches(cwd: string): Promise<string[]> {
+  const lib = process.platform === 'win32' ? win32 : posix; // the folder is on this machine
   let dir = cwd;
   for (let i = 0; i < 40; i++) {
     const dotGit = join(dir, '.git');
@@ -435,10 +458,10 @@ export async function windowsGitBranches(cwd: string): Promise<string[]> {
       if (s.isFile()) {
         const m = /^gitdir:\s*(.+)$/m.exec(await readFile(dotGit, 'utf8').catch(() => ''));
         if (!m) return [];
-        gitDir = win32.resolve(dir, m[1]!.trim());
+        gitDir = lib.resolve(dir, m[1]!.trim());
       }
       const common = (await readFile(join(gitDir, 'commondir'), 'utf8').catch(() => '')).trim();
-      const refsRoot = common ? win32.resolve(gitDir, common) : gitDir;
+      const refsRoot = common ? lib.resolve(gitDir, common) : gitDir;
       const out = new Set<string>();
       const walk = async (sub: string, prefix: string, depth: number): Promise<void> => {
         if (depth > 6) return;
@@ -456,7 +479,7 @@ export async function windowsGitBranches(cwd: string): Promise<string[]> {
       }
       return [...out].sort();
     }
-    const parent = win32.dirname(dir);
+    const parent = lib.dirname(dir);
     if (parent === dir) return [];
     dir = parent;
   }

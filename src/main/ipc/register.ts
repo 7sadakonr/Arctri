@@ -198,6 +198,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const refs: string[] = [];
     for (const f of picked) {
       if (info.env.kind === 'windows') refs.push(formatRef(info.cwd.path, f, 'windows'));
+      else if (info.env.kind === 'local') refs.push(formatRef(info.cwd.path, f, 'local'));
       else {
         const posixPath = uncToPosix(f, info.env.distro) ?? (f.startsWith('/') ? f : await s.wsl.toPosix(info.env.distro, f));
         if (posixPath) refs.push(formatRef(info.cwd.path, posixPath, 'wsl'));
@@ -219,6 +220,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     if (!dir) return null;
     const m = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)(\\.*)?$/i.exec(dir);
     if (m) return { env: 'wsl' as const, distro: m[1]!, path: (m[2] ?? '\\').replace(/\\/g, '/') };
+    if (process.platform !== 'win32') return { env: 'local' as const, path: dir };
     return { env: 'windows' as const, path: dir };
   });
 
@@ -342,7 +344,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
   });
   r.handle('app:openPath', ({ sessionId }) => {
     const cwd = s.sessions.get(sessionId)?.cwd;
-    if (cwd?.env === 'windows') return shell.openPath(cwd.path);
+    if (cwd?.env === 'windows' || cwd?.env === 'local') return shell.openPath(cwd.path);
     if (cwd?.env === 'wsl') return shell.openPath(`\\\\wsl.localhost\\${cwd.distro}${cwd.path.replace(/\//g, '\\')}`);
     return undefined;
   });

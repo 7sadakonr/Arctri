@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useT } from '@/lib/i18n';
+import { kbd } from '@/lib/platform';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { insertText, refOf } from '../agents/insert';
@@ -451,7 +452,7 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
           <AtSign size={12} />
         </Button>
         {!image && mode === 'file' && !rev && (
-          <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (Ctrl+S)`} aria-label={t('viewer.save')} onClick={() => void save()}>
+          <Button variant="ghost" size="sm" disabled={!dirty} title={`${t('viewer.save')} (${kbd('Mod+S')})`} aria-label={t('viewer.save')} onClick={() => void save()}>
             <Save size={12} />
           </Button>
         )}

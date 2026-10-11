@@ -259,7 +259,9 @@ export class SessionManager {
     const cwd: EnvPath =
       env.kind === 'windows'
         ? { env: 'windows', path: raw as never }
-        : { env: 'wsl', distro: env.distro, path: raw as never };
+        : env.kind === 'local'
+          ? { env: 'local', path: raw as never }
+          : { env: 'wsl', distro: env.distro, path: raw as never };
     if (s.info.cwd && s.info.cwd.path === cwd.path) return false;
     s.info.cwd = cwd;
     if (s.info.titleSource === 'auto' && s.info.kind === 'shell') {
@@ -277,7 +279,7 @@ export class SessionManager {
   private async resolveBranch(s: Session, cwd: EnvPath): Promise<void> {
     let branch: string | undefined;
     try {
-      branch = cwd.env === 'windows' ? gitBranchOf(cwd.path) : await this.deps.wslBranch?.(cwd);
+      branch = cwd.env !== 'wsl' ? gitBranchOf(cwd.path) : await this.deps.wslBranch?.(cwd);
     } catch {
       branch = undefined;
     }

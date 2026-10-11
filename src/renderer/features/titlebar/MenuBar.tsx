@@ -1,3 +1,4 @@
+import { isMac, kbd } from '@/lib/platform';
 import { useRef, useState } from 'react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut,
@@ -54,7 +55,7 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
     {
       id: 'file', label: t('menu.file'),
       entries: [
-        { label: t('menu.openFolder'), shortcut: 'Ctrl+K Ctrl+O', run: () => void pickAndOpenProject() },
+        { label: t('menu.openFolder'), shortcut: kbd('Ctrl+K Ctrl+O'), run: () => void pickAndOpenProject() },
         {
           label: t('menu.openRecent'),
           sub: recent.length
@@ -71,9 +72,9 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
         },
         { label: t('menu.clone'), run: () => useUi.getState().setCloneOpen(true) },
         SEP,
-        { label: t('menu.settings'), shortcut: 'Ctrl+,', run: () => useUi.getState().openSettings(true) },
+        { label: t('menu.settings'), shortcut: kbd('Ctrl+,'), run: () => useUi.getState().openSettings(true) },
         SEP,
-        { label: t('menu.closeTab'), shortcut: 'Ctrl+Shift+W', disabled: !hasTab, run: () => activeId && void closeSession(activeId) },
+        { label: t('menu.closeTab'), shortcut: kbd('Ctrl+Shift+W'), disabled: !hasTab, run: () => activeId && void closeSession(activeId) },
         { label: t('menu.exit'), run: () => window.close() }
       ]
     },
@@ -85,13 +86,13 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
       id: 'view', label: t('menu.view'),
       entries: [
         {
-          label: t('menu.filesPanel'), shortcut: 'Ctrl+Shift+E', checked: sidebar,
+          label: t('menu.filesPanel'), shortcut: kbd('Ctrl+Shift+E'), checked: sidebar,
           run: () => toggleSidebar()
         },
         SEP,
-        { label: t('menu.zoomIn'), shortcut: 'Ctrl+=', run: () => void stepZoom(1) },
-        { label: t('menu.zoomOut'), shortcut: 'Ctrl+-', run: () => void stepZoom(-1) },
-        { label: t('menu.zoomReset'), shortcut: 'Ctrl+0', run: () => void stepZoom(0) },
+        { label: t('menu.zoomIn'), shortcut: kbd('Ctrl+='), run: () => void stepZoom(1) },
+        { label: t('menu.zoomOut'), shortcut: kbd('Ctrl+-'), run: () => void stepZoom(-1) },
+        { label: t('menu.zoomReset'), shortcut: kbd('Ctrl+0'), run: () => void stepZoom(0) },
         SEP,
         {
           label: t('menu.theme'),
@@ -106,7 +107,7 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
       id: 'terminal', label: t('menu.terminal'),
       entries: [
         // Same as Ctrl+Shift+T: a new tab with the current shell, starting at the shell's first folder
-        { label: t('menu.newTerminal'), shortcut: 'Ctrl+Shift+T', run: () => void openSimilarTab() },
+        { label: t('menu.newTerminal'), shortcut: kbd('Ctrl+Shift+T'), run: () => void openSimilarTab() },
         {
           label: t('menu.newWithProfile'),
           sub: blockProfiles(profiles).map((p) => ({
@@ -116,13 +117,13 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
           }))
         },
         SEP,
-        { label: t('menu.renameTab'), shortcut: 'F2', disabled: !hasTab, run: () => window.dispatchEvent(new Event('arctri:rename-tab')) },
+        { label: t('menu.renameTab'), shortcut: kbd('F2'), disabled: !hasTab, run: () => window.dispatchEvent(new Event('arctri:rename-tab')) },
         { label: t('menu.restart'), disabled: !hasTab, run: () => info && void restartSession(info) },
-        { label: t('menu.clearTerminal'), shortcut: 'Ctrl+L', disabled: !blockMode, run: () => activeId && useBlocks.getState().drop(activeId) },
-        { label: t('menu.showFolder'), disabled: !hasFolder, run: () => activeId && void api.app.openPath(activeId) },
+        { label: t('menu.clearTerminal'), shortcut: kbd('Ctrl+L'), disabled: !blockMode, run: () => activeId && useBlocks.getState().drop(activeId) },
+        { label: t(isMac ? 'menu.showFolderMac' : 'menu.showFolder'), disabled: !hasFolder, run: () => activeId && void api.app.openPath(activeId) },
         SEP,
-        { label: t('menu.nextTab'), shortcut: 'Ctrl+Tab', disabled: !hasTab, run: () => nextTab(1) },
-        { label: t('menu.prevTab'), shortcut: 'Ctrl+Shift+Tab', disabled: !hasTab, run: () => nextTab(-1) }
+        { label: t('menu.nextTab'), shortcut: kbd('Ctrl+Tab'), disabled: !hasTab, run: () => nextTab(1) },
+        { label: t('menu.prevTab'), shortcut: kbd('Ctrl+Shift+Tab'), disabled: !hasTab, run: () => nextTab(-1) }
       ]
     },
     {
@@ -178,9 +179,9 @@ export function MenuBar() {
   };
 
   const edit: Entry[] = [
-    { label: t('menu.copy'), shortcut: 'Ctrl+C', run: () => editCopy(before.current) },
-    { label: t('menu.paste'), shortcut: 'Ctrl+V', run: () => void editPaste(before.current) },
-    { label: t('menu.selectAll'), shortcut: 'Ctrl+A', run: () => editSelectAll(before.current) },
+    { label: t('menu.copy'), shortcut: kbd('Mod+C'), run: () => editCopy(before.current) },
+    { label: t('menu.paste'), shortcut: kbd('Mod+V'), run: () => void editPaste(before.current) },
+    { label: t('menu.selectAll'), shortcut: kbd('Mod+A'), run: () => editSelectAll(before.current) },
   ];
 
   return (

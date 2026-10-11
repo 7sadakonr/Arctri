@@ -12,6 +12,7 @@ import { tNow } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { isMac, isWindows, modKey } from '@/lib/platform';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
 import { TERMINAL_FONT, terminalTheme } from './theme';
@@ -20,13 +21,16 @@ import { TERMINAL_FONT, terminalTheme } from './theme';
 function isAppChord(e: KeyboardEvent, agentActive: boolean): boolean {
   if (e.type !== 'keydown') return false;
   const k = e.key.toLowerCase();
-  if (e.ctrlKey && e.shiftKey && k === 'e') return true; // file panel
+  const mod = modKey(e);
+  if (mod && e.shiftKey && k === 'e') return true; // file panel
   if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g' && agentActive) return true; // Rich Input
-  if (e.ctrlKey && e.shiftKey && ['t', 'w', 'n', ','].includes(k)) return true;
+  if (mod && (isMac ? !e.shiftKey : e.shiftKey) && ['t', 'w', 'n'].includes(k)) return true; // new / close tab
+  if (mod && k === ',') return true; // settings
   if (e.ctrlKey && k === 'tab') return true;
-  if (e.ctrlKey && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true;
+  if (mod && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true;
+  if (isMac && mod && !e.shiftKey && /^[1-9]$/.test(k)) return true; // Cmd+1..9: go to tab
   if (k === 'f2') return true;
-  if (e.ctrlKey && !e.altKey && ['=', '+', '-', '0'].includes(k)) return true; // zoom
+  if (mod && !e.altKey && ['=', '+', '-', '0'].includes(k)) return true; // zoom
   return false;
 }
 
@@ -55,7 +59,7 @@ export class TerminalHost {
       scrollback: ui.prefs.scrollback,
       cursorBlink: true,
       theme: terminalTheme(dark),
-      windowsPty: { backend: 'conpty', buildNumber: ui.windowsBuild },
+      ...(isWindows ? { windowsPty: { backend: 'conpty' as const, buildNumber: ui.windowsBuild } } : {}),
       macOptionIsMeta: false,
       rightClickSelectsWord: false,
       allowTransparency: false
@@ -212,6 +216,18 @@ export class TerminalHost {
     if (isAppChord(e, this.info.kind === 'agent' || !!this.info.runningAgent)) return false;
     if (e.type !== 'keydown') return true;
     const k = e.key.toLowerCase();
+    if (isMac) {
+      // Cmd+C copies the selection and Cmd+V pastes; Ctrl+C is always the shell's interrupt
+      if (e.metaKey && k === 'c') {
+        this.copySelection();
+        return false;
+      }
+      if (e.metaKey && k === 'v') {
+        void this.pasteFromClipboard();
+        return false;
+      }
+      return true;
+    }
     if (e.ctrlKey && k === 'c' && (e.shiftKey || this.term.hasSelection())) {
       if (this.term.hasSelection()) {
         void copyText(this.term.getSelection());

@@ -2,7 +2,7 @@
   "name": "arctri",
   "productName": "Arctri",
   "version": "0.2.0-beta",
-  "description": "Agent-focused terminal for Windows",
+  "description": "Agent-focused terminal for Windows and macOS",
   "private": true,
   "main": "./out/main/index.js",
   "type": "module",
@@ -16,12 +16,14 @@
     "icon": "node scripts/make-icon.mjs",
     "dist": "npm run icon && electron-vite build && electron-builder --win --x64 --publish never",
     "dist:dir": "npm run icon && electron-vite build && electron-builder --win --x64 --dir --publish never",
+    "dist:mac": "npm run icon && electron-vite build && electron-builder --mac --publish never",
+    "dist:mac:dir": "npm run icon && electron-vite build && electron-builder --mac --dir --publish never",
     "test:e2e": "playwright test",
     "test:smoke": "node scripts/smoke-installed.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:integration": "set ARCTRI_INTEGRATION=1&& vitest run"
+    "test:integration": "node scripts/run-integration.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Store from 'electron-store';
@@ -18,6 +18,7 @@ import { WslManager } from './wsl/wsl-manager';
 import { AgentManager } from './agents/agent-manager';
 import { CompletionEngine } from './completion/engine';
 import { EnvironmentQueryService } from './env-query/service';
+import { installAppMenu } from './app-menu';
 import { setResourcesDir } from './paths';
 import { logger } from './logger';
 import { mark, timing } from './timing';
@@ -84,7 +85,7 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
 async function start(): Promise<void> {
   if (app.isPackaged) setResourcesDir(process.resourcesPath);
   app.setAppUserModelId('dev.arctri.app');
-  Menu.setApplicationMenu(null);
+  installAppMenu();
   await app.whenReady();
   mark('appReady');
 
@@ -130,7 +131,7 @@ async function start(): Promise<void> {
       if (info.integration === 'active') {
         mark('shellHello');
         // the first completion should not have to scan PATH: do it now, once per environment
-        const key = info.env.kind === 'windows' ? 'windows' : info.env.distro;
+        const key = info.env.kind === 'wsl' ? info.env.distro : info.env.kind;
         if (!warmed.has(key)) {
           warmed.add(key);
           void envQuery.listExecutables(info.env).catch(() => undefined);
@@ -162,7 +163,7 @@ async function start(): Promise<void> {
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
         const dark = p.theme === 'dark';
-        win?.setTitleBarOverlay({ color: dark ? '#15171d' : '#f1f2f6', symbolColor: dark ? '#c9ccd6' : '#23252e' });
+        if (process.platform !== 'darwin') win?.setTitleBarOverlay({ color: dark ? '#15171d' : '#f1f2f6', symbolColor: dark ? '#c9ccd6' : '#23252e' });
       },
       diagnostics: () => ({
         app: app.getVersion(), electron: process.versions.electron, node: process.versions.node,

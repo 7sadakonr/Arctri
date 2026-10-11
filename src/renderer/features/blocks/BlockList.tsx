@@ -1,3 +1,4 @@
+import { modKey } from '@/lib/platform';
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { tNow } from '@/lib/i18n';
@@ -32,11 +33,11 @@ export function BlockList({ sessionId, active }: { sessionId: string; active: bo
     [sessionId]
   );
 
-  // Ctrl+Up / Ctrl+Down move the selection between blocks.
+  // Ctrl+Up / Ctrl+Down (Cmd on a Mac, where Control+arrows belong to Mission Control) move the selection between blocks.
   useEffect(() => {
     if (!active) return;
     const h = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.shiftKey || e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      if (!modKey(e) || e.shiftKey || e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
       const list = useBlocks.getState().blocks[sessionId] ?? [];
       if (list.length === 0) return;
       e.preventDefault();

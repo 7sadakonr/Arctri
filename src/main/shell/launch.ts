@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { EnvPath, ShellProfile } from '@shared/types/env';
 import { integrationDir } from '../paths';
+import { localCwd } from './local';
 
 export interface LaunchContext {
   sessionId: string;
@@ -88,6 +89,8 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
     };
   }
 
+  if (profile.env.kind === 'local') return buildLocalLaunch(profile, env, ctx);
+
   // WSL: spawn wsl.exe, which hands the PTY to a Linux shell in the chosen distro.
   const distro = profile.env.distro;
   env['WSLENV'] = [env['WSLENV'], ...WSL_FORWARD].filter(Boolean).join(':');
@@ -119,4 +122,22 @@ export async function buildShellLaunch(profile: ShellProfile, ctx: LaunchContext
   const plan: LaunchPlan = { file: profile.executable, args, cwd: homedir(), env };
   if (note) plan.note = note;
   return plan;
+}
+
+/** A shell on this machine (macOS): started directly as a login shell, with the integration script handed over by environment. */
+function buildLocalLaunch(profile: ShellProfile, env: Record<string, string>, ctx: LaunchContext): LaunchPlan {
+  const dir = integrationDir();
+  // Finder starts apps without a UTF-8 locale; the terminal needs one
+  if (!env['LANG'] && !env['LC_ALL']) env['LANG'] = 'en_US.UTF-8';
+  const cwd = localCwd(ctx.cwd);
+  if (profile.shell === 'zsh') {
+    // zsh reads $ZDOTDIR/.zshenv first; that shim hands ZDOTDIR back to the user straight away.
+    env['USER_ZDOTDIR'] = process.env['ZDOTDIR'] ?? homedir();
+    env['ZDOTDIR'] = join(dir, 'zsh');
+    return { file: profile.executable, args: ['-l', '-i'], cwd, env };
+  }
+  if (profile.shell === 'bash') {
+    return { file: profile.executable, args: ['--rcfile', join(dir, 'arctri.bash'), '-i'], cwd, env };
+  }
+  return { file: profile.executable, args: profile.args ?? ['-l'], cwd, env };
 }

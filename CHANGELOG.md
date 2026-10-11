@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **macOS (Apple Silicon and Intel).** Arctri finds the shells of the Mac (zsh, bash, Homebrew bash), opens the login shell by
+  default and gives it the same command blocks, completion, Files/Changes/Branches/History and agent support as on Windows.
+  The window uses the traffic lights, a menu in the system menu bar for Cmd+Q / Cmd+H / Edit, and Cmd shortcuts (Cmd+T, Cmd+W,
+  Cmd+1…9, Cmd+, and zoom, Cmd+C / Cmd+V). The `.dmg` and `.zip` are ad-hoc signed and not notarized.
+- Releases: a `Release` workflow builds the Windows installer and the macOS dmg/zip for a `v*` tag and attaches them to a GitHub Release.
+- New environment kind `local` (the machine itself, POSIX paths) next to `windows` and `wsl`; recent projects and saved tabs keep working.
+
 ## 0.2.0-beta
 
 - **Menu bar** (File, Edit, View, Terminal, Help) in the title bar, with the current folder in the middle and the git branch

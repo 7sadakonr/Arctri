@@ -4,6 +4,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
+import { kbd } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
 
 function ExternalLink({ url, label }: { url: string; label: string }) {
@@ -62,7 +63,7 @@ export function HelpDialogs() {
             <tbody>
               {SHORTCUTS.map(([keys, label], i) => (
                 <tr key={i} className="border-b border-border/60 last:border-0">
-                  <td className="py-1.5 pr-4 font-mono text-fg-muted">{keys}</td>
+                  <td className="py-1.5 pr-4 font-mono text-fg-muted">{kbd(keys)}</td>
                   <td className="py-1.5">{t(label as never)}</td>
                 </tr>
               ))}
