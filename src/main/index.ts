@@ -23,8 +23,12 @@ import { setResourcesDir } from './paths';
 import { logger } from './logger';
 import { mark, timing } from './timing';
 
-// Tests run with an isolated profile so they never touch (or lock) the real one.
+// Tests run with an isolated profile so they never touch (or lock) the real one. So does a development run (`npm run dev`):
+// the single-instance lock, the database and the preferences all live in the profile folder, and sharing it with an installed
+// Arctri would make whichever starts second quit at once.
+const customProfile = !!process.env['ARCTRI_USER_DATA'] || !app.isPackaged;
 if (process.env['ARCTRI_USER_DATA']) app.setPath('userData', process.env['ARCTRI_USER_DATA']);
+else if (!app.isPackaged) app.setPath('userData', `${app.getPath('userData')}-dev`);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -89,7 +93,7 @@ async function start(): Promise<void> {
   await app.whenReady();
   mark('appReady');
 
-  if (!process.env['ARCTRI_USER_DATA']) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
+  if (!customProfile) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
   const store = new Store<{ prefs: unknown; wslZsh: Record<string, boolean>; wslDistros: WslDistro[] }>({ name: 'preferences' });
   const prefs = new PrefsStore({ get: () => store.get('prefs'), set: (v) => store.set('prefs', v) });
   const { db, recovered } = openDb(join(app.getPath('userData'), 'arctri.db'));
