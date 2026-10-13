@@ -5,7 +5,8 @@ type Out =
   | { t: 'spawned'; pid: number }
   | { t: 'data'; data: string }
   | { t: 'exit'; exitCode: number; signal?: number }
-  | { t: 'error'; message: string };
+  | { t: 'error'; message: string }
+  | { t: 'warn'; message: string };
 
 /**
  * One worker thread per terminal session. The default is the bundled conpty.dll: the ConPTY inside Windows 10
@@ -14,7 +15,8 @@ type Out =
 export class WorkerPtyBackend implements PtyBackend {
   constructor(
     private readonly workerFile: string | URL,
-    private readonly useConptyDll = true
+    private readonly useConptyDll = true,
+    private readonly log?: (message: string, extra?: unknown) => void
   ) {}
 
   spawn(o: PtySpawnOptions): PtyProcess {
@@ -27,11 +29,11 @@ export class WorkerPtyBackend implements PtyBackend {
       data: [] as Array<(d: string) => void>,
       exit: [] as Array<(e: { exitCode: number; signal?: number }) => void>
     };
-    const finish = (code: number) => {
+    // A worker that ends without saying why took its ConPTY with it: that is a failure of the tab, not the shell exiting.
+    const died = (code: number) => {
       if (done) return;
       done = true;
-      cb.exit.forEach((f) => f({ exitCode: code }));
-      void worker.terminate();
+      cb.error.forEach((f) => f(`PTY worker exited unexpectedly (code ${code})`));
     };
     worker.on('message', (m: Out) => {
       switch (m.t) {
@@ -54,13 +56,16 @@ export class WorkerPtyBackend implements PtyBackend {
           cb.error.forEach((f) => f(m.message));
           void worker.terminate();
           break;
+        case 'warn':
+          this.log?.(`PTY worker: ${m.message}`, { pid });
+          break;
       }
     });
     worker.on('error', (e) => {
       if (!done) cb.error.forEach((f) => f(e.message));
       done = true;
     });
-    worker.on('exit', (code) => finish(code));
+    worker.on('exit', (code) => died(code));
 
     worker.postMessage({ t: 'spawn', opts: { ...o, useConptyDll: o.useConptyDll ?? this.useConptyDll } });
     const send = (m: object) => {

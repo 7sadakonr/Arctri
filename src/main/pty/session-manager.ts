@@ -46,6 +46,17 @@ export interface SessionManagerDeps {
   onClosed?: (id: SessionId) => void;
   onCommand?: (c: FinishedCommand) => void;
   helloTimeoutMs?: number;
+  /** How long closing a tab waits for a spawn that is still in progress before giving up on it. */
+  spawnWaitMs?: number;
+  /** Lifecycle problems worth a log line; terminal data is never passed here. */
+  log?: (message: string, extra?: unknown) => void;
+}
+
+export interface SessionStats {
+  /** Times a paused PTY gave up waiting for acknowledgements. */
+  flowStalls: number;
+  /** Times the PTY worker died after its process had started. */
+  workerCrashes: number;
 }
 
 interface Session {
@@ -62,11 +73,22 @@ interface Session {
   markExited: () => void;
   exitedFlag: boolean;
   closing: boolean;
+  /** Resolves with the pid once the process exists, or null if it never will. */
+  spawned: Promise<number | null>;
+  resolveSpawned: (pid: number | null) => void;
+  /** Set when close gave up waiting for a spawn: the process is ended as soon as it appears. */
+  reapOnSpawn: boolean;
+  closePromise?: Promise<void>;
 }
 
 export class SessionManager {
   private sessions = new Map<SessionId, Session>();
+  private counters: SessionStats = { flowStalls: 0, workerCrashes: 0 };
   constructor(private readonly deps: SessionManagerDeps) {}
+
+  stats(): SessionStats {
+    return { ...this.counters };
+  }
 
   list(): SessionInfo[] {
     return [...this.sessions.values()].map((s) => ({ ...s.info }));
@@ -125,9 +147,11 @@ export class SessionManager {
     mark('launchBuilt');
     let markExited!: () => void;
     const exited = new Promise<void>((r) => (markExited = r));
+    let resolveSpawned!: (pid: number | null) => void;
+    const spawned = new Promise<number | null>((r) => (resolveSpawned = r));
     const s: Session = {
       info, tokenizer: new OscTokenizer(), sm: new ShellStateMachine(), anomalies: 0, expectsHello: integrationWanted,
-      exited, markExited, exitedFlag: false, closing: false
+      exited, markExited, exitedFlag: false, closing: false, spawned, resolveSpawned, reapOnSpawn: false
     };
     this.sessions.set(id, s);
 
@@ -140,17 +164,30 @@ export class SessionManager {
       info.state = 'failed';
       info.exit = { code: null, reason: e instanceof Error ? e.message : String(e) };
       s.exitedFlag = true;
+      s.resolveSpawned(null);
       s.markExited();
       this.emit(s);
       return { ...info };
     }
     s.pty = pty;
-    s.pump = new DataPump((chunk) => this.deps.onData(id, chunk), () => pty.pause(), () => pty.resume());
+    s.pump = new DataPump((chunk) => this.deps.onData(id, chunk), () => pty.pause(), () => pty.resume(), {
+      onStall: () => {
+        this.counters.flowStalls++;
+        this.deps.log?.('PTY output paused with no acknowledgement; resuming', { id });
+      }
+    });
     // The process may take seconds to appear (and spawning never blocks the main process), so the
     // session starts out as 'starting' and becomes 'running' when the PTY reports its pid.
     pty.onSpawn((pid) => {
-      mark('ptySpawned');
       info.pid = pid;
+      s.resolveSpawned(pid);
+      // The tab was closed before the process existed and nobody is waiting for it any more.
+      if (s.reapOnSpawn) {
+        void killTree(pid).catch(() => undefined);
+        return;
+      }
+      if (s.closing) return;
+      mark('ptySpawned');
       info.state = 'running';
       this.emit(s);
       if (integrationWanted) {
@@ -164,11 +201,20 @@ export class SessionManager {
       }
     });
     pty.onError((message) => {
+      const hadProcess = info.pid !== 0;
       info.state = 'failed';
       info.exit = { code: null, reason: message };
       s.exitedFlag = true;
       s.pump?.dispose();
+      if (s.helloTimer) clearTimeout(s.helloTimer);
+      if (hadProcess) {
+        // The worker owned the ConPTY; with it gone the shell and its children would be orphaned.
+        this.counters.workerCrashes++;
+        this.deps.log?.('PTY worker failed after the process started', { id, message });
+        void killTree(info.pid).catch(() => undefined);
+      }
       this.emit(s);
+      s.resolveSpawned(null);
       s.markExited();
     });
     pty.onData((d) => this.handleData(s, d));
@@ -190,6 +236,8 @@ export class SessionManager {
   }
 
   private emit(s: Session): void {
+    // A tab that is closing, or gone, is already out of the window; telling the renderer about it would bring it back.
+    if (s.closing || this.sessions.get(s.info.id) !== s) return;
     this.deps.onInfo({ ...s.info });
   }
 
@@ -306,8 +354,8 @@ export class SessionManager {
     s.info.state = 'exited';
     s.info.phase = 'unknown';
     s.info.exit = { code };
-    // A tab the user is closing is already gone from the window; telling it about the exit would bring it back for a moment.
-    if (!s.closing) this.emit(s);
+    this.emit(s);
+    s.resolveSpawned(null);
     s.markExited();
   }
 
@@ -319,7 +367,7 @@ export class SessionManager {
 
   submitCommand(id: SessionId, command: string): { ok: true } | { ok: false; reason: 'not-at-prompt' | 'no-integration' } {
     const s = this.sessions.get(id);
-    if (!s?.pty || s.exitedFlag) return { ok: false, reason: 'no-integration' };
+    if (!s?.pty || s.exitedFlag || s.closing) return { ok: false, reason: 'no-integration' };
     if (s.info.integration !== 'active') return { ok: false, reason: 'no-integration' };
     if (s.info.phase !== 'prompt' && s.info.phase !== 'editing') return { ok: false, reason: 'not-at-prompt' };
     const pty = s.pty;
@@ -327,13 +375,18 @@ export class SessionManager {
     for (const step of submitSteps(s.info.shell, command)) {
       delay += step.delayMs;
       if (delay === 0) pty.write(step.data);
-      else setTimeout(() => !s.exitedFlag && pty.write(step.data), delay);
+      else setTimeout(() => !s.exitedFlag && !s.closing && pty.write(step.data), delay);
     }
     return { ok: true };
   }
 
   ack(id: SessionId, length: number): void {
     this.sessions.get(id)?.pump?.ack(length);
+  }
+
+  /** A new port replaced the old one, so acknowledgements still owed by the old page will never arrive. */
+  resetFlow(id: SessionId): void {
+    this.sessions.get(id)?.pump?.resetCredit();
   }
 
   resize(id: SessionId, cols: number, rows: number): void {
@@ -353,31 +406,61 @@ export class SessionManager {
     this.emit(s);
   }
 
-  async close(id: SessionId, recorded?: ProcRef[]): Promise<void> {
+  close(id: SessionId, recorded?: ProcRef[]): Promise<void> {
     const s = this.sessions.get(id);
-    if (!s) return;
+    if (!s) return Promise.resolve();
+    s.closePromise ??= this.doClose(s, recorded);
+    return s.closePromise;
+  }
+
+  private async doClose(s: Session, recorded?: ProcRef[]): Promise<void> {
     s.closing = true;
     if (!s.exitedFlag && s.pty) {
-      const pid = s.pty.pid;
-      // Children can only be found while the root is alive, so record them first.
-      const tree = recorded ?? (pid ? ((await snapshotTrees([pid])).get(pid) ?? []) : []);
-      try {
-        s.pty.kill();
-      } catch {
-        /* already gone */
+      let pid = s.pty.pid;
+      let killSent = false;
+      let gaveUp = false;
+      if (!pid) {
+        // The process does not exist yet. The kill is queued behind the spawn in the worker, so it lands the moment
+        // the process appears; then wait for the pid so its children can be recorded and checked.
+        killSent = this.sendKill(s);
+        const r = await Promise.race([
+          s.spawned,
+          new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), this.deps.spawnWaitMs ?? 10_000))
+        ]);
+        if (r === 'timeout') {
+          gaveUp = true;
+          s.reapOnSpawn = true;
+          this.deps.log?.('Closed a tab while its spawn was still running; the process will be ended when it appears', { id: s.info.id });
+        } else {
+          pid = r ?? 0;
+        }
       }
-      const done = await Promise.race([s.exited.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 3000))]);
-      if (!done) {
-        await killTree(pid);
-        await Promise.race([s.exited, new Promise((r) => setTimeout(r, 1000))]);
+      if (!gaveUp) {
+        // Children can only be found while the root is alive, so record them first.
+        const tree = recorded ?? (pid ? ((await snapshotTrees([pid])).get(pid) ?? []) : []);
+        if (!killSent) this.sendKill(s);
+        const done = await Promise.race([s.exited.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 3000))]);
+        if (!done && pid) {
+          await killTree(pid);
+          await Promise.race([s.exited, new Promise((r) => setTimeout(r, 1000))]);
+        }
+        // Whatever survived the console closing (a shell that ignores the hang-up) is ended explicitly.
+        await killRecorded(tree);
       }
-      // Whatever survived the console closing (a shell that ignores the hang-up) is ended explicitly.
-      await killRecorded(tree);
     }
     if (s.helloTimer) clearTimeout(s.helloTimer);
     s.pump?.dispose();
-    this.sessions.delete(id);
-    this.deps.onClosed?.(id);
+    this.sessions.delete(s.info.id);
+    this.deps.onClosed?.(s.info.id);
+  }
+
+  private sendKill(s: Session): boolean {
+    try {
+      s.pty?.kill();
+    } catch {
+      /* already gone */
+    }
+    return true;
   }
 
   async closeAll(maxMs = 5000): Promise<void> {

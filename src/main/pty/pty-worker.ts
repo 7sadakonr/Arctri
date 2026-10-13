@@ -13,7 +13,6 @@ type In =
 
 const port = parentPort!;
 let pty: ReturnType<typeof startNodePty> | undefined;
-let killed = false;
 
 port.on('message', (m: In) => {
   try {
@@ -23,7 +22,6 @@ port.on('message', (m: In) => {
         port.postMessage({ t: 'spawned', pid: pty.pid });
         pty.onData((data) => port.postMessage({ t: 'data', data }));
         pty.onExit((e) => port.postMessage({ t: 'exit', exitCode: e.exitCode, signal: e.signal }));
-        if (killed) pty.kill();
         break;
       case 'write':
         pty?.write(m.data);
@@ -38,11 +36,13 @@ port.on('message', (m: In) => {
         pty?.resume();
         break;
       case 'kill':
-        killed = true; // a kill that arrives while the spawn is still blocking is applied right after it
+        // Messages are handled in order, so a kill sent while the spawn was still blocking arrives here after it.
         pty?.kill();
         break;
     }
   } catch (e) {
-    if (m.t === 'spawn') port.postMessage({ t: 'error', message: e instanceof Error ? e.message : String(e) });
+    const message = e instanceof Error ? e.message : String(e);
+    // A failed spawn ends the tab; anything later (the process may just be exiting) is only worth a log line.
+    port.postMessage(m.t === 'spawn' ? { t: 'error', message } : { t: 'warn', message: `${m.t}: ${message}` });
   }
 });

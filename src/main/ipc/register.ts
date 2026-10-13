@@ -65,6 +65,12 @@ export class PortHub {
     this.queue.delete(id);
   }
 
+  /** The page is going away (reload, crash): stop writing into its ports, but keep what arrives for the next page. */
+  suspendAll(): void {
+    for (const port of this.ports.values()) port.close();
+    this.ports.clear();
+  }
+
   detach(id: string): void {
     this.ports.get(id)?.close();
     this.ports.delete(id);
@@ -95,7 +101,10 @@ export function registerIpc(s: Services, hub: PortHub): void {
   r.handle('session:submit', ({ id, command }) => s.sessions.submitCommand(id, command));
   r.handle('session:list', () => {
     const list = s.sessions.list();
-    for (const i of list) hub.attach(i.id); // the page may have been reloaded
+    for (const i of list) {
+      hub.attach(i.id); // the page may have been reloaded
+      s.sessions.resetFlow(i.id); // whatever the old page still owed an acknowledgement for will never be acknowledged
+    }
     return list;
   });
   r.handle('session:saved', () => s.savedSessions());

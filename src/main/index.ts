@@ -122,7 +122,8 @@ async function start(): Promise<void> {
   const sessions = new SessionManager({
     agentLaunch: (spec) => agents.launch(spec),
     wslBranch: (cwd) => envQuery.gitBranch({ kind: 'wsl', distro: cwd.distro }, cwd.path),
-    backend: new WorkerPtyBackend(join(import.meta.dirname, 'pty-worker.js'), prefs.get().conptyMode === 'bundled'),
+    backend: new WorkerPtyBackend(join(import.meta.dirname, 'pty-worker.js'), prefs.get().conptyMode === 'bundled', (m, x) => logger.warn(m, x)),
+    log: (m, x) => logger.warn(m, x),
     getProfile: (id) => registry.get(id),
     toPosix: (d, p) => wsl.toPosix(d, p),
     onData: (id, chunk) => hub.send(id, chunk),
@@ -170,7 +171,8 @@ async function start(): Promise<void> {
         e2e: !!process.env['ARCTRI_E2E'],
         welcome: !!process.env['ARCTRI_E2E_WELCOME'],
         os: process.getSystemVersion(), arch: process.arch, conptyMode: prefs.get().conptyMode,
-        profiles: registry.snapshot().profiles.map((p) => p.id), wsl: registry.snapshot().wsl
+        profiles: registry.snapshot().profiles.map((p) => p.id), wsl: registry.snapshot().wsl,
+        sessions: sessions.stats()
       }),
       getWindow: () => win,
       origins: appOrigins
@@ -178,12 +180,30 @@ async function start(): Promise<void> {
     hub
   );
 
+  // The page can reload or crash while shells keep running. Stop writing into its ports at once (output is held for the
+  // next page, which collects it with `session:list`), and bring a crashed page back so the sessions can re-attach.
+  let lastRecovery = 0;
+  const watchRenderer = (w: BrowserWindow) => {
+    w.webContents.on('did-start-navigation', (d) => {
+      if (d.isMainFrame && !d.isSameDocument) hub.suspendAll();
+    });
+    w.webContents.on('render-process-gone', (_e, details) => {
+      hub.suspendAll();
+      logger.error('renderer process gone', details);
+      const now = Date.now();
+      if (details.reason === 'clean-exit' || now - lastRecovery < 10_000 || w.isDestroyed()) return;
+      lastRecovery = now;
+      w.webContents.reload();
+    });
+  };
+
   const create = () => {
     win = createMainWindow(prefs, {
       busyCount: () => sessions.list().filter((s) => s.state === 'running' && (s.kind === 'agent' || s.phase === 'executing')).length
     });
     win.on('closed', () => (win = undefined));
     win.once('ready-to-show', () => mark('windowShown'));
+    watchRenderer(win);
   };
   create();
 

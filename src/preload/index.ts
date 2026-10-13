@@ -23,7 +23,11 @@ ipcRenderer.on('session:port', (event: IpcRendererEvent, msg: { id: SessionId })
   port.onmessage = (e) => {
     const h = handlers.get(msg.id);
     if (h) h(e.data as string);
-    else backlog.set(msg.id, [...(backlog.get(msg.id) ?? []), e.data as string]);
+    else {
+      const held = backlog.get(msg.id);
+      if (held) held.push(e.data as string);
+      else backlog.set(msg.id, [e.data as string]);
+    }
   };
 });
 
