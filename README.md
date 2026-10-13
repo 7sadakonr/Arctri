@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml"><img src="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <img src="https://img.shields.io/badge/version-0.2.0--beta-blue" alt="Version 0.2.0-beta" />
+  <img src="https://img.shields.io/badge/version-0.2.1--beta-blue" alt="Version 0.2.1-beta" />
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4" alt="Windows 10 and 11" />
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B-000000" alt="macOS 12 and later" />
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
@@ -19,7 +19,7 @@
 
 Arctri is a desktop terminal for Windows and macOS built around the way developers use **Claude Code**, **OpenAI Codex CLI**, and traditional shells. It combines real PTY-backed execution with command blocks, context-aware autocomplete, project navigation, file editing, Git changes, and a contextual toolbar that appears when an AI agent is running.
 
-**Current release:** `v0.2.0-beta` · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
+**Current release:** `v0.2.1-beta` · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
 
 > [!IMPORTANT]
 > Arctri does **not** include its own AI model, API keys, or cloud inference service. It runs external AI coding CLIs installed and authenticated by the user. Their subscriptions, accounts, permissions, network requests, and usage limits are managed by their respective providers.

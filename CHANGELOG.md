@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1-beta
+
+- **Output no longer freezes a tab after the page reloads.** When the window reloaded (or its renderer crashed) while a command
+  was printing a lot, the terminal could stay paused forever because the page that owed the acknowledgements was gone. The
+  window now picks the sessions up again and flow control restarts from zero. A paused terminal that hears nothing for 10
+  seconds also resumes by itself. Output produced while the page is away is kept and shown when it comes back, instead of
+  being lost. A crashed renderer is reloaded automatically (at most once every 10 seconds).
+- **Closing a tab while its shell is still starting** no longer brings the tab back for a moment, and the shell is ended as soon
+  as it appears instead of being left running. Closing the same tab twice is harmless.
+- **A shell worker that dies** is reported as a failed tab with a reason (it used to look like a normal exit), and what it left
+  behind is ended. Problems in the worker (write, resize, kill) are written to the log instead of being ignored.
+- Diagnostics show how often output was paused without an acknowledgement and how often a worker failed.
+
 ## Unreleased
 
 - **macOS (Apple Silicon and Intel).** Arctri finds the shells of the Mac (zsh, bash, Homebrew bash), opens the login shell by
