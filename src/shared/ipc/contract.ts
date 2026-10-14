@@ -76,6 +76,11 @@ export const requestSchemas = {
     sessionId: id, rel: z.string().min(1).max(4096), rev: z.string().regex(/^[0-9a-f]{7,40}\^?$/)
   }),
   'agents:codexNotifications': z.object({ sessionId: id, action: z.enum(['status', 'enable']) }),
+  'agentStatus:list': z.undefined().or(z.null()),
+  'agentStatus:signal': z.object({ sessionId: id }),
+  'agentStatus:active': z.object({ sessionId: id.nullable() }),
+  'agentStatus:input': z.object({ sessionId: id, kind: z.enum(['any', 'interrupt']).optional() }),
+  'agentStatus:markRead': z.object({ sessionId: id.or(z.literal('all')) }),
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),
   'app:openExternal': z.object({ url: z.string().max(2000) }),
@@ -85,5 +90,5 @@ export const requestSchemas = {
 export type RequestChannel = keyof typeof requestSchemas;
 export type Req<C extends RequestChannel> = z.infer<(typeof requestSchemas)[C]>;
 
-export const eventChannels = ['session:changed', 'session:closed', 'session:port', 'app:menu', 'app:focus-session'] as const;
+export const eventChannels = ['session:changed', 'session:closed', 'session:port', 'app:menu', 'app:focus-session', 'agentStatus:changed'] as const;
 export type EventChannel = (typeof eventChannels)[number];

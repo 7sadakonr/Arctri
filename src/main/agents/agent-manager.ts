@@ -5,11 +5,24 @@ import { baseLaunchEnv, resolveLinuxCwd, windowsCwd, WSL_ENV_FORWARD, type Launc
 import type { AgentLaunch } from '../pty/session-manager';
 import type { ProfileRegistry } from '../shell/registry';
 import { wslExePath, type WslManager } from '../wsl/wsl-manager';
+import { statusLaunch, hooksSupported } from './status/launch';
+import { hookScript } from '../paths';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { ADAPTERS, adapterById, isSafeValue, isUnsafeArgs, type AgentAdapter } from './adapters';
 import { userShell, localCwd } from '../shell/local';
 import { findInWsl, findLocal, findOnWindowsPath, isCmdShim, parseVersion, probeLocal, probeWindows, probeWsl } from './detect';
 
 const envKey = envSettingKey;
+
+/** What the session manager knows about the tab before its process exists. */
+export interface AgentLaunchContext {
+  id: string;
+  nonce: string;
+  /** Spool directory the hook script writes status events to, and where the settings file for it goes. */
+  eventsDir: string;
+  settingsPath: string;
+}
 
 interface Detected {
   installation: AgentInstallation | null;
@@ -115,7 +128,7 @@ export class AgentManager {
   }
 
   /** Builds the PTY launch for an agent session. Arguments are always an argv array. */
-  async launch(spec: SessionSpec): Promise<AgentLaunch> {
+  async launch(spec: SessionSpec, ctx: AgentLaunchContext): Promise<AgentLaunch> {
     if (!spec.agent) throw new Error('Missing agent options');
     const a = adapterById(spec.agent.adapterId);
     const profile = this.registry.get(spec.profileId);
@@ -132,10 +145,36 @@ export class AgentManager {
 
     const o = spec.agent.options;
     for (const x of o.extraArgs ?? []) if (x.length > 500 || /[\0\r\n]/.test(x)) throw new Error('Invalid launch argument');
-    const args = a.buildArgs(d.capabilities, o);
-    const sessionId = 'pending';
-    const baseEnv = baseLaunchEnv(sessionId, '', false, false);
-    const summary = args.join(' ');
+    const baseEnv = baseLaunchEnv(ctx.id, '', false, false);
+    const kind = env.kind === 'windows' ? 'windows' : env.kind === 'wsl' ? 'wsl' : 'local';
+
+    // Structured status: hooks (Claude Code) or `notify` (Codex), added on the command line so the user's own settings stay untouched.
+    // Only where a POSIX sh runs them, and only when `--help` shows the flag. Otherwise the tab's status stays "unknown".
+    let statusArgs: string[] = [];
+    if (hooksSupported(kind) && d.capabilities.structuredStatus === 'hooks') {
+      try {
+        const toAgent = async (p: string) => (env.kind === 'wsl' ? this.wsl.toPosix(env.distro, p) : p);
+        const script = await toAgent(hookScript());
+        const settings = await (async () => {
+          mkdirSync(dirname(ctx.settingsPath), { recursive: true });
+          return toAgent(ctx.settingsPath);
+        })();
+        const dir = await toAgent(ctx.eventsDir);
+        if (script && settings && dir) {
+          const sl = statusLaunch(a.id, true, script, settings);
+          if (sl.args.length) {
+            if (sl.settingsFile) writeFileSync(ctx.settingsPath, sl.settingsFile.contents, { mode: 0o600 });
+            statusArgs = sl.args;
+            baseEnv['ARCTRI_EVENTS_DIR'] = dir;
+            baseEnv['ARCTRI_EVENT_TOKEN'] = ctx.nonce;
+          }
+        }
+      } catch {
+        statusArgs = []; // no hooks is never a reason to fail the launch
+      }
+    }
+    const args = [...a.buildArgs(d.capabilities, o), ...statusArgs];
+    const summary = a.buildArgs(d.capabilities, o).join(' ');
     const unsafe = isUnsafeArgs(o.extraArgs);
 
     let plan: LaunchPlan;
@@ -166,7 +205,8 @@ export class AgentManager {
       }
     } else {
       const { cwd, note } = await resolveLinuxCwd(env.distro, spec.cwd, (dn, p) => this.wsl.toPosix(dn, p));
-      baseEnv['WSLENV'] = [baseEnv['WSLENV'], ...WSL_ENV_FORWARD].filter(Boolean).join(':');
+      // the events directory was already translated to a path inside the distro, so it is forwarded as it is
+      baseEnv['WSLENV'] = [baseEnv['WSLENV'], ...WSL_ENV_FORWARD, ...(statusArgs.length ? ['ARCTRI_EVENTS_DIR', 'ARCTRI_EVENT_TOKEN'] : [])].filter(Boolean).join(':');
       plan = {
         file: wslExePath(),
         args: ['-d', env.distro, '--cd', cwd, '--exec', 'bash', '-lic', 'exec "$0" "$@"', inst.resolvedPath ?? inst.command, ...args],
@@ -183,7 +223,8 @@ export class AgentManager {
       env,
       summary,
       unsafe,
-      capabilities: d.capabilities
+      capabilities: d.capabilities,
+      statusHooks: statusArgs.length > 0
     };
   }
 }

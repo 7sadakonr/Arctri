@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 
-export function Tip({ label, children, side = 'top' }: { label: string; children: React.ReactNode; side?: 'top' | 'bottom' }) {
+export function Tip({ label, children, side = 'top' }: { label: React.ReactNode; children: React.ReactNode; side?: 'top' | 'bottom' }) {
   return (
     <TooltipPrimitive.Root delayDuration={500}>
       <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>

@@ -21,3 +21,6 @@ export function resourcesDir(): string {
 }
 
 export const integrationDir = (): string => join(resourcesDir(), 'shell-integration');
+
+/** The script agent CLIs run to report their status. */
+export const hookScript = (): string => join(resourcesDir(), 'agent-hooks', 'arctri-hook.sh');

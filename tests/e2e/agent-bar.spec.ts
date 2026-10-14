@@ -177,31 +177,38 @@ test('an agent in a background tab marks the tab and raises a notification', asy
     await runAgent(page, w, 'codex --notify-after 3');
     await page.keyboard.press('Control+Shift+T');
     await expect(page.getByRole('tab')).toHaveCount(2);
-    await expect(page.getByRole('tab').first().locator('[data-dot]')).toHaveAttribute('data-dot', /bg-accent/, { timeout: 15_000 });
+    await expect(page.getByRole('tab').first().locator('[data-status]')).toHaveAttribute('data-unread', 'true', { timeout: 15_000 });
     const diag = await page.evaluate(() => (window as unknown as { arctri: { app: { diagnostics(): Promise<{ notifications?: unknown[] }> } } }).arctri.app.diagnostics());
     expect(diag.notifications?.length).toBeGreaterThanOrEqual(1);
     // opening the tab clears the mark
     await page.getByRole('tab').first().click();
-    await expect(page.getByRole('tab').first().locator('[data-dot]')).not.toHaveAttribute('data-dot', /bg-accent/);
+    await expect(page.getByRole('tab').first().locator('[data-status]')).not.toHaveAttribute('data-unread', 'true');
   } finally {
     await app.close();
   }
 });
 
-test('tab status dots: always present, never red while a new tab starts', async () => {
+test('tab status marks: always present, never an error while a new tab starts, only spinners move', async () => {
   const f = await launch();
   const { page, app } = f;
   try {
     await waitForEditor(page);
     await page.evaluate(() => {
-      const w = window as unknown as { __dots: Set<string>; __missing: number };
-      w.__dots = new Set();
+      const w = window as unknown as { __marks: Set<string>; __missing: number; __badMotion: number };
+      w.__marks = new Set();
       w.__missing = 0;
+      w.__badMotion = 0;
       setInterval(() => {
         for (const t of document.querySelectorAll('[role=tab]')) {
-          const d = t.querySelector('[data-dot]');
+          const d = t.querySelector('[data-status]');
           if (!d) w.__missing++;
-          else w.__dots.add(d.getAttribute('data-dot')!.replace(/transition-colors|duration-150|h-1\.5|w-1\.5|shrink-0|rounded-full/g, '').trim());
+          else {
+            const s = d.getAttribute('data-status')!;
+            w.__marks.add(s);
+            // a mark that is not a spinner must not be turning
+            const moving = d.querySelector('.ad-spin-12, .ad-spin-14');
+            if (moving && !['starting', 'running', 'working'].includes(s)) w.__badMotion++;
+          }
         }
       }, 15);
     });
@@ -210,10 +217,15 @@ test('tab status dots: always present, never red while a new tab starts', async 
       await expect(page.getByRole('tab')).toHaveCount(i + 2);
       await page.waitForTimeout(6000);
     }
-    const r = await page.evaluate(() => ({ dots: [...(window as unknown as { __dots: Set<string> }).__dots], missing: (window as unknown as { __missing: number }).__missing }));
+    const r = await page.evaluate(() => ({
+      marks: [...(window as unknown as { __marks: Set<string> }).__marks],
+      missing: (window as unknown as { __missing: number }).__missing,
+      bad: (window as unknown as { __badMotion: number }).__badMotion
+    }));
     expect(r.missing).toBe(0);
-    expect(r.dots.join('|')).not.toMatch(/danger/);
-    expect(r.dots.join('|')).not.toMatch(/animate-pulse/);
+    expect(r.marks).not.toContain('error');
+    expect(r.marks).toContain('ready');
+    expect(r.bad).toBe(0);
   } finally {
     await app.close();
   }

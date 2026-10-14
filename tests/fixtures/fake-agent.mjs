@@ -22,6 +22,9 @@ Options:
 const out = (s) => process.stdout.write(s);
 const notifyAfter = args.indexOf('--notify-after');
 if (notifyAfter >= 0) setTimeout(() => out('\x1b]9;fake-agent needs your attention\x07'), Number(args[notifyAfter + 1] ?? 3) * 1000);
+const titleAt = args.indexOf('--title');
+// like Claude Code, name the session with the window title (a spinner glyph in front)
+if (titleAt >= 0) out(`\x1b]0;\u2733 ${args[titleAt + 1] ?? ''}\x07`);
 let typed = '';
 let pasted = '';
 let note = '';

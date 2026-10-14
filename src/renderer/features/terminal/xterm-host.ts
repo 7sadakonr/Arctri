@@ -9,6 +9,8 @@ import type { SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
 import { copyText, readClipboard } from '@/lib/clipboard';
 import { tNow } from '@/lib/i18n';
+import { commandForKey } from '../../commands/registry';
+import { useAgentStatus } from '@/stores/agent-status';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
@@ -18,19 +20,12 @@ import { BlockTracker } from './block-tracker';
 import { TERMINAL_FONT, terminalTheme } from './theme';
 
 /** Key chords handled by the app; xterm must not forward them to the shell. */
-function isAppChord(e: KeyboardEvent, agentActive: boolean): boolean {
+function isAppChord(e: KeyboardEvent): boolean {
   if (e.type !== 'keydown') return false;
+  if (commandForKey(e)) return true; // every shortcut of the app comes from the command registry
   const k = e.key.toLowerCase();
-  const mod = modKey(e);
-  if (mod && e.shiftKey && k === 'e') return true; // file panel
-  if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g' && agentActive) return true; // Rich Input
-  if (mod && (isMac ? !e.shiftKey : e.shiftKey) && ['t', 'w', 'n'].includes(k)) return true; // new / close tab
-  if (mod && k === ',') return true; // settings
-  if (e.ctrlKey && k === 'tab') return true;
-  if (mod && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true;
-  if (isMac && mod && !e.shiftKey && /^[1-9]$/.test(k)) return true; // Cmd+1..9: go to tab
-  if (k === 'f2') return true;
-  if (mod && !e.altKey && ['=', '+', '-', '0'].includes(k)) return true; // zoom
+  if ((isMac ? !e.shiftKey : e.shiftKey) && modKey(e) && k === 'n') return true;
+  if (modKey(e) && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true; // block navigation
   return false;
 }
 
@@ -115,6 +110,14 @@ export class TerminalHost {
 
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
     this.term.onData((d) => api.sessions.write(info.id, d));
+    // Only real key presses count here: onData also carries the terminal's own replies and focus reports.
+    // Typing into a tab that asked for approval, or Esc / Ctrl+C while it works: what happens next is not known, so the mark goes away.
+    this.term.onKey(({ domEvent: e }) => {
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
+      const st = useAgentStatus.getState().byId[this.info.id]?.state;
+      if (st === 'needs-approval') void api.agentStatus.input(this.info.id);
+      else if (st === 'working' && (e.key === 'Escape' || (e.ctrlKey && e.key.toLowerCase() === 'c'))) void api.agentStatus.input(this.info.id, 'interrupt');
+    });
     this.term.onResize(({ cols, rows }) => void api.sessions.resize(info.id, cols, rows));
     this.term.onBell(() => this.agentSignal('', ''));
     // OSC 9 (message) and OSC 777 (notify;title;body): how agent CLIs ask for attention. OSC 9;4 is progress, not a message.
@@ -150,21 +153,17 @@ export class TerminalHost {
 
   private lastSignalAt = 0;
 
-  /** A bell or notification from the program. Only agents are allowed to ask for attention, and only when nobody is looking. */
-  private agentSignal(title: string, body: string): void {
+  /**
+   * A bell or notification from the program. Only a tab that runs an agent may raise one, and it is only a hint:
+   * the main process records it as "unknown, low confidence". What the agent is really doing comes from its hooks.
+   */
+  private agentSignal(_title: string, _body: string): void {
     const info = this.info;
     if (info.kind !== 'agent' && !info.runningAgent) return;
-    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
-    const watching = useSessions.getState().activeId === info.id && document.hasFocus();
-    if (watching) return;
     const now = Date.now();
     if (now - this.lastSignalAt < 10_000) return;
     this.lastSignalAt = now;
-    if (useSessions.getState().activeId !== info.id) useSessions.getState().setAttention(info.id, true);
-    if (useUi.getState().prefs.agentNotifications) {
-      const name = agentId === 'claude-code' ? 'Claude Code' : agentId === 'codex' ? 'Codex' : info.title;
-      void api.app.notify(info.id, title || name, body || tNow('agent.needsAttention'));
-    }
+    void api.agentStatus.signal(info.id);
   }
 
   mount(parent: HTMLElement): void {
@@ -213,7 +212,7 @@ export class TerminalHost {
   }
 
   private onKey(e: KeyboardEvent): boolean {
-    if (isAppChord(e, this.info.kind === 'agent' || !!this.info.runningAgent)) return false;
+    if (isAppChord(e)) return false;
     if (e.type !== 'keydown') return true;
     const k = e.key.toLowerCase();
     if (isMac) {

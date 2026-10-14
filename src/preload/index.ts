@@ -3,6 +3,7 @@ import type { Prefs } from '@shared/prefs';
 import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session';
 import type { CompletionResponse } from '@shared/types/completion';
 import type { AgentEntry } from '@shared/types/agent';
+import type { AgentStatus } from '@shared/types/agent-status';
 import type { ProfilesResult } from '../main/shell/registry';
 
 type GitActionResult = { ok: true; out: string } | { ok: false; error: string };
@@ -100,7 +101,7 @@ const api = {
     unstage: (sessionId: SessionId, paths: string[] | 'all'): Promise<GitActionResult> => ipcRenderer.invoke('git:unstage', { sessionId, paths }),
     commit: (sessionId: SessionId, message: string): Promise<GitActionResult> => ipcRenderer.invoke('git:commit', { sessionId, message }),
     createBranch: (sessionId: SessionId, name: string): Promise<GitActionResult> => ipcRenderer.invoke('git:createBranch', { sessionId, name }),
-    branchPreflight: (sessionId: SessionId): Promise<{ ok: boolean; dirty: boolean; runningAgent: boolean; error?: string }> =>
+    branchPreflight: (sessionId: SessionId): Promise<{ ok: boolean; dirty: boolean; error?: string }> =>
       ipcRenderer.invoke('git:branchPreflight', { sessionId }),
     push: (sessionId: SessionId): Promise<GitActionResult> => ipcRenderer.invoke('git:push', { sessionId }),
     fetch: (sessionId: SessionId): Promise<GitActionResult> => ipcRenderer.invoke('git:fetch', { sessionId }),
@@ -136,6 +137,17 @@ const api = {
       ipcRenderer.invoke('fs:write', { sessionId, rel, text, eol, bom, ...(expectMtimeMs !== undefined ? { expectMtimeMs } : {}) }),
     stat: (sessionId: SessionId, rel: string): Promise<{ mtimeMs: number; size: number } | null> =>
       ipcRenderer.invoke('fs:stat', { sessionId, rel })
+  },
+  agentStatus: {
+    list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agentStatus:list'),
+    /** BEL / OSC 9 / OSC 777 from a tab: a low-confidence hint; the main process decides whether the tab may raise it. */
+    signal: (sessionId: SessionId): Promise<void> => ipcRenderer.invoke('agentStatus:signal', { sessionId }),
+    /** The tab in front, or null: statuses of the tab being looked at are read at once. */
+    active: (sessionId: SessionId | null): Promise<void> => ipcRenderer.invoke('agentStatus:active', { sessionId }),
+    input: (sessionId: SessionId, kind?: 'any' | 'interrupt'): Promise<void> => ipcRenderer.invoke('agentStatus:input', { sessionId, ...(kind ? { kind } : {}) }),
+    markRead: (sessionId: SessionId | 'all'): Promise<void> => ipcRenderer.invoke('agentStatus:markRead', { sessionId }),
+    /** `null` status: the tab no longer has one. */
+    onChanged: (cb: (v: { id: SessionId; status: AgentStatus | null }) => void): Unsub => subscribe('agentStatus:changed', cb)
   },
   app: {
     diagnostics: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('app:diagnostics'),

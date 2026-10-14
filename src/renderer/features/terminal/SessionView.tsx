@@ -10,7 +10,7 @@ import { useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
-import { Asterisk, Hexagon } from 'lucide-react';
+import { AgentLogo } from '../agents/AgentLogo';
 import { AGENT_META } from '@shared/agents/meta';
 import { Sidebar } from '../sidebar/Sidebar';
 import { FileViewer } from '../viewer/FileViewer';
@@ -91,7 +91,7 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
               <>
                 {info.runningAgent ? (
                   <>
-                    {info.runningAgent.agentId === 'claude-code' ? <Asterisk size={13} className="text-orange-400" /> : <Hexagon size={13} className="text-accent" />}
+                    <AgentLogo agent={info.runningAgent.agentId} />
                     <span className="min-w-0 flex-1 truncate text-fg" title={running?.command}>
                       {AGENT_META[info.runningAgent.agentId].name}
                       <span className="ml-2 font-mono text-fg-muted">{running?.command}</span>

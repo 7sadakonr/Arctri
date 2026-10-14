@@ -1,4 +1,5 @@
-import { Asterisk, ChevronDown, Folder, FolderOpen, GitBranch, Hexagon, History, MessageSquarePlus, Paperclip, RotateCcw, Settings, TriangleAlert, X } from 'lucide-react';
+import { AgentLogo } from './AgentLogo';
+import { ChevronDown, Folder, FolderOpen, GitBranch, History, MessageSquarePlus, Paperclip, RotateCcw, Settings, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AGENT_META } from '@shared/agents/meta';
 import { envLabel } from '@shared/types/env';
@@ -23,8 +24,7 @@ import { useChanges } from './useChanges';
 
 export const TOGGLE_RICH_EVENT = 'arctri:toggle-rich';
 
-const Glyph = ({ agent, size = 14 }: { agent: AgentId; size?: number }) =>
-  agent === 'claude-code' ? <Asterisk size={size} className="text-orange-400" /> : <Hexagon size={size} className="text-accent" />;
+const Glyph = ({ agent, size = 14 }: { agent: AgentId; size?: number }) => <AgentLogo agent={agent} size={size} />;
 
 /** Offers to switch on Codex notifications, once, and only when the configuration can really be changed. */
 function CodexNotificationsChip({ sessionId }: { sessionId: string }) {
