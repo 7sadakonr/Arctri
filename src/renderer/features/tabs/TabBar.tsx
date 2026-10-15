@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronsRight, PanelRight, Pin, Plus, SquareTerminal, X } from 'lucide-react';
+import { ChevronDown, ChevronsRight, PanelRight, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -135,6 +135,18 @@ function Tab({ id, index }: { id: string; index: number }) {
         </span>
       )}
       <TabStatusMark id={id} />
+      {pinned && (
+        <Tip label={t('tab.unpin')} side="bottom">
+          <button
+            aria-label={t('tab.unpin')}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => useSessions.getState().togglePin(id)}
+            className="absolute right-0.5 top-0.5 rounded bg-bg p-0.5 opacity-0 shadow-sm hover:bg-border focus-visible:opacity-100 group-hover:opacity-80 group-hover:hover:opacity-100"
+          >
+            <PinOff size={10} />
+          </button>
+        </Tip>
+      )}
       {!pinned && (
         <Tip label={t('tab.pin')} side="bottom">
           <button
