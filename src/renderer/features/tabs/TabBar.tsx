@@ -134,18 +134,25 @@ function Tab({ id, index }: { id: string; index: number }) {
           {t('tab.approval')}
         </span>
       )}
-      <TabStatusMark id={id} />
-      {pinned && (
-        <Tip label={t('tab.unpin')} side="bottom">
-          <button
-            aria-label={t('tab.unpin')}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => useSessions.getState().togglePin(id)}
-            className="absolute right-0.5 top-0.5 rounded bg-bg p-0.5 opacity-0 shadow-sm hover:bg-border focus-visible:opacity-100 group-hover:opacity-80 group-hover:hover:opacity-100"
-          >
-            <PinOff size={10} />
-          </button>
-        </Tip>
+      {pinned ? (
+        // the status mark and the unpin button share one 14 px box: hovering or focusing the tab swaps the mark for the button
+        <span className="relative grid h-3.5 w-3.5 shrink-0 place-items-center">
+          <span className="transition-opacity group-focus-within:opacity-0 group-hover:opacity-0">
+            <TabStatusMark id={id} />
+          </span>
+          <Tip label={t('tab.unpin')} side="bottom">
+            <button
+              aria-label={t('tab.unpin')}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => useSessions.getState().togglePin(id)}
+              className="absolute inset-0 grid place-items-center rounded opacity-0 transition-opacity hover:bg-border focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <PinOff size={11} />
+            </button>
+          </Tip>
+        </span>
+      ) : (
+        <TabStatusMark id={id} />
       )}
       {!pinned && (
         <Tip label={t('tab.pin')} side="bottom">
