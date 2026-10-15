@@ -18,6 +18,7 @@ import { BlockList } from '../blocks/BlockList';
 import { CommandEditor } from '../editor/CommandEditor';
 import { closeSession, restartSession } from '../launcher/actions';
 import { AgentBar } from '../agents/AgentBar';
+import { SessionSkeleton } from './SessionSkeleton';
 import { getHost } from './xterm-host';
 
 function Elapsed({ since }: { since: number }) {
@@ -114,9 +115,11 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
           </div>
         )}
         {info.presentation === 'blocks' && info.kind === 'shell' && !ended && info.state === 'starting' && (
-          <div data-testid="starting" className="absolute inset-0 z-30 flex items-center justify-center bg-bg text-[12px] text-fg-muted">
-            {t('session.starting', { shell: info.title.split(' · ')[0] ?? '' })}
-          </div>
+          <SessionSkeleton
+            testId="starting"
+            className="absolute inset-0 z-30"
+            label={t('session.starting', { shell: info.title.split(' · ')[0] ?? '' })}
+          />
         )}
         {info.presentation === 'blocks' && info.kind === 'shell' && !ended && info.integration === 'unavailable' && (
           <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 border-t border-border bg-panel px-3 py-1 text-[11px] text-fg-muted">

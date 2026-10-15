@@ -45,6 +45,12 @@ interface SessionsState {
   setActive(id: string): void;
   move(from: number, to: number): void;
   setUiPhase(id: string, phase: ShellPhase): void;
+  /** Tabs being created: the main process has not answered yet, so there is no session to draw. */
+  pendingOpen: number;
+  addPending(delta: number): void;
+  /** The first load (preferences, restored tabs) has finished. */
+  booted: boolean;
+  setBooted(): void;
 }
 
 export const useSessions = create<SessionsState>()((set) => ({
@@ -68,6 +74,10 @@ export const useSessions = create<SessionsState>()((set) => ({
       return { pinned, order: rest };
     }),
   viewer: {},
+  pendingOpen: 0,
+  addPending: (delta) => set((s) => ({ pendingOpen: Math.max(0, s.pendingOpen + delta) })),
+  booted: false,
+  setBooted: () => set({ booted: true }),
   openViewer: (id, rel, mode, extra) =>
     set((s) => {
       const tabs = s.viewer[id]?.tabs ?? [];
