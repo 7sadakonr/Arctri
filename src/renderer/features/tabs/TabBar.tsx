@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronsRight, PanelRight, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
+import { ChevronDown, ChevronsRight, PanelRight, Pencil, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -40,6 +40,7 @@ function Tab({ id, index }: { id: string; index: number }) {
   const pinned = useSessions((s) => !!s.pinned[id]);
   const { status } = useTabStatus(id);
   const [editing, setEditing] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [draft, setDraft] = useState('');
   const input = useRef<HTMLInputElement>(null);
 
@@ -97,6 +98,11 @@ function Tab({ id, index }: { id: string; index: number }) {
           if (!pinned) void closeSession(id);
         } else useSessions.getState().setActive(id);
       }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useSessions.getState().setActive(id);
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       onDoubleClick={() => {
         setDraft(tabLabel(info));
         setEditing(true);
@@ -134,38 +140,7 @@ function Tab({ id, index }: { id: string; index: number }) {
           {t('tab.approval')}
         </span>
       )}
-      {pinned ? (
-        // the status mark and the unpin button share one 14 px box: hovering or focusing the tab swaps the mark for the button
-        <span className="relative grid h-3.5 w-3.5 shrink-0 place-items-center">
-          <span className="transition-opacity group-focus-within:opacity-0 group-hover:opacity-0">
-            <TabStatusMark id={id} />
-          </span>
-          <Tip label={t('tab.unpin')} side="bottom">
-            <button
-              aria-label={t('tab.unpin')}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={() => useSessions.getState().togglePin(id)}
-              className="absolute inset-0 grid place-items-center rounded opacity-0 transition-opacity hover:bg-border focus-visible:opacity-100 group-hover:opacity-100"
-            >
-              <PinOff size={11} />
-            </button>
-          </Tip>
-        </span>
-      ) : (
-        <TabStatusMark id={id} />
-      )}
-      {!pinned && (
-        <Tip label={t('tab.pin')} side="bottom">
-          <button
-            aria-label={t('tab.pin')}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => useSessions.getState().togglePin(id)}
-            className="rounded p-0.5 opacity-0 hover:bg-border group-hover:opacity-70"
-          >
-            <Pin size={11} />
-          </button>
-        </Tip>
-      )}
+      <TabStatusMark id={id} />
       {!pinned && (
         <Tip label={t('tab.close')} side="bottom">
           <button
@@ -178,6 +153,35 @@ function Tab({ id, index }: { id: string; index: number }) {
           </button>
         </Tip>
       )}
+      <DropdownMenu open={!!menu} onOpenChange={(o) => !o && setMenu(null)}>
+        <DropdownMenuTrigger asChild>
+          <span aria-hidden="true" className="pointer-events-none fixed h-0 w-0" style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[160px]" onCloseAutoFocus={(e) => e.preventDefault()}>
+          <DropdownMenuItem onSelect={() => useSessions.getState().togglePin(id)}>
+            {pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            {t(pinned ? 'tab.unpin' : 'tab.pin')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              setDraft(tabLabel(info));
+              setEditing(true);
+            }}
+          >
+            <Pencil size={13} />
+            {t('menu.renameTab')}
+          </DropdownMenuItem>
+          {!pinned && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => void closeSession(id)}>
+                <X size={13} />
+                {t('tab.close')}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
     </Tip>
   );
