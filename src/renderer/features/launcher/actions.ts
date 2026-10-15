@@ -56,6 +56,7 @@ export async function openShell(
   opts: { cwd?: EnvPath; title?: string } = {}
 ): Promise<SessionInfo | undefined> {
   if (!profile) return undefined;
+  useSessions.getState().addPending(1);
   try {
     const info = await api.sessions.create({
       profileId: profile.id,
@@ -71,6 +72,8 @@ export async function openShell(
   } catch (e) {
     useUi.getState().toast(tNow('session.failed', { reason: errText(e) }), 'error');
     return undefined;
+  } finally {
+    useSessions.getState().addPending(-1);
   }
 }
 
@@ -93,6 +96,7 @@ export async function openAgent(
   options: AgentLaunchOptions = {},
   cwd?: EnvPath
 ): Promise<SessionInfo | undefined> {
+  useSessions.getState().addPending(1);
   try {
     const info = await api.sessions.create({
       profileId,
@@ -107,6 +111,8 @@ export async function openAgent(
   } catch (e) {
     useUi.getState().toast(tNow('agent.launchFailed', { agent: displayName, reason: errText(e) }), 'error');
     return undefined;
+  } finally {
+    useSessions.getState().addPending(-1);
   }
 }
 

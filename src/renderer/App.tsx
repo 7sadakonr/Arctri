@@ -12,6 +12,7 @@ import { TabBar } from '@/features/tabs/TabBar';
 import { TitleBar } from '@/features/titlebar/TitleBar';
 import { HelpDialogs } from '@/features/titlebar/HelpDialogs';
 import { CloneDialog } from '@/features/launcher/CloneDialog';
+import { SessionSkeleton } from '@/features/terminal/SessionSkeleton';
 import { SessionView } from '@/features/terminal/SessionView';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
@@ -69,6 +70,7 @@ export function App() {
   const order = useSessions((s) => s.order);
   const infos = useSessions((s) => s.infos);
   const activeId = useSessions((s) => s.activeId);
+  const booting = useSessions((s) => !s.booted || s.pendingOpen > 0);
   const prefs = useUi((s) => s.prefs);
 
   useEffect(() => {
@@ -97,7 +99,7 @@ export function App() {
     // the main process marks the front tab's news as read, but only while this window is the one being looked at
     const reportActive = () => void api.agentStatus.active(useSessions.getState().activeId ?? null);
     window.addEventListener('focus', reportActive);
-    void bootstrap();
+    void bootstrap().finally(() => useSessions.getState().setBooted());
     return () => {
       offStatus();
       window.removeEventListener('focus', reportActive);
@@ -141,7 +143,7 @@ export function App() {
             const info = infos[id];
             return info ? <SessionView key={id} info={info} active={id === activeId} /> : null;
           })}
-          {order.length === 0 && <WelcomeScreen />}
+          {order.length === 0 && (booting ? <SessionSkeleton /> : <WelcomeScreen />)}
         </main>
       </div>
       <SettingsDialog />
