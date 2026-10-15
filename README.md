@@ -352,5 +352,7 @@ Arctri's original source code is released under the **MIT License**. See [LICENS
 
 **Jetsadakorn Muangwichit (เจษฎากร ม่วงวิจิตร)**  
 GitHub: [@7sadakonr](https://github.com/7sadakonr)
+**Kittipop Sanpho (กิตติภพ สารโพธิ์)**  
+GitHub: [@kttpx](https://github.com/kktpx)
 
 © 2026 Jetsadakorn Muangwichit. Licensed under MIT.
