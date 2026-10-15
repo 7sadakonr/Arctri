@@ -153,6 +153,12 @@ test('pinned tabs stay at the left, show only an icon and cannot be closed with 
     await expect(page.getByRole('tab').first().getByRole('button', { name: /close tab/i })).toHaveCount(0);
     await page.getByRole('tab').first().click({ button: 'middle' });
     await expect(page.getByRole('tab')).toHaveCount(3);
+
+    // hovering a pinned tab offers an unpin button, which restores the normal tab
+    const pinnedTab = page.getByRole('tab').first();
+    await pinnedTab.hover();
+    await pinnedTab.getByRole('button', { name: /unpin tab/i }).click();
+    await expect(page.getByRole('tab').first().getByRole('button', { name: /close tab/i })).toHaveCount(1);
   } finally {
     await app.close();
   }
