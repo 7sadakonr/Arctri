@@ -20,7 +20,7 @@ describe('buildShellStatusEnv', () => {
     const i = base();
     const env = await buildShellStatusEnv({ ...i, env: { kind: 'wsl', distro: 'Ubuntu' }, shell: 'bash' });
     expect(env?.['ARCTRI_EVENTS_DIR']).toBe(await i.toPosix('Ubuntu', i.eventsDir));
-    expect(env?.['ARCTRI_EVENTS_DIR']).toMatch(/^\/[\w/.-]+$/);
+    expect(env?.['ARCTRI_EVENTS_DIR']).toMatch(/^\/[\w/.~-]+$/);
   });
   it('is not offered for Windows shells, other shells or unusable paths', async () => {
     const i = base();
