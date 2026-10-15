@@ -2,23 +2,24 @@ import { useEffect } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { useSessions } from '@/stores/sessions';
-import { isMac, modKey } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
-import { closeSession, defaultProfile, openShell, openSimilarTab, wasClosedHere } from '@/features/launcher/actions';
+import { useAgentStatus } from '@/stores/agent-status';
+import { forgetNotified, notifyStatus } from '@/features/attention/notify';
+import { defaultProfile, openShell, wasClosedHere } from '@/features/launcher/actions';
 import { refreshAgents } from '@/features/launcher/NewTabMenu';
 import { SettingsDialog } from '@/features/settings/SettingsDialog';
 import { TabBar } from '@/features/tabs/TabBar';
 import { TitleBar } from '@/features/titlebar/TitleBar';
 import { HelpDialogs } from '@/features/titlebar/HelpDialogs';
 import { CloneDialog } from '@/features/launcher/CloneDialog';
-import { stepZoom } from '@/lib/zoom';
-import { toggleSidebar } from '@/features/sidebar/toggle';
+import { SessionSkeleton } from '@/features/terminal/SessionSkeleton';
 import { SessionView } from '@/features/terminal/SessionView';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
 import { isHomeFolder, pushRecent, toRecent } from '@/features/welcome/recent';
 import { Toasts } from '@/features/toasts/Toasts';
-import { TOGGLE_RICH_EVENT } from '@/features/agents/AgentBar';
+import { commandForKey, runCommand } from '@/commands/registry';
+import { CommandPalette } from '@/features/palette/CommandPalette';
 
 async function bootstrap(): Promise<void> {
   const ui = useUi.getState();
@@ -69,6 +70,7 @@ export function App() {
   const order = useSessions((s) => s.order);
   const infos = useSessions((s) => s.infos);
   const activeId = useSessions((s) => s.activeId);
+  const booting = useSessions((s) => !s.booted || s.pendingOpen > 0);
   const prefs = useUi((s) => s.prefs);
 
   useEffect(() => {
@@ -81,17 +83,35 @@ export function App() {
         if (info.state === 'exited') h.tracker.closed();
       }
     });
-    const offClosed = api.sessions.onClosed((id) => useSessions.getState().remove(id));
+    const offClosed = api.sessions.onClosed((id) => {
+      forgetNotified(id);
+      useSessions.getState().remove(id);
+    });
     const offFocus = api.sessions.onFocusRequested((id) => {
       if (useSessions.getState().infos[id]) useSessions.getState().setActive(id);
     });
-    void bootstrap();
+    const offStatus = api.agentStatus.onChanged(({ id, status }) => {
+      const prev = useAgentStatus.getState().byId[id];
+      useAgentStatus.getState().set(id, status);
+      if (status) notifyStatus(prev, status);
+    });
+    void api.agentStatus.list().then((l) => useAgentStatus.getState().reset(l), () => undefined);
+    // the main process marks the front tab's news as read, but only while this window is the one being looked at
+    const reportActive = () => void api.agentStatus.active(useSessions.getState().activeId ?? null);
+    window.addEventListener('focus', reportActive);
+    void bootstrap().finally(() => useSessions.getState().setBooted());
     return () => {
+      offStatus();
+      window.removeEventListener('focus', reportActive);
       offChanged();
       offClosed();
       offFocus();
     };
   }, []);
+
+  useEffect(() => {
+    void api.agentStatus.active(activeId ?? null);
+  }, [activeId]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -103,49 +123,11 @@ export function App() {
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      const s = useSessions.getState();
-      const mod = modKey(e);
-      // Cmd+T / Cmd+W on a Mac, Ctrl+Shift+T / Ctrl+Shift+W elsewhere (the shell uses Ctrl+W and Ctrl+T itself)
-      const tabChord = mod && (isMac ? !e.shiftKey : e.shiftKey);
-      if (tabChord && k === 't') {
-        e.preventDefault();
-        void openSimilarTab();
-      } else if (tabChord && k === 'w') {
-        e.preventDefault();
-        if (s.activeId) void closeSession(s.activeId);
-      } else if (e.ctrlKey && k === 'tab') {
-        e.preventDefault();
-        if (s.order.length > 1 && s.activeId) {
-          const i = s.order.indexOf(s.activeId);
-          const next = (i + (e.shiftKey ? -1 : 1) + s.order.length) % s.order.length;
-          s.setActive(s.order[next]!);
-        }
-      } else if (mod && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-        const id = s.order[Number(e.key) - 1];
-        if (id) {
-          e.preventDefault();
-          s.setActive(id);
-        }
-      } else if (mod && e.shiftKey && k === 'e') {
-        e.preventDefault();
-        toggleSidebar();
-      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'g') {
-        const info = s.activeId ? s.infos[s.activeId] : undefined;
-        if (info && (info.kind === 'agent' || info.runningAgent)) {
-          e.preventDefault();
-          window.dispatchEvent(new Event(TOGGLE_RICH_EVENT));
-        }
-      } else if (mod && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
-        e.preventDefault();
-        void stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1);
-      } else if (e.key === 'F2') {
-        e.preventDefault();
-        window.dispatchEvent(new Event('arctri:rename-tab'));
-      } else if (mod && k === ',') {
-        e.preventDefault();
-        useUi.getState().openSettings(true);
-      }
+      // every app shortcut is a command in the registry: the menus and the palette run the same ones
+      const c = commandForKey(e);
+      if (!c) return;
+      e.preventDefault();
+      runCommand(c);
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -161,12 +143,13 @@ export function App() {
             const info = infos[id];
             return info ? <SessionView key={id} info={info} active={id === activeId} /> : null;
           })}
-          {order.length === 0 && <WelcomeScreen />}
+          {order.length === 0 && (booting ? <SessionSkeleton /> : <WelcomeScreen />)}
         </main>
       </div>
       <SettingsDialog />
       <CloneDialog />
       <HelpDialogs />
+      <CommandPalette />
       <Toasts />
     </TooltipProvider>
   );

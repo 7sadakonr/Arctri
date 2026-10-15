@@ -20,6 +20,9 @@ asarUnpack:
   - node_modules/node-pty/**
   - node_modules/better-sqlite3/**
 extraResources:
+  # hook script that agent CLIs run to report their status
+  - from: resources/agent-hooks
+    to: agent-hooks
   # shell integration scripts are read by PowerShell, bash and zsh from disk
   - from: resources/shell-integration
     to: shell-integration

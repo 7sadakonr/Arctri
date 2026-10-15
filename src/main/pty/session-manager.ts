@@ -6,6 +6,7 @@ import { ShellStateMachine, type Transition } from '@shared/shell/state-machine'
 import type { EnvPath, ShellProfile } from '@shared/types/env';
 import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session';
 import { detectAgentCommand } from '@shared/agents/detect-command';
+import { cleanAgentTopic } from '@shared/agents/topic';
 import { buildShellLaunch, type LaunchPlan } from '../shell/launch';
 import { submitSteps } from '../shell/submit';
 import { gitBranchOf } from '../shell/git';
@@ -32,6 +33,10 @@ export interface AgentLaunch {
   summary?: string;
   unsafe?: boolean;
   capabilities?: SessionInfo['agentCaps'];
+  /** Hooks / notify were added to the command line, so the agent will report its status. */
+  statusHooks?: boolean;
+  /** Why no hooks were added (only when `statusHooks` is false). */
+  noHooksReason?: 'no-hooks-windows' | 'no-hooks-cli' | 'no-hooks-shell';
 }
 
 export interface SessionManagerDeps {
@@ -39,7 +44,9 @@ export interface SessionManagerDeps {
   getProfile: (id: string) => ShellProfile | undefined;
   toPosix: (distro: string, winPath: string) => Promise<string | null>;
   /** Builds the launch for agent sessions (Phase 4). */
-  agentLaunch?: (spec: SessionSpec) => Promise<AgentLaunch>;
+  agentLaunch?: (spec: SessionSpec, ctx: { id: string; nonce: string }) => Promise<AgentLaunch>;
+  /** Extra environment for a shell tab so agents typed into it can report their status (bash and zsh). */
+  shellStatusEnv?: (c: { id: string; nonce: string; env: SessionInfo['env']; shell: string }) => Promise<Record<string, string> | null>;
   wslBranch?: (cwd: Extract<EnvPath, { env: 'wsl' }>) => Promise<string | undefined>;
   onData: (id: SessionId, chunk: string) => void;
   onInfo: (info: SessionInfo) => void;
@@ -93,7 +100,7 @@ export class SessionManager {
 
     if (spec.kind === 'agent') {
       if (!this.deps.agentLaunch) throw new Error('Agents are not available');
-      const a = await this.deps.agentLaunch(spec);
+      const a = await this.deps.agentLaunch(spec, { id, nonce });
       plan = a.plan;
       info = this.baseInfo(id, nonce, spec, a.env, 'other', a.title);
       info.agentId = a.agentId;
@@ -114,6 +121,13 @@ export class SessionManager {
         toPosix: this.deps.toPosix,
         ...(spec.cwd ? { cwd: spec.cwd } : {})
       });
+      if (profile.integration === 'blocks') {
+        const extra = await this.deps.shellStatusEnv?.({ id, nonce, env: profile.env, shell: profile.shell }).catch(() => null);
+        if (extra) {
+          Object.assign(plan.env, extra);
+          if (profile.env.kind === 'wsl') plan.env['WSLENV'] = [plan.env['WSLENV'], ...Object.keys(extra)].filter(Boolean).join(':');
+        }
+      }
       info = this.baseInfo(id, nonce, spec, profile.env, profile.shell, spec.title ?? profile.label);
       info.profileId = profile.id;
       info.presentation = blocks ? 'blocks' : 'classic';
@@ -197,6 +211,18 @@ export class SessionManager {
     s.pump?.push(data);
     let changed = false;
     for (const tok of s.tokenizer.push(data)) {
+      // OSC 0 / 2 is the window title: from an agent it names the subject of the session (a label only)
+      if ((tok.id === 0 || tok.id === 2) && (s.info.kind === 'agent' || s.info.runningAgent)) {
+        // the title follows the conversation: a new subject replaces the old one, and the generic name (what Claude Code
+        // sets after /clear or before the first prompt) means "no subject" and brings the tab's own name back
+        const topic = cleanAgentTopic(tok.payload);
+        if (topic !== s.info.agentTopic) {
+          if (topic) s.info.agentTopic = topic;
+          else delete s.info.agentTopic;
+          changed = true;
+        }
+        continue;
+      }
       const ev = parseOsc(tok.id, tok.payload, s.info.nonce);
       if (!ev) continue;
       const tr = s.sm.apply(ev, Date.now());
@@ -235,6 +261,7 @@ export class SessionManager {
     }
     if (tr.kind === 'blockFinished' && s.info.runningAgent) {
       delete s.info.runningAgent;
+      delete s.info.agentTopic;
       changed = true;
     }
     if (tr.kind === 'anomaly') {
@@ -303,6 +330,7 @@ export class SessionManager {
       });
     }
     delete s.info.runningAgent;
+    if (s.info.kind === 'shell') delete s.info.agentTopic; // an agent tab keeps the subject of its last work
     s.info.state = 'exited';
     s.info.phase = 'unknown';
     s.info.exit = { code };

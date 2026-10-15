@@ -3,6 +3,7 @@ import type { SessionInfo, SessionSpec } from '@shared/types/session';
 import { envKeyOf } from '@shared/types/env';
 import type { CompletionResponse } from '@shared/types/completion';
 import type { AgentEntry } from '@shared/types/agent';
+import type { AgentStatusService } from '../agents/status-service';
 import type { HistoryRepo } from '../persistence/history-repo';
 import type { PrefsStore } from '../persistence/prefs';
 import type { SessionManager } from '../pty/session-manager';
@@ -24,6 +25,7 @@ export interface Services {
   history: HistoryRepo;
   completion?: { query(req: { requestId: number; sessionId: string; line: string; cursor: number }): Promise<CompletionResponse> };
   agents?: { detect(refresh: boolean): Promise<AgentEntry[]> };
+  agentStatus: AgentStatusService;
   savedSessions: () => SavedSession[];
   onPrefsChanged?: (prefs: import('@shared/prefs').Prefs) => void;
   diagnostics: () => Record<string, unknown>;
@@ -242,13 +244,10 @@ export function registerIpc(s: Services, hub: PortHub): void {
   const NO_TAB: GitResult = { ok: false, error: 'no folder' };
   const branchPreflight = async (sessionId: string) => {
     const t = repo(sessionId);
-    if (!t) return { ok: false, dirty: false, runningAgent: false, error: 'no folder' };
+    if (!t) return { ok: false, dirty: false, error: 'no folder' };
     const status = await runGit(t.info.env, t.cwd, ['status', '--porcelain', '--untracked-files=normal']);
-    if (status.code !== 0) return { ok: false, dirty: false, runningAgent: false, error: status.stderr || 'git status failed' };
-    const runningAgent = s.sessions.list().some((i) => i.state === 'running' && (i.kind === 'agent' || !!i.runningAgent) &&
-      i.cwd?.path === t.cwd && i.env.kind === t.info.env.kind &&
-      (i.env.kind !== 'wsl' || (t.info.env.kind === 'wsl' && i.env.distro === t.info.env.distro)));
-    return { ok: true, dirty: !!status.stdout.trim(), runningAgent };
+    if (status.code !== 0) return { ok: false, dirty: false, error: status.stderr || 'git status failed' };
+    return { ok: true, dirty: !!status.stdout.trim() };
   };
   r.handle('git:branchPreflight', ({ sessionId }) => branchPreflight(sessionId));
   r.handle('git:stage', async ({ sessionId, paths }) => {
@@ -267,7 +266,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const t = repo(sessionId);
     if (!t) return NO_TAB;
     const gate = await branchPreflight(sessionId);
-    if (!gate.ok || gate.runningAgent) return { ok: false as const, error: gate.error ?? 'An agent is running in this folder' };
+    if (!gate.ok) return { ok: false as const, error: gate.error ?? 'git failed' };
     return afterGit(sessionId, await gitCreateBranch(t.info.env, t.cwd, name));
   });
   r.handle('git:push', async ({ sessionId }) => {
@@ -286,7 +285,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const t = repo(sessionId);
     if (!t) return NO_TAB;
     const gate = await branchPreflight(sessionId);
-    if (!gate.ok || gate.runningAgent) return { ok: false as const, error: gate.error ?? 'An agent is running in this folder' };
+    if (!gate.ok) return { ok: false as const, error: gate.error ?? 'git failed' };
     return afterGit(sessionId, await gitSwitch(t.info.env, t.cwd, name, remote));
   });
 
@@ -320,6 +319,17 @@ export function registerIpc(s: Services, hub: PortHub): void {
     if (action === 'status' || enabled) return { enabled, available: true };
     const ok = await s.envQuery.writeCodexConfig(info.env, enableTuiNotifications(text ?? ''));
     return { enabled: ok, available: true, changed: ok };
+  });
+
+  r.handle('agentStatus:list', () => s.agentStatus.list());
+  r.handle('agentStatus:markRead', ({ sessionId }) => s.agentStatus.markRead(sessionId));
+  r.handle('agentStatus:active', ({ sessionId }) => s.agentStatus.setActive(sessionId));
+  r.handle('agentStatus:input', ({ sessionId, kind }) => s.agentStatus.userInput(sessionId, kind));
+  r.handle('agentStatus:signal', ({ sessionId }) => {
+    const info = s.sessions.get(sessionId);
+    const agentId = info?.kind === 'agent' ? info.agentId : info?.runningAgent?.agentId;
+    // only a tab that runs an agent may raise a signal; anything else is ordinary terminal output
+    if (agentId) s.agentStatus.terminalSignal(sessionId, agentId);
   });
 
   r.handle('app:notify', ({ sessionId, title, body }) => {

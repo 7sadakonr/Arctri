@@ -31,3 +31,18 @@ autoload -Uz add-zsh-hook
 add-zsh-hook preexec __ad_preexec
 precmd_functions=(__ad_precmd ${precmd_functions:#__ad_precmd})
 printf '\033]6973;%s;hello;zsh;%s;1\007' "$ARCTRI_NONCE" "$ZSH_VERSION"
+
+# Status of agents started by hand: `claude` and `codex` get this tab's hook / notify flags, so Arctri can show what they are doing.
+# A function or alias of the user's own with these names is left alone (the tab then shows an unknown status). Nothing else is changed.
+if [[ -n "$ARCTRI_EVENTS_DIR" && -f "$ARCTRI_HOOK_SCRIPT" ]]; then
+  if [[ -f "$ARCTRI_CLAUDE_SETTINGS" ]]; then
+    case "$(whence -w claude 2>/dev/null)" in
+      *": function"|*": alias") ;;
+      *) claude() { command claude --settings "$ARCTRI_CLAUDE_SETTINGS" "$@"; } ;;
+    esac
+  fi
+  case "$(whence -w codex 2>/dev/null)" in
+    *": function"|*": alias") ;;
+    *) codex() { command codex -c "notify=[\"sh\",\"$ARCTRI_HOOK_SCRIPT\",\"codex\"]" "$@"; } ;;
+  esac
+fi

@@ -16,15 +16,21 @@ import type { WslDistro } from '@shared/types/wsl';
 import { ProfileRegistry } from './shell/registry';
 import { WslManager } from './wsl/wsl-manager';
 import { AgentManager } from './agents/agent-manager';
+import { AgentStatusService } from './agents/status-service';
+import { buildShellStatusEnv } from './agents/status/shell-env';
 import { CompletionEngine } from './completion/engine';
 import { EnvironmentQueryService } from './env-query/service';
 import { installAppMenu } from './app-menu';
-import { setResourcesDir } from './paths';
+import { hookScript, setResourcesDir } from './paths';
 import { logger } from './logger';
 import { mark, timing } from './timing';
 
-// Tests run with an isolated profile so they never touch (or lock) the real one.
+// Tests run with an isolated profile so they never touch (or lock) the real one. So does a development run (`npm run dev`):
+// the single-instance lock, the database and the preferences all live in the profile folder, and sharing it with an installed
+// Arctri would make whichever starts second quit at once.
+const customProfile = !!process.env['ARCTRI_USER_DATA'] || !app.isPackaged;
 if (process.env['ARCTRI_USER_DATA']) app.setPath('userData', process.env['ARCTRI_USER_DATA']);
+else if (!app.isPackaged) app.setPath('userData', `${app.getPath('userData')}-dev`);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -89,7 +95,7 @@ async function start(): Promise<void> {
   await app.whenReady();
   mark('appReady');
 
-  if (!process.env['ARCTRI_USER_DATA']) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
+  if (!customProfile) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));
   const store = new Store<{ prefs: unknown; wslZsh: Record<string, boolean>; wslDistros: WslDistro[] }>({ name: 'preferences' });
   const prefs = new PrefsStore({ get: () => store.get('prefs'), set: (v) => store.set('prefs', v) });
   const { db, recovered } = openDb(join(app.getPath('userData'), 'arctri.db'));
@@ -118,9 +124,45 @@ async function start(): Promise<void> {
   const agents = new AgentManager(wsl, registry, () => prefs.get().agentPaths);
   const envQuery = new EnvironmentQueryService();
 
+  const agentStatus = new AgentStatusService({
+    root: join(app.getPath('userData'), 'agent-events'),
+    log: (message, extra) => logger.info(message, extra),
+    acceptsEvents: (id) => {
+      const i = sessions.get(id);
+      return !!i && (i.kind === 'agent' || !!i.runningAgent);
+    },
+    windowFocused: () => !!win && !win.isDestroyed() && win.isFocused(),
+    onChanged: (status, id) => {
+      if (win && !win.isDestroyed()) win.webContents.send('agentStatus:changed', { id, status });
+    }
+  });
+
   const warmed = new Set<string>();
   const sessions = new SessionManager({
-    agentLaunch: (spec) => agents.launch(spec),
+    agentLaunch: async (spec, ctx) => {
+      const eventsDir = agentStatus.watch(ctx.id, ctx.nonce);
+      try {
+        const launch = await agents.launch(spec, { ...ctx, eventsDir, settingsPath: agentStatus.settingsPath(ctx.id) });
+        agentStatus.begin(ctx.id, launch.agentId, launch.statusHooks ? undefined : (launch.noHooksReason ?? 'no-hooks-cli'));
+        return launch;
+      } catch (e) {
+        agentStatus.forget(ctx.id);
+        throw e;
+      }
+    },
+    shellStatusEnv: async (c) => {
+      const eventsDir = agentStatus.watch(c.id, c.nonce);
+      const env = await buildShellStatusEnv({
+        env: c.env, shell: c.shell, nonce: c.nonce, eventsDir, settingsPath: agentStatus.settingsPath(c.id),
+        script: hookScript(), toPosix: (d, p) => wsl.toPosix(d, p)
+      });
+      if (env) agentStatus.expectHooks(c.id);
+      else {
+        agentStatus.forget(c.id);
+        agentStatus.noHooks(c.id, c.env.kind === 'windows' ? 'no-hooks-windows' : 'no-hooks-shell');
+      }
+      return env;
+    },
     wslBranch: (cwd) => envQuery.gitBranch({ kind: 'wsl', distro: cwd.distro }, cwd.path),
     backend: new WorkerPtyBackend(join(import.meta.dirname, 'pty-worker.js'), prefs.get().conptyMode === 'bundled'),
     getProfile: (id) => registry.get(id),
@@ -138,10 +180,19 @@ async function start(): Promise<void> {
         }
       }
       if (info.phase === 'editing') mark('shellPrompt');
+      if (info.kind === 'agent' && info.agentId && (info.state === 'exited' || info.state === 'failed')) agentStatus.exited(info.id, info.agentId, info.state === 'failed' ? -1 : info.exit?.code);
+      else if (info.kind === 'shell') {
+        if (!info.runningAgent) agentStatus.clearSoon(info.id); // the agent typed into this tab has ended
+        else {
+          agentStatus.cancelClear(info.id);
+          if (!agentStatus.has(info.id)) agentStatus.begin(info.id, info.runningAgent.agentId, agentStatus.noHooksReason(info.id));
+        }
+      }
       sendInfo(win, info);
     },
     onClosed: (id) => {
       hub.detach(id);
+      agentStatus.forget(id);
       if (win && !win.isDestroyed()) win.webContents.send('session:closed', id);
     },
     onCommand: (c) => {
@@ -158,7 +209,7 @@ async function start(): Promise<void> {
 
   registerIpc(
     {
-      sessions, registry, prefs, history, completion, envQuery, wsl,
+      sessions, registry, prefs, history, completion, envQuery, wsl, agentStatus,
       agents: { detect: (refresh) => agents.detect(refresh) },
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
@@ -170,7 +221,8 @@ async function start(): Promise<void> {
         e2e: !!process.env['ARCTRI_E2E'],
         welcome: !!process.env['ARCTRI_E2E_WELCOME'],
         os: process.getSystemVersion(), arch: process.arch, conptyMode: prefs.get().conptyMode,
-        profiles: registry.snapshot().profiles.map((p) => p.id), wsl: registry.snapshot().wsl
+        profiles: registry.snapshot().profiles.map((p) => p.id), wsl: registry.snapshot().wsl,
+        agentStatus: { droppedEvents: agentStatus.dropped() }
       }),
       getWindow: () => win,
       origins: appOrigins

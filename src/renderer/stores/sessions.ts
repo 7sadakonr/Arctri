@@ -29,8 +29,6 @@ interface SessionsState {
   /** The prompt the shell is showing right now (what the command editor puts in front of the input). */
   prompt: Record<string, BlockSnapshot | undefined>;
   setPrompt(id: string, prompt: BlockSnapshot | undefined): void;
-  /** An agent in this tab wants attention (finished a turn, asks for approval) while it was not on screen. */
-  attention: Record<string, boolean>;
   /** The files (relative to the tab's folder) shown beside the terminal, each as it is or as a diff against HEAD. */
   viewer: Record<string, ViewerState | undefined>;
   openViewer(id: string, rel: string, mode: 'file' | 'diff', extra?: { path?: string; rev?: string; preview?: boolean }): void;
@@ -39,12 +37,20 @@ interface SessionsState {
   /** Closes one file; without `rel` (or after the last one) the whole panel. */
   closeViewer(id: string, rel?: string): void;
   setViewerMaximized(id: string, on: boolean): void;
-  setAttention(id: string, on: boolean): void;
+  /** Pinned tabs sit at the left, are drawn as an icon and are not pushed into the overflow menu. */
+  pinned: Record<string, boolean>;
+  togglePin(id: string): void;
   upsert(info: SessionInfo, activate?: boolean): void;
   remove(id: string): void;
   setActive(id: string): void;
   move(from: number, to: number): void;
   setUiPhase(id: string, phase: ShellPhase): void;
+  /** Tabs being created: the main process has not answered yet, so there is no session to draw. */
+  pendingOpen: number;
+  addPending(delta: number): void;
+  /** The first load (preferences, restored tabs) has finished. */
+  booted: boolean;
+  setBooted(): void;
 }
 
 export const useSessions = create<SessionsState>()((set) => ({
@@ -54,8 +60,24 @@ export const useSessions = create<SessionsState>()((set) => ({
   uiPhase: {},
   prompt: {},
   setPrompt: (id, prompt) => set((s) => ({ prompt: { ...s.prompt, [id]: prompt } })),
-  attention: {},
+  pinned: {},
+  togglePin: (id) =>
+    set((s) => {
+      if (!s.infos[id]) return s;
+      const on = !s.pinned[id];
+      const pinned = { ...s.pinned, [id]: on };
+      if (!on) delete pinned[id];
+      // pinned tabs stay together at the left
+      const rest = s.order.filter((x) => x !== id);
+      const lastPinned = rest.reduce((n, x, i) => (pinned[x] ? i + 1 : n), 0);
+      rest.splice(lastPinned, 0, id);
+      return { pinned, order: rest };
+    }),
   viewer: {},
+  pendingOpen: 0,
+  addPending: (delta) => set((s) => ({ pendingOpen: Math.max(0, s.pendingOpen + delta) })),
+  booted: false,
+  setBooted: () => set({ booted: true }),
   openViewer: (id, rel, mode, extra) =>
     set((s) => {
       const tabs = s.viewer[id]?.tabs ?? [];
@@ -90,8 +112,6 @@ export const useSessions = create<SessionsState>()((set) => ({
       const v = s.viewer[id];
       return v && !!v.maximized !== on ? { viewer: { ...s.viewer, [id]: { ...v, maximized: on } } } : s;
     }),
-  setAttention: (id, on) =>
-    set((s) => (!!s.attention[id] === on ? s : { attention: { ...s.attention, [id]: on } })),
   upsert: (info, activate) =>
     set((s) => {
       const known = !!s.infos[info.id];
@@ -108,14 +128,14 @@ export const useSessions = create<SessionsState>()((set) => ({
       const { [id]: _gone, ...infos } = s.infos;
       const { [id]: _p, ...uiPhase } = s.uiPhase;
       const { [id]: _pr, ...prompt } = s.prompt;
-      const { [id]: _a, ...attention } = s.attention;
       const { [id]: _v, ...viewer } = s.viewer;
+      const { [id]: _pin, ...pinned } = s.pinned;
       let activeId = s.activeId;
       if (activeId === id) activeId = order[Math.min(idx, order.length - 1)];
-      return { order, infos, uiPhase, prompt, attention, viewer, activeId };
+      return { order, infos, uiPhase, prompt, viewer, pinned, activeId };
     }),
   setActive: (id) =>
-    set((s) => ({ activeId: id, attention: s.attention[id] ? { ...s.attention, [id]: false } : s.attention })),
+    set({ activeId: id }),
   move: (from, to) =>
     set((s) => {
       if (from === to || from < 0 || to < 0 || from >= s.order.length || to >= s.order.length) return s;

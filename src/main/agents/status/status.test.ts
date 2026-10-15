@@ -1,0 +1,398 @@
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import type { AgentStatus, AgentStatusEvent } from '@shared/types/agent-status';
+import { reduceStatus } from '@shared/agents/status-rules';
+import { AgentStatusService } from '../status-service';
+import { claudeSettings, isSafeHookPath, statusLaunch } from './launch';
+import { parseCodexNotify, parseEnvelope, parseClaudeHook, sentAtMs } from './parse';
+import { EventSpool } from './spool';
+
+const b = { sessionId: 's1', now: 1000 };
+const env = (agent: string, payload: unknown, nonce = 'n1') => JSON.stringify({ nonce, agent, payload });
+
+describe('claude hook parsing', () => {
+  it('maps verified events and carries only event names', () => {
+    expect(parseClaudeHook({ hook_event_name: 'Stop', session_id: 'c1' }, b)).toMatchObject({ state: 'finished', confidence: 'high', agentSessionId: 'c1' });
+    expect(parseClaudeHook({ hook_event_name: 'Notification', notification_type: 'permission_prompt' }, b)?.state).toBe('needs-approval');
+    expect(parseClaudeHook({ hook_event_name: 'Notification', notification_type: 'idle_prompt' }, b)?.state).toBe('ready');
+    expect(parseClaudeHook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'secret' } }, b)).toMatchObject({ state: 'working', detail: { tool: 'Bash' } });
+    expect(JSON.stringify(parseClaudeHook({ hook_event_name: 'UserPromptSubmit', prompt: 'my secret prompt' }, b))).not.toContain('secret');
+  });
+  it('a question to the user (AskUserQuestion) is waiting at once; a real permission request is an approval', () => {
+    expect(parseClaudeHook({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion' }, b)).toMatchObject({ state: 'waiting', detail: { tool: 'AskUserQuestion' } });
+    expect(parseClaudeHook({ hook_event_name: 'PermissionRequest', tool_name: 'AskUserQuestion' }, b)?.state).toBe('waiting');
+    expect(parseClaudeHook({ hook_event_name: 'PermissionRequest', tool_name: 'Bash' }, b)?.state).toBe('needs-approval');
+    expect(parseClaudeHook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' }, b)?.state).toBe('working');
+    expect(parseClaudeHook({ hook_event_name: 'PostToolUseFailure', tool_name: 'AskUserQuestion' }, b)?.state).toBe('working');
+    expect(parseClaudeHook({ hook_event_name: 'Elicitation' }, b)?.state).toBe('waiting');
+  });
+  it('SessionEnd is not a status: /clear and resume send it while the process lives on', () => {
+    expect(parseClaudeHook({ hook_event_name: 'SessionEnd', reason: 'clear' }, b)).toBeNull();
+    expect(parseClaudeHook({ hook_event_name: 'SessionStart', source: 'clear' }, b)?.state).toBe('ready');
+    expect(parseClaudeHook({ hook_event_name: 'Notification', notification_type: 'elicitation_dialog' }, b)?.state).toBe('waiting');
+  });
+  it('does not guess at events it does not know', () => {
+    expect(parseClaudeHook({ hook_event_name: 'Notification', notification_type: 'something_new' }, b)).toBeNull();
+    expect(parseClaudeHook({ hook_event_name: 'FutureEvent' }, b)).toBeNull();
+    expect(parseClaudeHook('nope', b)).toBeNull();
+  });
+});
+
+describe('codex notify parsing', () => {
+  it('only a finished turn is reported, never an approval', () => {
+    expect(parseCodexNotify({ type: 'agent-turn-complete', 'thread-id': 't1' }, b)).toMatchObject({ state: 'finished', agentSessionId: 't1', source: 'codex-notify' });
+    expect(parseCodexNotify({ type: 'approval-requested' }, b)).toBeNull();
+  });
+});
+
+describe('envelope', () => {
+  it('rejects a wrong secret, bad JSON and oversize input', () => {
+    expect(parseEnvelope(env('claude', { hook_event_name: 'Stop' }), 'n1', b)?.state).toBe('finished');
+    expect(parseEnvelope(env('claude', { hook_event_name: 'Stop' }, 'other'), 'n1', b)).toBeNull();
+    expect(parseEnvelope('{not json', 'n1', b)).toBeNull();
+    expect(parseEnvelope(' '.repeat(70_000), 'n1', b)).toBeNull();
+  });
+});
+
+describe('launch', () => {
+  it('adds flags only when enabled and the paths are plain', () => {
+    expect(statusLaunch('claude-code', false, '/a/hook.sh', '/a/s.json').args).toEqual([]);
+    const c = statusLaunch('claude-code', true, '/a/hook.sh', '/a/s.json');
+    expect(c.args).toEqual(['--settings', '/a/s.json']);
+    expect(JSON.parse(c.settingsFile!.contents).hooks.Stop[0].hooks[0].command).toBe("sh '/a/hook.sh' claude");
+    expect(statusLaunch('codex', true, '/a/hook.sh', '/a/s.json').args).toEqual(['-c', 'notify=["sh","/a/hook.sh","codex"]']);
+    expect(statusLaunch('codex', true, "/a/';rm -rf x;'", '/a/s.json').args).toEqual([]);
+    expect(isSafeHookPath('/mnt/d/Desktop/Arctri/resources')).toBe(true);
+    expect(Object.keys(JSON.parse(claudeSettings('/x')).hooks)).toContain('Notification');
+  });
+});
+
+describe('spool and service', () => {
+  it('reads finished event files once, drops forged ones, and the service keeps unknown without signals', () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-spool-'));
+    const seen: AgentStatus[] = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => false, onChanged: (s) => s && seen.push(s) });
+    const dir = svc.watch('s1', 'n1');
+    svc.begin('s1', 'claude-code');
+    expect(seen.at(-1)).toMatchObject({ state: 'starting', source: 'pty' });
+    writeFileSync(join(dir, '1.json.tmp'), 'half-written'); // not finished: ignored
+    writeFileSync(join(dir, '2.json'), env('claude', { hook_event_name: 'Notification', notification_type: 'permission_prompt' }, 'forged'));
+    writeFileSync(join(dir, '3.json'), env('claude', { hook_event_name: 'Notification', notification_type: 'permission_prompt' }));
+    svc['spools'].get('s1')!.drain();
+    expect(seen.at(-1)).toMatchObject({ state: 'needs-approval', unread: true });
+    expect(svc.dropped()).toBe(1);
+    // a genuine event that is not a status (SessionEnd) is read and removed, but is not counted as dropped
+    writeFileSync(join(dir, '4.json'), env('claude', { hook_event_name: 'SessionEnd' }));
+    svc['spools'].get('s1')!.drain();
+    expect(svc.dropped()).toBe(1);
+    expect(readdirSync(dir)).toEqual(['1.json.tmp']);
+    svc.userInput('s1', 'interrupt');
+    expect(seen.at(-1)?.state).toBe('unknown');
+    svc.forget('s1');
+  });
+
+  it('plain terminal output never becomes a permission request', () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-spool-'));
+    const seen: AgentStatus[] = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: (s) => s && seen.push(s) });
+    svc.terminalSignal('s2', 'codex');
+    expect(seen.at(-1)).toMatchObject({ state: 'unknown', confidence: 'low', source: 'terminal-signal', unread: true });
+    new EventSpool(join(root, 'x'), 's2', 'n', () => undefined).drain();
+  });
+});
+
+describe('delay measuring and grace', () => {
+  it('reads when the hook wrote the event, in nanoseconds or seconds', () => {
+    expect(sentAtMs('{"nonce":"n","ts":1791927986345001126,"agent":"claude"}')).toBeCloseTo(1791927986345.001, 0);
+    expect(sentAtMs('{"nonce":"n","ts":1791927986,"agent":"claude"}')).toBe(1791927986000);
+    expect(sentAtMs('{"nonce":"n"}')).toBeUndefined();
+  });
+
+  it('the spool reports how long an event waited', () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-spool-'));
+    const got: Array<number | undefined> = [];
+    const sp = new EventSpool(root, 's9', 'n1', (_e, m) => got.push(m.latencyMs), () => 4_000_000_000_500);
+    // written at 4_000_000_000_000 ms (as nanoseconds), read 500 ms later
+    writeFileSync(join(root, 'a.json'), '{"nonce":"n1","ts":4000000000000000000,"agent":"claude","payload":{"hook_event_name":"Stop"}}');
+    sp.drain();
+    expect(got).toEqual([500]);
+  });
+
+  it('clearSoon waits, and cancelClear keeps the status of an agent that was only briefly out of sight', () => {
+    vi.useFakeTimers();
+    try {
+      const root = mkdtempSync(join(tmpdir(), 'arctri-spool-'));
+      const seen: Array<AgentStatus | null> = [];
+      const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: (s) => seen.push(s) });
+      svc.begin('s3', 'claude-code');
+      svc.clearSoon('s3', 1500);
+      vi.advanceTimersByTime(1000);
+      svc.cancelClear('s3');
+      vi.advanceTimersByTime(5000);
+      expect(svc.has('s3')).toBe(true);
+      svc.clearSoon('s3', 1500);
+      vi.advanceTimersByTime(1600);
+      expect(svc.has('s3')).toBe(false);
+      expect(seen.at(-1)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('service: starting, stale and simultaneous sessions', () => {
+  const make = (extra: Partial<ConstructorParameters<typeof AgentStatusService>[0]> = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-svc-'));
+    const seen: Array<{ id: string; s: AgentStatus | null }> = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: (s, id) => seen.push({ id, s }), ...extra });
+    return { svc, seen };
+  };
+  const ev = (o: Partial<AgentStatus>): AgentStatus => ({
+    sessionId: 's1', agentId: 'claude-code', state: 'working', timestamp: Date.now() + 60_000, source: 'claude-hook', confidence: 'high', since: 1, unread: false, ...o
+  });
+
+  it('starts as starting with hooks, becomes unknown when no event ever comes, and unknown at once without hooks', () => {
+    vi.useFakeTimers();
+    try {
+      const { svc } = make({ noEventsMs: 1000 });
+      svc.begin('a', 'claude-code');
+      expect(svc.list().find((s) => s.sessionId === 'a')?.state).toBe('starting');
+      vi.advanceTimersByTime(1100);
+      expect(svc.list().find((s) => s.sessionId === 'a')?.state).toBe('unknown');
+      svc.begin('b', 'codex', 'no-hooks-windows');
+      expect(svc.list().find((s) => s.sessionId === 'b')?.reason).toBe('no-hooks-windows');
+      expect(svc.list().find((s) => s.sessionId === 'b')?.state).toBe('unknown');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a real event cancels the wait: a late timer never overrides what the agent said', () => {
+    vi.useFakeTimers();
+    try {
+      const { svc } = make({ noEventsMs: 1000 });
+      svc.begin('a', 'claude-code');
+      svc.apply(ev({ sessionId: 'a', state: 'ready' }));
+      vi.advanceTimersByTime(5000);
+      expect(svc.list().find((s) => s.sessionId === 'a')?.state).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('full agent turn: ready, working, approval, working, finished, and a new turn', () => {
+    const { svc } = make();
+    svc.begin('a', 'claude-code');
+    const states: string[] = [];
+    let t = Date.now() + 60_000;
+    for (const state of ['ready', 'working', 'needs-approval', 'working', 'finished', 'working'] as const) {
+      svc.apply(ev({ sessionId: 'a', state, timestamp: (t += 10) }), { sentAt: t });
+      states.push(svc.list().find((s) => s.sessionId === 'a')!.state);
+    }
+    expect(states).toEqual(['ready', 'working', 'needs-approval', 'working', 'finished', 'working']);
+  });
+
+  it('drops an event written before one that was already seen, and keeps sessions apart', () => {
+    const { svc } = make();
+    const now = Date.now() + 60_000;
+    svc.apply(ev({ sessionId: 'a', state: 'finished', timestamp: now }), { sentAt: 500 });
+    svc.apply(ev({ sessionId: 'a', state: 'working', timestamp: now + 1 }), { sentAt: 400 }); // late arrival of an older event
+    svc.apply(ev({ sessionId: 'b', agentId: 'codex', state: 'working', timestamp: now + 2 }), { sentAt: 100 }); // another tab has its own clock of events
+    const by = (id: string) => svc.list().find((s) => s.sessionId === id)?.state;
+    expect(by('a')).toBe('finished');
+    expect(by('b')).toBe('working');
+  });
+
+  it('closing a tab while events still arrive leaves nothing behind', () => {
+    const { svc, seen } = make({ acceptsEvents: () => true });
+    const dir = svc.watch('c', 'n1');
+    writeFileSync(join(dir, '1.json'), env('claude', { hook_event_name: 'Stop' }, 'n1'));
+    svc.forget('c');
+    expect(existsSync(dir)).toBe(false); // the hook script finds no directory and exits quietly
+    expect(svc.list().find((s) => s.sessionId === 'c')).toBeUndefined();
+    expect(seen.at(-1)?.s ?? null).toBeNull();
+  });
+});
+
+describe('the late permission notification of a question', () => {
+  it('does not turn a question into an approval', () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-q-'));
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: () => undefined });
+    const now = Date.now() + 60_000;
+    const base = { sessionId: 'q', agentId: 'claude-code' as const, source: 'claude-hook' as const, confidence: 'high' as const };
+    svc.apply({ ...base, state: 'waiting', timestamp: now, detail: { event: 'PreToolUse', tool: 'AskUserQuestion' } });
+    svc.apply({ ...base, state: 'needs-approval', timestamp: now + 6000, detail: { event: 'Notification', notificationType: 'permission_prompt' } });
+    expect(svc.list().find((s) => s.sessionId === 'q')?.state).toBe('waiting');
+    // but a real permission request for another tool is still an approval
+    svc.apply({ ...base, state: 'working', timestamp: now + 7000, detail: { event: 'PreToolUse', tool: 'Bash' } });
+    svc.apply({ ...base, state: 'needs-approval', timestamp: now + 8000, detail: { event: 'Notification', notificationType: 'permission_prompt' } });
+    expect(svc.list().find((s) => s.sessionId === 'q')?.state).toBe('needs-approval');
+  });
+});
+
+describe('state machine through the service', () => {
+  const make = () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-sm-'));
+    const seen: Array<AgentStatus | null> = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: (s) => seen.push(s) });
+    return { svc, seen };
+  };
+  let t = Date.now() + 60_000;
+  const hook = (o: Partial<AgentStatus>): AgentStatus => ({
+    sessionId: 'a', agentId: 'claude-code', state: 'working', timestamp: (t += 10), source: 'claude-hook', confidence: 'high', since: 1, unread: false, ...o
+  });
+  const state = (svc: AgentStatusService, id = 'a') => svc.list().find((s) => s.sessionId === id)?.state;
+
+  it('typing, arrows and Enter while an approval is pending change nothing; Esc / Ctrl+C make it unknown with a reason', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'needs-approval' }));
+    svc.userInput('a', 'submit');
+    expect(state(svc)).toBe('needs-approval');
+    svc.userInput('a', 'interrupt');
+    expect(state(svc)).toBe('unknown');
+    expect(svc.list()[0]?.reason).toBe('interrupted');
+    svc.apply(hook({ state: 'working' }));
+    expect(state(svc)).toBe('working'); // the next trustworthy event sets it again
+  });
+
+  it('an approval is resolved by the next hook event, not by the user typing', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'needs-approval' }));
+    svc.apply(hook({ state: 'working', detail: { event: 'PostToolUse', tool: 'Bash' } }));
+    expect(state(svc)).toBe('working');
+  });
+
+  it('Codex: a finished turn goes unconfirmed on Enter, and the next turn-complete sets finished again', () => {
+    const { svc } = make();
+    svc.apply(hook({ agentId: 'codex', source: 'codex-notify', state: 'finished' }));
+    svc.userInput('a', 'submit');
+    expect(state(svc)).toBe('unknown');
+    expect(svc.list()[0]?.reason).toBe('turn-unconfirmed');
+    svc.apply(hook({ agentId: 'codex', source: 'codex-notify', state: 'finished' }));
+    expect(state(svc)).toBe('finished');
+  });
+
+  it('Claude: Enter after a finished turn does not touch the status (a hook follows)', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'finished' }));
+    svc.userInput('a', 'submit');
+    expect(state(svc)).toBe('finished');
+  });
+
+  it('an abnormal exit is unread news in a background tab; a clean exit is not', () => {
+    const { svc } = make();
+    svc.exited('a', 'claude-code', 1);
+    expect(svc.list()[0]?.unread).toBe(true);
+    svc.exited('b', 'claude-code', 0);
+    expect(svc.list().find((s) => s.sessionId === 'b')?.unread).toBe(false);
+  });
+
+  it('/clear (a new SessionStart) returns a finished agent to ready; exited stays final', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'finished' }));
+    svc.apply(hook({ state: 'ready', detail: { event: 'SessionStart' } }));
+    expect(state(svc)).toBe('ready');
+    svc.apply(hook({ state: 'exited', source: 'pty' }));
+    svc.apply(hook({ state: 'working' }));
+    expect(state(svc)).toBe('exited');
+  });
+
+  it('a terminal signal never overrides a known state and never invents approval', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'working' }));
+    svc.terminalSignal('a', 'claude-code');
+    expect(state(svc)).toBe('working');
+  });
+
+  it('events left by an ended agent are discarded, not applied to the next agent in the same tab', () => {
+    const { svc } = make();
+    const dir = svc.watch('a', 'n1');
+    svc.apply(hook({ state: 'working' }));
+    writeFileSync(join(dir, '1.json'), env('claude', { hook_event_name: 'Stop' }, 'n1'));
+    svc.clear('a');
+    expect(readdirSync(dir)).toEqual([]);
+    expect(svc.has('a')).toBe(false);
+    svc.forget('a');
+  });
+
+  it('shell tabs remember why they cannot report', () => {
+    const { svc } = make();
+    svc.noHooks('s', 'no-hooks-windows');
+    expect(svc.noHooksReason('s')).toBe('no-hooks-windows');
+    svc.expectHooks('s');
+    expect(svc.noHooksReason('s')).toBeUndefined();
+  });
+});
+
+describe('spool bursts and cleanup', () => {
+  const mk = () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-burst-'));
+    const got: string[] = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: () => undefined, acceptsEvents: () => true });
+    return { root, got, svc };
+  };
+
+  it('a burst is read in bounded passes, in order, and nothing is lost', async () => {
+    const { svc } = mk();
+    const dir = svc.watch('b', 'n1');
+    for (let i = 0; i < 80; i++) writeFileSync(join(dir, `${String(i).padStart(4, '0')}.json`), env('claude', { hook_event_name: 'PostToolUse', tool_name: 'Bash' }, 'n1'));
+    const spool = svc['spools'].get('b')!;
+    spool.drain();
+    expect(readdirSync(dir).filter((n) => n.endsWith('.json')).length).toBe(80 - 25); // one pass reads a bounded number
+    for (let i = 0; i < 100 && readdirSync(dir).some((n) => n.endsWith('.json')); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(readdirSync(dir).filter((n) => n.endsWith('.json')).length).toBe(0);
+    svc.forget('b');
+  });
+
+  it('watching the same tab twice leaves one spool, and forget removes the folder and the settings file', () => {
+    const { svc } = mk();
+    const first = svc.watch('w', 'n1');
+    const old = svc['spools'].get('w')!;
+    const stop = vi.spyOn(old, 'stop');
+    svc.watch('w', 'n2');
+    expect(stop).toHaveBeenCalledOnce();
+    expect(svc['spools'].size).toBe(1);
+    svc.forget('w');
+    expect(existsSync(first)).toBe(false);
+    expect(svc['spools'].size).toBe(0);
+  });
+
+  it('rejects a wrong secret and a traversal-looking name', () => {
+    const { svc } = mk();
+    const dir = svc.watch('x', 'right');
+    writeFileSync(join(dir, '1.json'), env('claude', { hook_event_name: 'Stop' }, 'wrong'));
+    writeFileSync(join(dir, '2.txt'), env('claude', { hook_event_name: 'Stop' }, 'right'));
+    svc['spools'].get('x')!.drain();
+    expect(svc.list().find((s) => s.sessionId === 'x')).toBeUndefined();
+    expect(svc.dropped()).toBe(1);
+    svc.forget('x');
+  });
+});
+
+describe('the model in use', () => {
+  const withModel = (model: unknown, agent: 'claude' | 'codex' = 'claude', payload: unknown = { hook_event_name: 'Stop' }) =>
+    JSON.stringify({ nonce: 'n', agent, model, payload });
+  const base = { sessionId: 's', now: 1 };
+
+  it('is taken from the envelope when it is a plain name, and ignored otherwise', () => {
+    expect(parseEnvelope(withModel('claude-opus-5-5'), 'n', base)?.model).toBe('claude-opus-5-5');
+    expect(parseEnvelope(withModel('gpt-6-sol', 'codex', { type: 'agent-turn-complete' }), 'n', base)?.model).toBe('gpt-6-sol');
+    for (const bad of ['', 'a b', 'x'.repeat(81), '<script>', 'a;b']) expect(parseEnvelope(withModel(bad), 'n', base)?.model).toBeUndefined();
+    expect(parseEnvelope(JSON.stringify({ nonce: 'n', agent: 'claude', payload: { hook_event_name: 'Stop' } }), 'n', base)?.model).toBeUndefined();
+  });
+
+  it('stays known across later events, and a new model replaces it', () => {
+    const mk = (o: Partial<AgentStatusEvent>, t: number): AgentStatusEvent => ({
+      sessionId: 's', agentId: 'claude-code', state: 'working', timestamp: t, source: 'claude-hook', confidence: 'high', ...o
+    });
+    let s = reduceStatus(undefined, mk({ state: 'ready', model: 'claude-sonnet-5-5' }, 1), true);
+    s = reduceStatus(s, mk({ state: 'working' }, 2), true);
+    expect(s.model).toBe('claude-sonnet-5-5');
+    s = reduceStatus(s, mk({ state: 'finished', model: 'claude-opus-5-5' }, 3), true);
+    expect(s.model).toBe('claude-opus-5-5');
+    s = reduceStatus(s, mk({ state: 'finished', model: 'claude-haiku-5-5' }, 4), true); // same state, new model: still an update
+    expect(s.model).toBe('claude-haiku-5-5');
+  });
+});
