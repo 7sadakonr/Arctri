@@ -29,7 +29,8 @@ export function reduceStatus(prev: AgentStatus | undefined, raw: AgentStatusEven
   }
   const changed = !prev || prev.state !== ev.state;
   const unread = wantsAttention(ev) && !watching ? true : changed ? false : (prev?.unread ?? false);
-  return { ...ev, since: changed ? ev.timestamp : prev!.since, unread };
+  const model = ev.model ?? prev?.model; // a model stays known until another one is reported
+  return { ...ev, ...(model ? { model } : {}), since: changed ? ev.timestamp : prev!.since, unread };
 }
 
 export type UserInputKind = 'interrupt' | 'submit';

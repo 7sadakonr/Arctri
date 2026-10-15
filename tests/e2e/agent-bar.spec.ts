@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -119,14 +119,8 @@ test('typing codex in a shell tab switches to the Codex bar, with working contro
     await waitScreen(page, /paste: ทดสอบ rich input[\s\S]*note: submitted:/);
     await expect(rich).toHaveCount(0);
 
-    // the Codex notifications chip changes the config after a backup, then goes away
-    await bar.getByRole('button', { name: /enable codex notifications/i }).click();
+    // no "enable Codex notifications" chip is ever offered
     await expect(bar.getByRole('button', { name: /enable codex notifications/i })).toHaveCount(0);
-    const cfg = readFileSync(join(w.codexHome, 'config.toml'), 'utf8');
-    expect(cfg).toContain('# mine');
-    expect(cfg).toContain('notifications = true');
-    expect(cfg).toContain('theme = "x"');
-    expect(readdirSync(w.codexHome).some((f) => f.startsWith('config.toml.arctri-backup-'))).toBe(true);
 
     // the agent ends: the shell comes back, with its editor and its own bar
     await page.keyboard.press('Control+c');

@@ -21,6 +21,8 @@ export interface AgentStatusEvent {
   /** Raw event names only: never prompt text or output. */
   detail?: { event: string; notificationType?: string; tool?: string; exitCode?: number };
   reason?: StatusReason;
+  /** The model in use, as the agent's own session files say; absent until known. */
+  model?: string;
 }
 
 export interface AgentStatus extends AgentStatusEvent {

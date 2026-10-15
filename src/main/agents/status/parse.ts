@@ -6,6 +6,8 @@ import type { AgentState, AgentStatusEvent } from '@shared/types/agent-status';
 export const envelopeSchema = z.object({
   nonce: z.string().min(1).max(100),
   agent: z.enum(['claude', 'codex']),
+  /** The model in use as the hook script found it; empty when it did not. */
+  model: z.string().max(200).optional(),
   payload: z.unknown()
 });
 
@@ -25,6 +27,10 @@ const codexPayload = z.object({
 type Base = { sessionId: string; now: number };
 
 /** Event names verified against Claude Code 2.1.x hooks (see ADR-010). Anything not listed is not guessed at: it is dropped. */
+const MODEL = /^[A-Za-z0-9._:/@+-]{1,80}$/;
+/** A model name is shown as it is reported, so it must be plain: anything else is ignored. */
+export const cleanModel = (m: string | undefined): string | undefined => (m && MODEL.test(m) ? m : undefined);
+
 export function parseClaudeHook(payload: unknown, b: Base): AgentStatusEvent | null {
   const p = claudePayload.safeParse(payload);
   if (!p.success) return null;
@@ -96,5 +102,7 @@ export function parseEnvelope(text: string, expectedNonce: string, b: Base): Age
   }
   const e = envelopeSchema.safeParse(json);
   if (!e.success || e.data.nonce !== expectedNonce) return null;
-  return e.data.agent === 'claude' ? parseClaudeHook(e.data.payload, b) : parseCodexNotify(e.data.payload, b);
+  const ev = e.data.agent === 'claude' ? parseClaudeHook(e.data.payload, b) : parseCodexNotify(e.data.payload, b);
+  const model = cleanModel(e.data.model);
+  return ev && model ? { ...ev, model } : ev;
 }

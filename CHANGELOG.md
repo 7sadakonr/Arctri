@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Model in the agent bar.** The bar under an agent's terminal names the model the session is really using, for Claude Code and Codex, and follows `/model`
+  switches. The hook script reads only the model's name from the agent's own session files (Claude's transcript at session start and at the end of a turn;
+  Codex's rollout of the thread at the end of a turn) and nothing else leaves it; the chip stays hidden until a model is known. Limits: Windows-native agents and
+  shells other than bash/zsh have no hooks (no chip); Codex shows it after its first finished turn.
+- The green "Enable Codex notifications" button is gone from the Codex bar.
 - **Agent status you can trust.** Tab marks, the tooltip, the command palette and the attention bell (bell icon in the tab bar) show one status, from
   hook / notify events and the process only; output text is never read. Looking at a tab only clears its unread marker: a question or an approval
   still reads Waiting / Approval, and stays in the bell until the agent moves on. Ordinary typing no longer dismisses a pending approval; only

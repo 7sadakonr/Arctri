@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentStatus } from '@shared/types/agent-status';
+import type { AgentStatus, AgentStatusEvent } from '@shared/types/agent-status';
+import { reduceStatus } from '@shared/agents/status-rules';
 import { AgentStatusService } from '../status-service';
 import { claudeSettings, isSafeHookPath, statusLaunch } from './launch';
 import { parseCodexNotify, parseEnvelope, parseClaudeHook, sentAtMs } from './parse';
@@ -367,5 +368,31 @@ describe('spool bursts and cleanup', () => {
     expect(svc.list().find((s) => s.sessionId === 'x')).toBeUndefined();
     expect(svc.dropped()).toBe(1);
     svc.forget('x');
+  });
+});
+
+describe('the model in use', () => {
+  const withModel = (model: unknown, agent: 'claude' | 'codex' = 'claude', payload: unknown = { hook_event_name: 'Stop' }) =>
+    JSON.stringify({ nonce: 'n', agent, model, payload });
+  const base = { sessionId: 's', now: 1 };
+
+  it('is taken from the envelope when it is a plain name, and ignored otherwise', () => {
+    expect(parseEnvelope(withModel('claude-opus-5-5'), 'n', base)?.model).toBe('claude-opus-5-5');
+    expect(parseEnvelope(withModel('gpt-6-sol', 'codex', { type: 'agent-turn-complete' }), 'n', base)?.model).toBe('gpt-6-sol');
+    for (const bad of ['', 'a b', 'x'.repeat(81), '<script>', 'a;b']) expect(parseEnvelope(withModel(bad), 'n', base)?.model).toBeUndefined();
+    expect(parseEnvelope(JSON.stringify({ nonce: 'n', agent: 'claude', payload: { hook_event_name: 'Stop' } }), 'n', base)?.model).toBeUndefined();
+  });
+
+  it('stays known across later events, and a new model replaces it', () => {
+    const mk = (o: Partial<AgentStatusEvent>, t: number): AgentStatusEvent => ({
+      sessionId: 's', agentId: 'claude-code', state: 'working', timestamp: t, source: 'claude-hook', confidence: 'high', ...o
+    });
+    let s = reduceStatus(undefined, mk({ state: 'ready', model: 'claude-sonnet-5-5' }, 1), true);
+    s = reduceStatus(s, mk({ state: 'working' }, 2), true);
+    expect(s.model).toBe('claude-sonnet-5-5');
+    s = reduceStatus(s, mk({ state: 'finished', model: 'claude-opus-5-5' }, 3), true);
+    expect(s.model).toBe('claude-opus-5-5');
+    s = reduceStatus(s, mk({ state: 'finished', model: 'claude-haiku-5-5' }, 4), true); // same state, new model: still an update
+    expect(s.model).toBe('claude-haiku-5-5');
   });
 });

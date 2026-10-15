@@ -32,10 +32,10 @@ async function startAgentTab(page: Page, adapterId: 'claude-code' | 'codex', ext
 }
 
 /** What a hook script writes; the file only counts when it carries the tab's own secret. */
-function drop(userData: string, id: string, name: string, nonce: string, agent: 'claude' | 'codex', payload: unknown) {
+function drop(userData: string, id: string, name: string, nonce: string, agent: 'claude' | 'codex', payload: unknown, model?: string) {
   const dir = join(userData, 'agent-events', id);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${name}.json.tmp`), JSON.stringify({ nonce, agent, payload }));
+  writeFileSync(join(dir, `${name}.json.tmp`), JSON.stringify({ nonce, agent, ...(model !== undefined ? { model } : {}), payload }));
   copyFileSync(join(dir, `${name}.json.tmp`), join(dir, `${name}.json`));
 }
 
@@ -280,6 +280,43 @@ test('a tab shows what the agent says it is working on, with the logo first and 
     });
     await expect(tab).toContainText('My own name');
     await expect(tab).not.toContainText('Fix_tab_status');
+  } finally {
+    await app.close();
+  }
+});
+
+test('the agent bar shows the model in use for Claude and Codex, keeps it, follows a change and hides it when unknown', async () => {
+  const bin = fakeBin();
+  const { app, page, userData } = await launch({ PATH: `${bin};${process.env['PATH']}` });
+  try {
+    await waitForEditor(page);
+    const claude = await startAgentTab(page, 'claude-code');
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await page.getByRole('tab').nth(1).click();
+    const bar = page.locator('[data-testid="agent-bar"]:visible'); // bars of background tabs stay mounted but hidden
+    const model = bar.getByTestId('agent-model');
+    await expect(bar).toBeVisible({ timeout: 15_000 });
+    await expect(model).toHaveCount(0); // nothing reported yet: nothing guessed
+
+    drop(userData, claude.id, 'm1', claude.nonce, 'claude', { hook_event_name: 'SessionStart' }, 'claude-opus-5-5');
+    await expect(model).toHaveText('claude-opus-5-5', { timeout: 10_000 });
+    drop(userData, claude.id, 'm2', claude.nonce, 'claude', { hook_event_name: 'UserPromptSubmit' }); // later events do not repeat it
+    await page.waitForTimeout(1200);
+    await expect(model).toHaveText('claude-opus-5-5');
+    drop(userData, claude.id, 'm3', claude.nonce, 'claude', { hook_event_name: 'Stop' }, 'claude-sonnet-5-5'); // /model was used
+    await expect(model).toHaveText('claude-sonnet-5-5', { timeout: 10_000 });
+    drop(userData, claude.id, 'm4', claude.nonce, 'claude', { hook_event_name: 'UserPromptSubmit' }, 'bad name;');
+    await page.waitForTimeout(1200);
+    await expect(model).toHaveText('claude-sonnet-5-5'); // an implausible name is ignored
+
+    const codex = await startAgentTab(page, 'codex');
+    await expect(page.getByRole('tab')).toHaveCount(3);
+    await page.getByRole('tab').nth(2).click();
+    await expect(bar).toHaveAttribute('data-agent', 'codex', { timeout: 15_000 });
+    await expect(model).toHaveCount(0); // each tab has its own model
+    drop(userData, codex.id, 'c1', codex.nonce, 'codex', { type: 'agent-turn-complete', 'thread-id': 't-1' }, 'gpt-6-sol');
+    await expect(model).toHaveText('gpt-6-sol', { timeout: 10_000 });
+    await expect(model).toHaveAttribute('class', /truncate/);
   } finally {
     await app.close();
   }
