@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-beta
 
 - **Model in the agent bar.** The bar under an agent's terminal names the model the session is really using, for Claude Code and Codex, and follows `/model`
   switches. The hook script reads only the model's name from the agent's own session files (Claude's transcript at session start and at the end of a turn;
