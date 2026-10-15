@@ -1,8 +1,8 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterUserInput, reduceStatus } from '@shared/agents/status-rules';
+import { afterUserInput, reduceStatus, type UserInputKind } from '@shared/agents/status-rules';
 import type { AgentId } from '@shared/types/agent';
-import type { AgentStatus, AgentStatusEvent } from '@shared/types/agent-status';
+import type { AgentStatus, AgentStatusEvent, StatusReason } from '@shared/types/agent-status';
 import type { SessionId } from '@shared/types/session';
 import { EventSpool, type EventMeta } from './status/spool';
 
@@ -59,6 +59,7 @@ export class AgentStatusService {
 
   /** Starts listening for the hook events of a tab; returns the directory the agent must write to. */
   watch(id: SessionId, nonce: string): string {
+    this.spools.get(id)?.stop(); // never two watchers on one tab (a restart, a re-attach)
     const spool = new EventSpool(this.spoolDir(id), id, nonce, (e, meta) => this.apply(e, meta), this.now, this.deps.log);
     this.spools.set(id, spool);
     spool.start();
@@ -71,21 +72,23 @@ export class AgentStatusService {
   /**
    * A tab that starts an agent. With hooks in place it is `starting` until the agent's first event; if none comes within
    * `NO_EVENTS_MS` it becomes `unknown` (the time only ever lowers it to unknown, it never confirms anything).
-   * Without hooks (nothing will ever be reported) it is `unknown` at once.
+   * Without hooks (nothing will ever be reported) it is `unknown` at once, with the reason in `noHooks`.
    */
-  begin(id: SessionId, agentId: AgentId, hooksExpected = true): void {
+  begin(id: SessionId, agentId: AgentId, noHooks?: Extract<StatusReason, `no-hooks-${string}`>): void {
+    const hooksExpected = !noHooks;
     this.spools.get(id)?.setFast(true);
     this.lastSentAt.delete(id);
     this.apply({
       sessionId: id, agentId, state: hooksExpected ? 'starting' : 'unknown', timestamp: this.now(),
-      source: 'pty', confidence: 'high', detail: { event: hooksExpected ? 'start' : 'start-no-hooks' }
+      source: 'pty', confidence: 'high', detail: { event: hooksExpected ? 'start' : 'start-no-hooks' },
+      ...(noHooks ? { reason: noHooks } : {})
     });
     this.cancelStartTimer(id);
     if (!hooksExpected) return;
     const t = setTimeout(() => {
       this.startTimers.delete(id);
       if (this.status.get(id)?.state !== 'starting') return;
-      this.apply({ sessionId: id, agentId, state: 'unknown', timestamp: this.now(), source: 'pty', confidence: 'high', detail: { event: 'no-events' } });
+      this.apply({ sessionId: id, agentId, state: 'unknown', timestamp: this.now(), source: 'pty', confidence: 'high', detail: { event: 'no-events' }, reason: 'no-events' });
     }, this.deps.noEventsMs ?? NO_EVENTS_MS);
     t.unref?.();
     this.startTimers.set(id, t);
@@ -128,14 +131,18 @@ export class AgentStatusService {
 
   /** BEL / OSC 9 / OSC 777 seen in a tab that runs an agent: a hint that something wants attention, nothing more. */
   terminalSignal(id: SessionId, agentId: AgentId): void {
-    this.apply({ sessionId: id, agentId, state: 'unknown', timestamp: this.now(), source: 'terminal-signal', confidence: 'low', detail: { event: 'signal' } });
+    this.apply({ sessionId: id, agentId, state: 'unknown', timestamp: this.now(), source: 'terminal-signal', confidence: 'low', detail: { event: 'signal' }, reason: 'signal' });
   }
 
-  exited(id: SessionId, agentId: AgentId): void {
-    this.apply({ sessionId: id, agentId, state: 'exited', timestamp: this.now(), source: 'pty', confidence: 'high', detail: { event: 'exit' } });
+  /** The process ended; a non-zero `exitCode` (or none, for a failed start) is an abnormal end and counts as news. */
+  exited(id: SessionId, agentId: AgentId, exitCode?: number | null): void {
+    this.apply({
+      sessionId: id, agentId, state: 'exited', timestamp: this.now(), source: 'pty', confidence: 'high',
+      detail: { event: 'exit', ...(exitCode ? { exitCode } : {}) }
+    });
   }
 
-  userInput(id: SessionId, kind: 'any' | 'interrupt' = 'any'): void {
+  userInput(id: SessionId, kind: UserInputKind): void {
     const cur = this.status.get(id);
     if (!cur) return;
     const next = afterUserInput(cur, this.now(), kind);
@@ -156,14 +163,26 @@ export class AgentStatusService {
   }
 
   private hookTabs = new Set<SessionId>();
+  private noHooksTabs = new Map<SessionId, Extract<StatusReason, `no-hooks-${string}`>>();
 
   /** This tab's shell was started with the variables that let an agent typed into it report its status. */
   expectHooks(id: SessionId): void {
     this.hookTabs.add(id);
+    this.noHooksTabs.delete(id);
+  }
+
+  /** This tab's shell cannot report (Windows-native, another shell, unsafe paths): an agent typed into it stays `unknown` with this reason. */
+  noHooks(id: SessionId, reason: Extract<StatusReason, `no-hooks-${string}`>): void {
+    this.hookTabs.delete(id);
+    this.noHooksTabs.set(id, reason);
   }
 
   hooksExpected(id: SessionId): boolean {
     return this.hookTabs.has(id);
+  }
+
+  noHooksReason(id: SessionId): Extract<StatusReason, `no-hooks-${string}`> | undefined {
+    return this.hookTabs.has(id) ? undefined : (this.noHooksTabs.get(id) ?? 'no-hooks-shell');
   }
 
   /** The agent in a shell tab ended: its status goes, the tab keeps listening for the next one. */
@@ -171,6 +190,8 @@ export class AgentStatusService {
     this.cancelClear(id);
     this.cancelStartTimer(id);
     this.lastSentAt.delete(id);
+    // a file the ended agent wrote but we have not read yet must not land on the next agent of this tab
+    this.spools.get(id)?.discardPending();
     this.spools.get(id)?.setFast(false);
     if (this.status.delete(id)) {
       this.deps.log?.('agent status cleared', { id });
@@ -210,6 +231,7 @@ export class AgentStatusService {
     this.cancelStartTimer(id);
     this.lastSentAt.delete(id);
     this.hookTabs.delete(id);
+    this.noHooksTabs.delete(id);
     if (!this.spools.has(id) && !this.status.has(id)) return;
     this.spools.get(id)?.stop();
     this.spools.delete(id);

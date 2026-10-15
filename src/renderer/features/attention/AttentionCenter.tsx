@@ -1,5 +1,6 @@
 import { AGENT_META } from '@shared/agents/meta';
-import { runsAgent, tabStatus, type TabStatus } from '@shared/agents/tab-status';
+import { ATTENTION_SHOWN, attentionCounts } from '@shared/agents/attention';
+import { runsAgent, tabStatus } from '@shared/agents/tab-status';
 import { Bell, BellRing } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,10 +16,6 @@ import { useSessions } from '@/stores/sessions';
 import { StatusIndicator } from './StatusIndicator';
 import { stateLabelKey, tabLabel } from './status-view';
 
-const SHOWN: TabStatus[] = ['approval', 'waiting', 'finished', 'error'];
-/** An approval or a question stays until the agent moves on; opening the tab does not answer it. */
-const UNRESOLVED: TabStatus[] = ['approval', 'waiting'];
-
 const projectOf = (path: string | undefined): string => (path ? path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path : '');
 
 /** The bell at the right of the tab bar: the agents that need the user, one click from their terminal. */
@@ -29,7 +26,6 @@ export function AttentionCenter() {
   const infos = useSessions((s) => s.infos);
   const order = useSessions((s) => s.order);
   const uiPhase = useSessions((s) => s.uiPhase);
-  const activeId = useSessions((s) => s.activeId);
 
   const rows = order
     .flatMap((id) => {
@@ -37,16 +33,13 @@ export function AttentionCenter() {
       if (!info || !runsAgent(info)) return [];
       const agent = byId[id];
       const status = tabStatus(info, uiPhase[id], agent);
-      if (!SHOWN.includes(status)) return [];
+      if (!ATTENTION_SHOWN.includes(status)) return [];
       const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
       return [{ id, info, status, agent, since: agent?.since ?? info.createdAt, name: agentId ? AGENT_META[agentId].name : '' }];
     })
-    .sort((a, b) => SHOWN.indexOf(a.status) - SHOWN.indexOf(b.status) || b.since - a.since);
+    .sort((a, b) => ATTENTION_SHOWN.indexOf(a.status) - ATTENTION_SHOWN.indexOf(b.status) || b.since - a.since);
 
-  const unresolved = rows.filter((r) => UNRESOLVED.includes(r.status)).length;
-  // unread: news nobody has looked at yet (a finished turn, a failure in a tab that is not in front)
-  const unread = rows.filter((r) => !UNRESOLVED.includes(r.status) && (r.agent?.unread || (r.status === 'error' && r.id !== activeId))).length;
-  const count = unresolved + unread;
+  const { unresolved, unread, total: count } = attentionCounts(rows.map((r) => ({ status: r.status, unread: !!r.agent?.unread })));
   const Icon = unresolved > 0 ? BellRing : Bell;
 
   return (

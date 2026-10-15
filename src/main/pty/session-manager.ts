@@ -35,6 +35,8 @@ export interface AgentLaunch {
   capabilities?: SessionInfo['agentCaps'];
   /** Hooks / notify were added to the command line, so the agent will report its status. */
   statusHooks?: boolean;
+  /** Why no hooks were added (only when `statusHooks` is false). */
+  noHooksReason?: 'no-hooks-windows' | 'no-hooks-cli' | 'no-hooks-shell';
 }
 
 export interface SessionManagerDeps {

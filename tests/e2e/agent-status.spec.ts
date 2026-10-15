@@ -76,6 +76,12 @@ test('structured events drive the tab, the attention center and the palette; pla
     // looking at the tab does not answer the approval: it stays on the bell until the agent moves on
     await page.waitForTimeout(800);
     await expect(page.getByTestId('attention-badge')).toHaveAttribute('data-unresolved', '1');
+    // nor does typing: no false approved / ready / dismissed
+    await page.keyboard.type('y');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+    await expect(agentTab.locator('[data-status]')).toHaveAttribute('data-status', 'approval');
+    await expect(page.getByTestId('attention-badge')).toHaveAttribute('data-unresolved', '1');
     drop(userData, a.id, 'resume', a.nonce, 'claude', { hook_event_name: 'PostToolUse', tool_name: 'Bash' });
     await expect(page.getByTestId('attention-badge')).toHaveCount(0, { timeout: 10_000 });
 
@@ -113,9 +119,10 @@ test('structured events drive the tab, the attention center and the palette; pla
     drop(userData, a.id, 'q2', a.nonce, 'claude', { hook_event_name: 'Notification', notification_type: 'permission_prompt' });
     await page.waitForTimeout(1500);
     await expect(agentTab.locator('[data-status]')).toHaveAttribute('data-status', 'waiting');
-    // looking at that tab, the question looks like the normal ready state; the bell still lists it
+    // looking at that tab never changes the truth: it is still a question, only the unread marker goes
     await agentTab.click();
-    await expect(agentTab.locator('[data-status]')).toHaveAttribute('data-status', 'ready');
+    await expect(agentTab.locator('[data-status]')).toHaveAttribute('data-status', 'waiting');
+    await expect(agentTab.locator('[data-status]')).not.toHaveAttribute('data-unread', 'true');
     await page.getByTestId('attention-button').click();
     await expect(page.getByTestId('attention-row-waiting')).toHaveCount(1);
     await page.keyboard.press('Escape');

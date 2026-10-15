@@ -1,4 +1,5 @@
 import { AGENT_META } from '@shared/agents/meta';
+import { NotificationLedger, notificationFor } from '@shared/agents/notification';
 import type { AgentStatus } from '@shared/types/agent-status';
 import { api } from '@/lib/api';
 import { tNow } from '@/lib/i18n';
@@ -6,20 +7,25 @@ import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { tabLabel } from './status-view';
 
-const lastAt = new Map<string, number>();
+const ledger = new NotificationLedger();
 
-/** Raises an operating-system notification when a tab that nobody is looking at newly needs the user (at most one per tab every 10 s). */
-export function notifyStatus(prev: AgentStatus | undefined, next: AgentStatus): void {
-  if (!next.unread || (prev?.unread && prev.state === next.state)) return;
-  const attentionState = next.state === 'needs-approval' || next.state === 'waiting' || next.state === 'finished';
-  const hint = next.state === 'unknown' && next.source === 'terminal-signal';
-  if (!attentionState && !hint) return;
+/** Forget a closed tab's last announcement. */
+export const forgetNotified = (id: string): void => ledger.forget(id);
+
+/**
+ * Raises an operating-system notification when a tab that nobody is looking at has a new event that needs the user.
+ * Identity is the event (state + when it began), not a time window. Text is the tab name, the agent and the state: never output.
+ */
+export function notifyStatus(_prev: AgentStatus | undefined, next: AgentStatus): void {
+  const n = notificationFor(next);
+  if (!n || !ledger.claim(next.sessionId, n.key)) return;
   if (!useUi.getState().prefs.agentNotifications) return;
-  const now = Date.now();
-  if (now - (lastAt.get(next.sessionId) ?? 0) < 10_000) return;
-  lastAt.set(next.sessionId, now);
   const info = useSessions.getState().infos[next.sessionId];
   const title = info ? tabLabel(info) : AGENT_META[next.agentId].name;
-  const body = hint ? tNow('agent.needsAttention') : `${AGENT_META[next.agentId].name}: ${tNow(`agent.state.${next.state}` as 'agent.state.waiting')}`;
+  const name = AGENT_META[next.agentId].name;
+  const body =
+    n.kind === 'hint' ? tNow('agent.needsAttention')
+    : n.kind === 'error' ? `${name}: ${tNow('agent.state.error')}`
+    : `${name}: ${tNow(`agent.state.${n.kind}` as 'agent.state.waiting')}`;
   void api.app.notify(next.sessionId, title, body);
 }

@@ -1,4 +1,4 @@
-import type { AgentState, AgentStatus, AgentStatusEvent, Confidence } from '../types/agent-status';
+import type { AgentState, AgentStatus, AgentStatusEvent, Confidence, StatusReason } from '../types/agent-status';
 
 const RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
@@ -10,8 +10,10 @@ export function clampEvent(ev: AgentStatusEvent): AgentStatusEvent {
   return ev;
 }
 
+const abnormalExit = (ev: AgentStatusEvent): boolean => ev.state === 'exited' && (ev.detail?.exitCode ?? 0) !== 0;
+
 const wantsAttention = (ev: AgentStatusEvent): boolean =>
-  ev.state === 'needs-approval' || ev.state === 'waiting' || ev.state === 'finished' || ev.source === 'terminal-signal';
+  ev.state === 'needs-approval' || ev.state === 'waiting' || ev.state === 'finished' || ev.source === 'terminal-signal' || abnormalExit(ev);
 
 /**
  * Folds one event into the status of a tab. Returns the same object when the event changes nothing.
@@ -30,12 +32,23 @@ export function reduceStatus(prev: AgentStatus | undefined, raw: AgentStatusEven
   return { ...ev, since: changed ? ev.timestamp : prev!.since, unread };
 }
 
-/** The user typed into the tab: a pending approval (or work that was interrupted) is no longer known, so it is not guessed either way. */
-export function afterUserInput(prev: AgentStatus, now: number, kind: 'any' | 'interrupt' = 'any'): AgentStatus {
-  // Esc / Ctrl+C while it works: Claude Code sends no "stop" event when it is interrupted, so "working" can no longer be vouched for
-  const unsure = prev.state === 'needs-approval' || (prev.state === 'working' && kind === 'interrupt');
-  if (!unsure) return prev;
-  return { ...prev, state: 'unknown', confidence: 'low', since: now, timestamp: now, unread: false };
+export type UserInputKind = 'interrupt' | 'submit';
+
+/**
+ * Two key presses can make the current status untrustworthy; nothing else the user types changes it.
+ * - `interrupt` (Esc / Ctrl+C) while it works or asks for approval: Claude Code sends no event when interrupted or when a prompt is
+ *   dismissed, so neither state can be vouched for any more. Ordinary typing (arrows, Enter on "Yes", ...) says nothing about whether
+ *   an approval was answered: it stays pending until a hook, the process or the tab's agent ending says otherwise.
+ * - `submit` (Enter) in a Codex tab that shows `finished`: Codex reports only the end of a turn, so a new turn can start unseen.
+ *   The stale `finished` goes to a low-confidence `unknown` (never `working`); the next `agent-turn-complete` sets it again.
+ */
+export function afterUserInput(prev: AgentStatus, now: number, kind: UserInputKind): AgentStatus {
+  let reason: StatusReason | undefined;
+  if (kind === 'interrupt' && (prev.state === 'needs-approval' || prev.state === 'working')) reason = 'interrupted';
+  else if (kind === 'submit' && prev.agentId === 'codex' && prev.state === 'finished') reason = 'turn-unconfirmed';
+  if (!reason) return prev;
+  const { detail: _detail, ...rest } = prev;
+  return { ...rest, state: 'unknown', confidence: 'low', reason, since: now, timestamp: now, unread: false };
 }
 
 export const STATE_ORDER: AgentState[] = ['needs-approval', 'waiting', 'finished', 'working', 'ready', 'starting', 'unknown', 'exited'];

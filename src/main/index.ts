@@ -143,7 +143,7 @@ async function start(): Promise<void> {
       const eventsDir = agentStatus.watch(ctx.id, ctx.nonce);
       try {
         const launch = await agents.launch(spec, { ...ctx, eventsDir, settingsPath: agentStatus.settingsPath(ctx.id) });
-        agentStatus.begin(ctx.id, launch.agentId, !!launch.statusHooks);
+        agentStatus.begin(ctx.id, launch.agentId, launch.statusHooks ? undefined : (launch.noHooksReason ?? 'no-hooks-cli'));
         return launch;
       } catch (e) {
         agentStatus.forget(ctx.id);
@@ -157,7 +157,10 @@ async function start(): Promise<void> {
         script: hookScript(), toPosix: (d, p) => wsl.toPosix(d, p)
       });
       if (env) agentStatus.expectHooks(c.id);
-      else agentStatus.forget(c.id);
+      else {
+        agentStatus.forget(c.id);
+        agentStatus.noHooks(c.id, c.env.kind === 'windows' ? 'no-hooks-windows' : 'no-hooks-shell');
+      }
       return env;
     },
     wslBranch: (cwd) => envQuery.gitBranch({ kind: 'wsl', distro: cwd.distro }, cwd.path),
@@ -177,12 +180,12 @@ async function start(): Promise<void> {
         }
       }
       if (info.phase === 'editing') mark('shellPrompt');
-      if (info.kind === 'agent' && info.agentId && (info.state === 'exited' || info.state === 'failed')) agentStatus.exited(info.id, info.agentId);
+      if (info.kind === 'agent' && info.agentId && (info.state === 'exited' || info.state === 'failed')) agentStatus.exited(info.id, info.agentId, info.state === 'failed' ? -1 : info.exit?.code);
       else if (info.kind === 'shell') {
         if (!info.runningAgent) agentStatus.clearSoon(info.id); // the agent typed into this tab has ended
         else {
           agentStatus.cancelClear(info.id);
-          if (!agentStatus.has(info.id)) agentStatus.begin(info.id, info.runningAgent.agentId, agentStatus.hooksExpected(info.id));
+          if (!agentStatus.has(info.id)) agentStatus.begin(info.id, info.runningAgent.agentId, agentStatus.noHooksReason(info.id));
         }
       }
       sendInfo(win, info);

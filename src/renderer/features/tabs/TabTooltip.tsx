@@ -3,7 +3,7 @@ import type { MessageKey } from '@shared/i18n';
 import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { formatElapsed } from '@/lib/elapsed';
-import { stateLabelKey, tabLabel, useTabStatus } from '../attention/status-view';
+import { statusLabelKey, tabLabel, useTabStatus } from '../attention/status-view';
 
 /** The compact status card of a tab. Only mounted while the tooltip is open, so its clock runs only then. */
 export function TabTooltip({ id }: { id: string }) {
@@ -18,21 +18,22 @@ export function TabTooltip({ id }: { id: string }) {
 
   const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
   const heading = agentId ? AGENT_META[agentId].name : info.title.split(' · ')[0];
-  const live = agent && (status === 'working' || status === 'waiting' || status === 'approval' || status === 'finished' || status === 'ready');
+  const live = agent && status !== 'exited' && status !== 'error' && status !== 'starting';
   let note: string | undefined;
   if (status === 'approval') note = t('tooltip.actionInTerminal');
   else if (agentId && (status === 'unknown' || status === 'starting')) {
-    note = agent?.detail?.event === 'start-no-hooks' ? t('tooltip.noHooks') : t('tooltip.noEventsYet');
+    note = agent?.reason ? t(`tooltip.reason.${agent.reason}` as MessageKey) : t('tooltip.noEventsYet');
   }
 
   return (
     <div className="space-y-0.5" data-testid="tab-tooltip">
       <div className="font-medium">{heading}</div>
-      <div>{t('tooltip.status', { state: t(stateLabelKey(status)) })}</div>
+      <div>{t('tooltip.status', { state: t(statusLabelKey(status, agent)) })}</div>
       {agentId && <div>{t('tooltip.session', { name: tabLabel(info) })}</div>}
       {agentId && info.agentTopic && tabLabel(info) !== info.title && <div className="text-fg-muted">{info.title}</div>}
       {live && agent && <div>{t('tooltip.elapsed', { time: formatElapsed(now - agent.since) })}</div>}
       {note && <div className="text-fg-muted">{note}</div>}
+      {agentId === 'codex' && status !== 'unknown' && status !== 'starting' && <div className="text-fg-muted">{t('tooltip.codexLimit')}</div>}
       {agent && agent.source !== 'pty' && (
         <div className="text-[10px] text-fg-muted">
           {t('tooltip.source', {

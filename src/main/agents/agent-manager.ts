@@ -224,7 +224,8 @@ export class AgentManager {
       summary,
       unsafe,
       capabilities: d.capabilities,
-      statusHooks: statusArgs.length > 0
+      statusHooks: statusArgs.length > 0,
+      ...(statusArgs.length > 0 ? {} : { noHooksReason: kind === 'windows' ? ('no-hooks-windows' as const) : ('no-hooks-cli' as const) })
     };
   }
 }

@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { useAgentStatus } from '@/stores/agent-status';
-import { notifyStatus } from '@/features/attention/notify';
+import { forgetNotified, notifyStatus } from '@/features/attention/notify';
 import { defaultProfile, openShell, wasClosedHere } from '@/features/launcher/actions';
 import { refreshAgents } from '@/features/launcher/NewTabMenu';
 import { SettingsDialog } from '@/features/settings/SettingsDialog';
@@ -81,7 +81,10 @@ export function App() {
         if (info.state === 'exited') h.tracker.closed();
       }
     });
-    const offClosed = api.sessions.onClosed((id) => useSessions.getState().remove(id));
+    const offClosed = api.sessions.onClosed((id) => {
+      forgetNotified(id);
+      useSessions.getState().remove(id);
+    });
     const offFocus = api.sessions.onFocusRequested((id) => {
       if (useSessions.getState().infos[id]) useSessions.getState().setActive(id);
     });

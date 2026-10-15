@@ -34,19 +34,44 @@ describe('status rules', () => {
     expect(s.unread).toBe(true);
   });
 
-  it('typing clears a pending approval to unknown instead of guessing', () => {
+  it('ordinary typing never changes a pending approval or work in progress', () => {
     const cur = reduceStatus(undefined, ev({ state: 'needs-approval' }), false);
-    const after = afterUserInput(cur, 500);
-    expect(after.state).toBe('unknown');
-    expect(after.unread).toBe(false);
-    expect(afterUserInput(reduceStatus(undefined, ev({ state: 'working' }), true), 500).state).toBe('working');
+    expect(afterUserInput(cur, 500, 'submit')).toBe(cur);
+    const working = reduceStatus(undefined, ev({ state: 'working' }), true);
+    expect(afterUserInput(working, 500, 'submit')).toBe(working);
   });
 
-  it('Esc / Ctrl+C while working makes it unknown (no stop event is sent on interrupt); other typing does not', () => {
-    const working = reduceStatus(undefined, ev({ state: 'working' }), true);
-    expect(afterUserInput(working, 500, 'any').state).toBe('working');
-    expect(afterUserInput(working, 500, 'interrupt').state).toBe('unknown');
+  it('Esc / Ctrl+C on working or approval makes it unknown (interrupted); a finished turn stays finished', () => {
+    for (const state of ['working', 'needs-approval'] as const) {
+      const after = afterUserInput(reduceStatus(undefined, ev({ state }), true), 500, 'interrupt');
+      expect(after.state).toBe('unknown');
+      expect(after.reason).toBe('interrupted');
+      expect(after.confidence).toBe('low');
+      expect(after.unread).toBe(false);
+    }
     const finished = reduceStatus(undefined, ev({ state: 'finished' }), true);
-    expect(afterUserInput(finished, 500, 'interrupt').state).toBe('finished');
+    expect(afterUserInput(finished, 500, 'interrupt')).toBe(finished);
+  });
+
+  it('Enter after a Codex finished turn is unconfirmed, never working; other agents are untouched', () => {
+    const codex = reduceStatus(undefined, ev({ agentId: 'codex', source: 'codex-notify', state: 'finished' }), true);
+    const after = afterUserInput(codex, 500, 'submit');
+    expect(after.state).toBe('unknown');
+    expect(after.reason).toBe('turn-unconfirmed');
+    const claude = reduceStatus(undefined, ev({ state: 'finished' }), true);
+    expect(afterUserInput(claude, 500, 'submit')).toBe(claude);
+  });
+
+  it('a later turn-complete overrides the unconfirmed state', () => {
+    const codex = reduceStatus(undefined, ev({ agentId: 'codex', source: 'codex-notify', state: 'finished', timestamp: 100 }), true);
+    const unsure = afterUserInput(codex, 200, 'submit');
+    expect(reduceStatus(unsure, ev({ agentId: 'codex', source: 'codex-notify', state: 'finished', timestamp: 300 }), true).state).toBe('finished');
+  });
+
+  it('an abnormal exit is unread when nobody watches; a clean one is not', () => {
+    const bad = reduceStatus(undefined, ev({ state: 'exited', source: 'pty', detail: { event: 'exit', exitCode: 2 } }), false);
+    expect(bad.unread).toBe(true);
+    const ok = reduceStatus(undefined, ev({ state: 'exited', source: 'pty', detail: { event: 'exit' } }), false);
+    expect(ok.unread).toBe(false);
   });
 });

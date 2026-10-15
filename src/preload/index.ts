@@ -144,7 +144,7 @@ const api = {
     signal: (sessionId: SessionId): Promise<void> => ipcRenderer.invoke('agentStatus:signal', { sessionId }),
     /** The tab in front, or null: statuses of the tab being looked at are read at once. */
     active: (sessionId: SessionId | null): Promise<void> => ipcRenderer.invoke('agentStatus:active', { sessionId }),
-    input: (sessionId: SessionId, kind?: 'any' | 'interrupt'): Promise<void> => ipcRenderer.invoke('agentStatus:input', { sessionId, ...(kind ? { kind } : {}) }),
+    input: (sessionId: SessionId, kind: 'submit' | 'interrupt'): Promise<void> => ipcRenderer.invoke('agentStatus:input', { sessionId, kind }),
     markRead: (sessionId: SessionId | 'all'): Promise<void> => ipcRenderer.invoke('agentStatus:markRead', { sessionId }),
     /** `null` status: the tab no longer has one. */
     onChanged: (cb: (v: { id: SessionId; status: AgentStatus | null }) => void): Unsub => subscribe('agentStatus:changed', cb)

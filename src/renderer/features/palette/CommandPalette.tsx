@@ -10,7 +10,7 @@ import { COMMANDS, OPEN_PALETTE_EVENT, commandCtx, commandShortcut, commandTitle
 import { filterRanked } from '@/commands/filter';
 import { runsAgent, tabStatus, type TabStatus } from '@shared/agents/tab-status';
 import { StatusIndicator } from '../attention/StatusIndicator';
-import { stateLabelKey, tabLabel } from '../attention/status-view';
+import { statusLabelKey, tabLabel } from '../attention/status-view';
 
 type Row =
   | { kind: 'command'; command: Command; title: string }
@@ -55,7 +55,7 @@ export function CommandPalette() {
       const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
       const agent = agentId ? AGENT_META[agentId].name : '';
       const shown = runsAgent(info) ? tabStatus(info, undefined, st) : null;
-      const state = shown ? t(stateLabelKey(shown)) : '';
+      const state = shown ? t(statusLabelKey(shown, st)) : '';
       const detail = [agent, state, info.cwd?.path].filter(Boolean).join(' · ');
       return [{
         item: { kind: 'session', id, title: tabLabel(info), detail, display: runsAgent(info) ? tabStatus(info, undefined, st) : null } as Row,

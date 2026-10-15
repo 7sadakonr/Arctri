@@ -15,6 +15,8 @@ export interface EventMeta {
 
 export const IDLE_POLL_MS = 1000;
 export const FAST_POLL_MS = 250;
+/** One pass reads at most this many files, so a burst never holds the main thread for long; the rest follows on the next turn of the event loop. */
+export const MAX_PER_PASS = 25;
 
 export class EventSpool {
   private watcher?: FSWatcher;
@@ -56,6 +58,29 @@ export class EventSpool {
     this.timer.unref?.();
   }
 
+  /** Reads and throws away whatever is waiting: events of an agent that has ended are not news for the next one. */
+  discardPending(): void {
+    this.discarding = true;
+    try {
+      for (let i = 0; i < 20 && (i === 0 || this.pending() > 0); i++) this.drain();
+    } finally {
+      this.discarding = false;
+    }
+  }
+
+  private discarding = false;
+
+  private pending(): number {
+    try {
+      return readdirSync(this.dir).filter((n) => n.endsWith('.json')).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  private more?: ReturnType<typeof setImmediate>;
+  private stopped = false;
+
   drain(): void {
     let names: string[];
     try {
@@ -63,7 +88,13 @@ export class EventSpool {
     } catch {
       return;
     }
-    for (const name of names.slice(0, 200)) {
+    if (names.length > MAX_PER_PASS && !this.more && !this.stopped) {
+      this.more = setImmediate(() => {
+        this.more = undefined;
+        this.drain();
+      });
+    }
+    for (const name of names.slice(0, MAX_PER_PASS)) {
       const file = join(this.dir, name);
       let text: string | undefined;
       try {
@@ -78,6 +109,7 @@ export class EventSpool {
       } catch {
         // keep going; it is dropped on the next pass
       }
+      if (this.discarding) continue;
       const ev = text === undefined ? null : parseEnvelope(text, this.nonce, { sessionId: this.sessionId, now: this.now() });
       if (ev) {
         const sent = text === undefined ? undefined : sentAtMs(text);
@@ -93,8 +125,12 @@ export class EventSpool {
   }
 
   stop(): void {
+    this.stopped = true;
     this.watcher?.close();
     if (this.timer) clearInterval(this.timer);
+    if (this.more) clearImmediate(this.more);
+    this.more = undefined;
+    for (let i = 0; i < 20 && this.pending() > 0; i++) this.drain(); // the last events of a closing tab are still read, in order
     this.drain();
     try {
       rmSync(this.dir, { recursive: true, force: true });

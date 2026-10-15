@@ -111,12 +111,13 @@ export class TerminalHost {
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
     this.term.onData((d) => api.sessions.write(info.id, d));
     // Only real key presses count here: onData also carries the terminal's own replies and focus reports.
-    // Typing into a tab that asked for approval, or Esc / Ctrl+C while it works: what happens next is not known, so the mark goes away.
+    // Esc / Ctrl+C while it works or asks for approval, or Enter after a finished turn (the main process decides what that means per agent).
     this.term.onKey(({ domEvent: e }) => {
       if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
       const st = useAgentStatus.getState().byId[this.info.id]?.state;
-      if (st === 'needs-approval') void api.agentStatus.input(this.info.id);
-      else if (st === 'working' && (e.key === 'Escape' || (e.ctrlKey && e.key.toLowerCase() === 'c'))) void api.agentStatus.input(this.info.id, 'interrupt');
+      const interrupt = e.key === 'Escape' || (e.ctrlKey && e.key.toLowerCase() === 'c');
+      if ((st === 'needs-approval' || st === 'working') && interrupt) void api.agentStatus.input(this.info.id, 'interrupt');
+      else if (st === 'finished' && e.key === 'Enter') void api.agentStatus.input(this.info.id, 'submit');
     });
     this.term.onResize(({ cols, rows }) => void api.sessions.resize(info.id, cols, rows));
     this.term.onBell(() => this.agentSignal('', ''));

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Agent status you can trust.** Tab marks, the tooltip, the command palette and the attention bell (bell icon in the tab bar) show one status, from
+  hook / notify events and the process only; output text is never read. Looking at a tab only clears its unread marker: a question or an approval
+  still reads Waiting / Approval, and stays in the bell until the agent moves on. Ordinary typing no longer dismisses a pending approval; only
+  Esc / Ctrl+C (the CLI sends no event then) makes it Unknown, with the reason in the tooltip. Codex reports only the end of a turn, so after you press
+  Enter on a finished turn its mark becomes Unknown ("a new turn may have started") until the next turn-complete. A failed or non-zero exit is unread news.
+  The bell badge counts each unresolved item once and unread news only until it is seen. OS notifications are decided per event (state + when it began)
+  instead of one per tab every 10 s, so an approval right after a finished turn is announced. Hook event files are read in bounded passes
+  (at most 25 per pass) and a tab never keeps two watchers.
+  Known limits: Windows-native agents and agents in shells other than bash/zsh have no hooks and show "Status tracking unavailable" with the reason;
+  Codex has no working / approval events; a "No" answered on a Claude permission prompt stays Approval until Claude's next hook event; macOS is untested here.
 - **macOS (Apple Silicon and Intel).** Arctri finds the shells of the Mac (zsh, bash, Homebrew bash), opens the login shell by
   default and gives it the same command blocks, completion, Files/Changes/Branches/History and agent support as on Windows.
   The window uses the traffic lights, a menu in the system menu bar for Cmd+Q / Cmd+H / Edit, and Cmd shortcuts (Cmd+T, Cmd+W,

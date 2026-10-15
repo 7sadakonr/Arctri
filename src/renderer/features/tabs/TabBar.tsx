@@ -29,8 +29,8 @@ function TabIcon({ id }: { id: string }) {
 
 /** The status of a tab, after its name (a fixed 14 px box, so it never moves the name). */
 function TabStatusMark({ id }: { id: string }) {
-  const { shown, agent } = useTabStatus(id);
-  return shown ? <StatusIndicator status={shown} unread={!!agent?.unread} /> : null;
+  const { status, agent } = useTabStatus(id);
+  return status ? <StatusIndicator status={status} unread={!!agent?.unread} /> : null;
 }
 
 function Tab({ id, index }: { id: string; index: number }) {

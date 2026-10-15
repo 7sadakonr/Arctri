@@ -79,7 +79,7 @@ export const requestSchemas = {
   'agentStatus:list': z.undefined().or(z.null()),
   'agentStatus:signal': z.object({ sessionId: id }),
   'agentStatus:active': z.object({ sessionId: id.nullable() }),
-  'agentStatus:input': z.object({ sessionId: id, kind: z.enum(['any', 'interrupt']).optional() }),
+  'agentStatus:input': z.object({ sessionId: id, kind: z.enum(['submit', 'interrupt']) }),
   'agentStatus:markRead': z.object({ sessionId: id.or(z.literal('all')) }),
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),

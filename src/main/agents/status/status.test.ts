@@ -87,7 +87,7 @@ describe('spool and service', () => {
     svc['spools'].get('s1')!.drain();
     expect(svc.dropped()).toBe(1);
     expect(readdirSync(dir)).toEqual(['1.json.tmp']);
-    svc.userInput('s1');
+    svc.userInput('s1', 'interrupt');
     expect(seen.at(-1)?.state).toBe('unknown');
     svc.forget('s1');
   });
@@ -156,11 +156,12 @@ describe('service: starting, stale and simultaneous sessions', () => {
     vi.useFakeTimers();
     try {
       const { svc } = make({ noEventsMs: 1000 });
-      svc.begin('a', 'claude-code', true);
+      svc.begin('a', 'claude-code');
       expect(svc.list().find((s) => s.sessionId === 'a')?.state).toBe('starting');
       vi.advanceTimersByTime(1100);
       expect(svc.list().find((s) => s.sessionId === 'a')?.state).toBe('unknown');
-      svc.begin('b', 'codex', false);
+      svc.begin('b', 'codex', 'no-hooks-windows');
+      expect(svc.list().find((s) => s.sessionId === 'b')?.reason).toBe('no-hooks-windows');
       expect(svc.list().find((s) => s.sessionId === 'b')?.state).toBe('unknown');
     } finally {
       vi.useRealTimers();
@@ -171,7 +172,7 @@ describe('service: starting, stale and simultaneous sessions', () => {
     vi.useFakeTimers();
     try {
       const { svc } = make({ noEventsMs: 1000 });
-      svc.begin('a', 'claude-code', true);
+      svc.begin('a', 'claude-code');
       svc.apply(ev({ sessionId: 'a', state: 'ready' }));
       vi.advanceTimersByTime(5000);
       expect(svc.list().find((s) => s.sessionId === 'a')?.state).toBe('ready');
@@ -182,7 +183,7 @@ describe('service: starting, stale and simultaneous sessions', () => {
 
   it('full agent turn: ready, working, approval, working, finished, and a new turn', () => {
     const { svc } = make();
-    svc.begin('a', 'claude-code', true);
+    svc.begin('a', 'claude-code');
     const states: string[] = [];
     let t = Date.now() + 60_000;
     for (const state of ['ready', 'working', 'needs-approval', 'working', 'finished', 'working'] as const) {
@@ -227,5 +228,144 @@ describe('the late permission notification of a question', () => {
     svc.apply({ ...base, state: 'working', timestamp: now + 7000, detail: { event: 'PreToolUse', tool: 'Bash' } });
     svc.apply({ ...base, state: 'needs-approval', timestamp: now + 8000, detail: { event: 'Notification', notificationType: 'permission_prompt' } });
     expect(svc.list().find((s) => s.sessionId === 'q')?.state).toBe('needs-approval');
+  });
+});
+
+describe('state machine through the service', () => {
+  const make = () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-sm-'));
+    const seen: Array<AgentStatus | null> = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: (s) => seen.push(s) });
+    return { svc, seen };
+  };
+  let t = Date.now() + 60_000;
+  const hook = (o: Partial<AgentStatus>): AgentStatus => ({
+    sessionId: 'a', agentId: 'claude-code', state: 'working', timestamp: (t += 10), source: 'claude-hook', confidence: 'high', since: 1, unread: false, ...o
+  });
+  const state = (svc: AgentStatusService, id = 'a') => svc.list().find((s) => s.sessionId === id)?.state;
+
+  it('typing, arrows and Enter while an approval is pending change nothing; Esc / Ctrl+C make it unknown with a reason', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'needs-approval' }));
+    svc.userInput('a', 'submit');
+    expect(state(svc)).toBe('needs-approval');
+    svc.userInput('a', 'interrupt');
+    expect(state(svc)).toBe('unknown');
+    expect(svc.list()[0]?.reason).toBe('interrupted');
+    svc.apply(hook({ state: 'working' }));
+    expect(state(svc)).toBe('working'); // the next trustworthy event sets it again
+  });
+
+  it('an approval is resolved by the next hook event, not by the user typing', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'needs-approval' }));
+    svc.apply(hook({ state: 'working', detail: { event: 'PostToolUse', tool: 'Bash' } }));
+    expect(state(svc)).toBe('working');
+  });
+
+  it('Codex: a finished turn goes unconfirmed on Enter, and the next turn-complete sets finished again', () => {
+    const { svc } = make();
+    svc.apply(hook({ agentId: 'codex', source: 'codex-notify', state: 'finished' }));
+    svc.userInput('a', 'submit');
+    expect(state(svc)).toBe('unknown');
+    expect(svc.list()[0]?.reason).toBe('turn-unconfirmed');
+    svc.apply(hook({ agentId: 'codex', source: 'codex-notify', state: 'finished' }));
+    expect(state(svc)).toBe('finished');
+  });
+
+  it('Claude: Enter after a finished turn does not touch the status (a hook follows)', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'finished' }));
+    svc.userInput('a', 'submit');
+    expect(state(svc)).toBe('finished');
+  });
+
+  it('an abnormal exit is unread news in a background tab; a clean exit is not', () => {
+    const { svc } = make();
+    svc.exited('a', 'claude-code', 1);
+    expect(svc.list()[0]?.unread).toBe(true);
+    svc.exited('b', 'claude-code', 0);
+    expect(svc.list().find((s) => s.sessionId === 'b')?.unread).toBe(false);
+  });
+
+  it('/clear (a new SessionStart) returns a finished agent to ready; exited stays final', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'finished' }));
+    svc.apply(hook({ state: 'ready', detail: { event: 'SessionStart' } }));
+    expect(state(svc)).toBe('ready');
+    svc.apply(hook({ state: 'exited', source: 'pty' }));
+    svc.apply(hook({ state: 'working' }));
+    expect(state(svc)).toBe('exited');
+  });
+
+  it('a terminal signal never overrides a known state and never invents approval', () => {
+    const { svc } = make();
+    svc.apply(hook({ state: 'working' }));
+    svc.terminalSignal('a', 'claude-code');
+    expect(state(svc)).toBe('working');
+  });
+
+  it('events left by an ended agent are discarded, not applied to the next agent in the same tab', () => {
+    const { svc } = make();
+    const dir = svc.watch('a', 'n1');
+    svc.apply(hook({ state: 'working' }));
+    writeFileSync(join(dir, '1.json'), env('claude', { hook_event_name: 'Stop' }, 'n1'));
+    svc.clear('a');
+    expect(readdirSync(dir)).toEqual([]);
+    expect(svc.has('a')).toBe(false);
+    svc.forget('a');
+  });
+
+  it('shell tabs remember why they cannot report', () => {
+    const { svc } = make();
+    svc.noHooks('s', 'no-hooks-windows');
+    expect(svc.noHooksReason('s')).toBe('no-hooks-windows');
+    svc.expectHooks('s');
+    expect(svc.noHooksReason('s')).toBeUndefined();
+  });
+});
+
+describe('spool bursts and cleanup', () => {
+  const mk = () => {
+    const root = mkdtempSync(join(tmpdir(), 'arctri-burst-'));
+    const got: string[] = [];
+    const svc = new AgentStatusService({ root, windowFocused: () => true, onChanged: () => undefined, acceptsEvents: () => true });
+    return { root, got, svc };
+  };
+
+  it('a burst is read in bounded passes, in order, and nothing is lost', async () => {
+    const { svc } = mk();
+    const dir = svc.watch('b', 'n1');
+    for (let i = 0; i < 80; i++) writeFileSync(join(dir, `${String(i).padStart(4, '0')}.json`), env('claude', { hook_event_name: 'PostToolUse', tool_name: 'Bash' }, 'n1'));
+    const spool = svc['spools'].get('b')!;
+    spool.drain();
+    expect(readdirSync(dir).filter((n) => n.endsWith('.json')).length).toBe(80 - 25); // one pass reads a bounded number
+    for (let i = 0; i < 100 && readdirSync(dir).some((n) => n.endsWith('.json')); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(readdirSync(dir).filter((n) => n.endsWith('.json')).length).toBe(0);
+    svc.forget('b');
+  });
+
+  it('watching the same tab twice leaves one spool, and forget removes the folder and the settings file', () => {
+    const { svc } = mk();
+    const first = svc.watch('w', 'n1');
+    const old = svc['spools'].get('w')!;
+    const stop = vi.spyOn(old, 'stop');
+    svc.watch('w', 'n2');
+    expect(stop).toHaveBeenCalledOnce();
+    expect(svc['spools'].size).toBe(1);
+    svc.forget('w');
+    expect(existsSync(first)).toBe(false);
+    expect(svc['spools'].size).toBe(0);
+  });
+
+  it('rejects a wrong secret and a traversal-looking name', () => {
+    const { svc } = mk();
+    const dir = svc.watch('x', 'right');
+    writeFileSync(join(dir, '1.json'), env('claude', { hook_event_name: 'Stop' }, 'wrong'));
+    writeFileSync(join(dir, '2.txt'), env('claude', { hook_event_name: 'Stop' }, 'right'));
+    svc['spools'].get('x')!.drain();
+    expect(svc.list().find((s) => s.sessionId === 'x')).toBeUndefined();
+    expect(svc.dropped()).toBe(1);
+    svc.forget('x');
   });
 });

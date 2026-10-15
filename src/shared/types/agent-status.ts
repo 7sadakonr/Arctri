@@ -4,6 +4,9 @@ import type { AgentId, SessionId } from './session';
 export type AgentState = 'unknown' | 'starting' | 'ready' | 'working' | 'waiting' | 'needs-approval' | 'finished' | 'exited';
 export type StatusSource = 'claude-hook' | 'codex-notify' | 'terminal-signal' | 'pty';
 export type Confidence = 'high' | 'medium' | 'low';
+/** Why a state is `unknown` (or unconfirmed): shown in the tooltip, never guessed around. */
+export type StatusReason =
+  | 'no-hooks-windows' | 'no-hooks-cli' | 'no-hooks-shell' | 'no-events' | 'interrupted' | 'turn-unconfirmed' | 'signal';
 
 export interface AgentStatusEvent {
   /** The Arctri tab. */
@@ -16,7 +19,8 @@ export interface AgentStatusEvent {
   source: StatusSource;
   confidence: Confidence;
   /** Raw event names only: never prompt text or output. */
-  detail?: { event: string; notificationType?: string; tool?: string };
+  detail?: { event: string; notificationType?: string; tool?: string; exitCode?: number };
+  reason?: StatusReason;
 }
 
 export interface AgentStatus extends AgentStatusEvent {
