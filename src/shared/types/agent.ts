@@ -20,7 +20,7 @@ export interface AgentCapabilities {
   launchFlags: { model: boolean; permissionMode: boolean; extraArgs: boolean };
   /** Permission/approval values the CLI accepts at launch and Arctri offers (never the "skip checks" ones). */
   permissionModes: string[];
-  structuredStatus: 'none' | 'hooks-opt-in';
+  structuredStatus: 'none' | 'hooks';
   /** Slash commands that are sent to the CLI as typed text. */
   nativeCommands: Array<{ label: string; text: string; hint: string }>;
 }

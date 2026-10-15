@@ -1,4 +1,4 @@
-import { isMac, kbd } from '@/lib/platform';
+import { kbd } from '@/lib/platform';
 import { useRef, useState } from 'react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut,
@@ -8,13 +8,11 @@ import { api } from '@/lib/api';
 import { editCopy, editPaste, editSelectAll } from '@/lib/edit-actions';
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
-import { stepZoom } from '@/lib/zoom';
-import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import type { Prefs } from '@shared/prefs';
-import { blockProfiles, closeSession, openProject, openShell, openSimilarTab, pickAndOpenProject, restartSession } from '../launcher/actions';
-import { toggleSidebar } from '../sidebar/toggle';
+import { blockProfiles, openProject, openShell } from '../launcher/actions';
+import { commandById, commandCtx, commandShortcut, commandTitle, isEnabled, runCommand } from '@/commands/registry';
 import { projectName, toEnvPath } from '../welcome/recent';
 
 type Entry =
@@ -22,6 +20,19 @@ type Entry =
   | { label: string; detail?: string; shortcut?: string; disabled?: boolean; checked?: boolean; run?: () => void; sub?: Entry[] };
 
 const SEP: Entry = { sep: true };
+
+/** A menu item that is a command of the registry: title, shortcut and enabled-state come from there. */
+function cmd(t: ReturnType<typeof useT>, id: string, extra: Partial<Extract<Entry, { label: string }>> = {}): Entry {
+  const c = commandById(id);
+  const shortcut = commandShortcut(c);
+  return {
+    label: t(commandTitle(c)),
+    ...(shortcut ? { shortcut } : {}),
+    disabled: !isEnabled(c, commandCtx()),
+    run: () => runCommand(c),
+    ...extra
+  };
+}
 const RECENT_SHOWN = 10;
 
 function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
@@ -29,19 +40,12 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
   const profiles = useUi((s) => s.profiles);
   const prefs = useUi((s) => s.prefs);
   const windowsDefault = useUi((s) => s.windowsDefaultProfile);
-  const activeId = useSessions((s) => s.activeId);
-  const info = useSessions((s) => (s.activeId ? s.infos[s.activeId] : undefined));
+  // the enabled-state of each command is read from the stores while this renders, so the menu follows these
+  useSessions((s) => (s.activeId ? s.infos[s.activeId] : undefined));
+  useSessions((s) => s.order.length);
   const sidebar = useUi((s) => s.prefs.sidebarOpen);
-  const hasTab = !!info;
-  const hasFolder = !!info?.cwd;
-  const blockMode = !!info && info.kind === 'shell' && info.presentation === 'blocks' && info.integration === 'active';
   const defaultId = (prefs.defaultProfile ?? windowsDefault ?? profiles[0]?.id ?? '').toLowerCase();
 
-  const nextTab = (dir: 1 | -1) => {
-    const s = useSessions.getState();
-    if (s.order.length < 2 || !s.activeId) return;
-    s.setActive(s.order[(s.order.indexOf(s.activeId) + dir + s.order.length) % s.order.length]!);
-  };
   const save = async (patch: Partial<Prefs>) => {
     try {
       useUi.getState().setPrefs(await api.prefs.set(patch));
@@ -55,7 +59,7 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
     {
       id: 'file', label: t('menu.file'),
       entries: [
-        { label: t('menu.openFolder'), shortcut: kbd('Ctrl+K Ctrl+O'), run: () => void pickAndOpenProject() },
+        cmd(t, 'app.openFolder'),
         {
           label: t('menu.openRecent'),
           sub: recent.length
@@ -70,11 +74,11 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
               ]
             : [{ label: t('menu.noRecent'), disabled: true }]
         },
-        { label: t('menu.clone'), run: () => useUi.getState().setCloneOpen(true) },
+        cmd(t, 'app.clone'),
         SEP,
-        { label: t('menu.settings'), shortcut: kbd('Ctrl+,'), run: () => useUi.getState().openSettings(true) },
+        cmd(t, 'app.settings'),
         SEP,
-        { label: t('menu.closeTab'), shortcut: kbd('Ctrl+Shift+W'), disabled: !hasTab, run: () => activeId && void closeSession(activeId) },
+        cmd(t, 'tab.close'),
         { label: t('menu.exit'), run: () => window.close() }
       ]
     },
@@ -85,14 +89,14 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
     {
       id: 'view', label: t('menu.view'),
       entries: [
-        {
-          label: t('menu.filesPanel'), shortcut: kbd('Ctrl+Shift+E'), checked: sidebar,
-          run: () => toggleSidebar()
-        },
+        cmd(t, 'view.sidebar', { checked: sidebar }),
+        cmd(t, 'changes.open'),
+        cmd(t, 'branch.switch'),
+        cmd(t, 'palette.open'),
         SEP,
-        { label: t('menu.zoomIn'), shortcut: kbd('Ctrl+='), run: () => void stepZoom(1) },
-        { label: t('menu.zoomOut'), shortcut: kbd('Ctrl+-'), run: () => void stepZoom(-1) },
-        { label: t('menu.zoomReset'), shortcut: kbd('Ctrl+0'), run: () => void stepZoom(0) },
+        cmd(t, 'view.zoomIn'),
+        cmd(t, 'view.zoomOut'),
+        cmd(t, 'view.zoomReset'),
         SEP,
         {
           label: t('menu.theme'),
@@ -107,7 +111,7 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
       id: 'terminal', label: t('menu.terminal'),
       entries: [
         // Same as Ctrl+Shift+T: a new tab with the current shell, starting at the shell's first folder
-        { label: t('menu.newTerminal'), shortcut: kbd('Ctrl+Shift+T'), run: () => void openSimilarTab() },
+        cmd(t, 'tab.new'),
         {
           label: t('menu.newWithProfile'),
           sub: blockProfiles(profiles).map((p) => ({
@@ -117,20 +121,22 @@ function useMenus(): Array<{ id: string; label: string; entries: Entry[] }> {
           }))
         },
         SEP,
-        { label: t('menu.renameTab'), shortcut: kbd('F2'), disabled: !hasTab, run: () => window.dispatchEvent(new Event('arctri:rename-tab')) },
-        { label: t('menu.restart'), disabled: !hasTab, run: () => info && void restartSession(info) },
-        { label: t('menu.clearTerminal'), shortcut: kbd('Ctrl+L'), disabled: !blockMode, run: () => activeId && useBlocks.getState().drop(activeId) },
-        { label: t(isMac ? 'menu.showFolderMac' : 'menu.showFolder'), disabled: !hasFolder, run: () => activeId && void api.app.openPath(activeId) },
+        cmd(t, 'tab.rename'),
+        cmd(t, 'tab.pin'),
+        cmd(t, 'tab.find'),
+        cmd(t, 'terminal.restart'),
+        cmd(t, 'terminal.clear'),
+        cmd(t, 'terminal.showFolder'),
         SEP,
-        { label: t('menu.nextTab'), shortcut: kbd('Ctrl+Tab'), disabled: !hasTab, run: () => nextTab(1) },
-        { label: t('menu.prevTab'), shortcut: kbd('Ctrl+Shift+Tab'), disabled: !hasTab, run: () => nextTab(-1) }
+        cmd(t, 'tab.next'),
+        cmd(t, 'tab.prev')
       ]
     },
     {
       id: 'help', label: t('menu.help'),
       entries: [
-        { label: t('menu.shortcuts'), run: () => useUi.getState().setHelpDialog('shortcuts') },
-        { label: t('menu.about'), run: () => useUi.getState().setHelpDialog('about') }
+        cmd(t, 'help.shortcuts'),
+        cmd(t, 'help.about')
       ]
     }
   ];

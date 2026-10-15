@@ -59,10 +59,6 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
       useUi.getState().toast(tNow('sidebar.gitFailed', { reason: gate.error ?? '?' }), 'error');
       return false;
     }
-    if (gate.runningAgent) {
-      useUi.getState().toast(tNow('sidebar.agentRunning'), 'error');
-      return false;
-    }
     return !gate.dirty || window.confirm(t('sidebar.dirtySwitch'));
   };
 

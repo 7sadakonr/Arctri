@@ -40,7 +40,7 @@ export const claudeCode: AgentAdapter = {
     resumePicker: has(help, '--resume'),
     launchFlags: { model: has(help, '--model'), permissionMode: has(help, '--permission-mode'), extraArgs: true },
     permissionModes: has(help, '--permission-mode') ? ['manual', 'acceptEdits', 'plan'].filter((m) => help.includes(m)) : [],
-    structuredStatus: 'none',
+    structuredStatus: has(help, '--settings') ? 'hooks' : 'none',
     nativeCommands: AGENT_META['claude-code'].nativeCommands
   }),
   buildArgs(caps, o) {
@@ -69,7 +69,7 @@ export const codex: AgentAdapter = {
     permissionModes: has(help, '--ask-for-approval')
       ? ['untrusted', 'on-request', 'on-failure'].filter((m) => help.includes(m))
       : [],
-    structuredStatus: 'none',
+    structuredStatus: has(help, '--config') ? 'hooks' : 'none',
     nativeCommands: AGENT_META.codex.nativeCommands
   }),
   buildArgs(caps, o) {

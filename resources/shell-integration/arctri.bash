@@ -67,3 +67,18 @@ esac
 # The last field says command boundaries are reported (always true here); ARCTRI_BLOCKS only decides whether
 # the screen is cleared between commands.
 printf '\033]6973;%s;hello;bash;%s;1\007' "$ARCTRI_NONCE" "${BASH_VERSION%%[^0-9.]*}"
+
+# Status of agents started by hand: `claude` and `codex` get this tab's hook / notify flags, so Arctri can show what they are doing.
+# A function or alias of the user's own with these names is left alone (the tab then shows an unknown status). Nothing else is changed.
+if [ -n "$ARCTRI_EVENTS_DIR" ] && [ -f "$ARCTRI_HOOK_SCRIPT" ]; then
+  if [ -f "$ARCTRI_CLAUDE_SETTINGS" ]; then
+    case "$(type -t claude 2>/dev/null)" in
+      function|alias) ;;
+      *) claude() { command claude --settings "$ARCTRI_CLAUDE_SETTINGS" "$@"; } ;;
+    esac
+  fi
+  case "$(type -t codex 2>/dev/null)" in
+    function|alias) ;;
+    *) codex() { command codex -c "notify=[\"sh\",\"$ARCTRI_HOOK_SCRIPT\",\"codex\"]" "$@"; } ;;
+  esac
+fi

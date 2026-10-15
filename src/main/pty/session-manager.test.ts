@@ -173,6 +173,26 @@ describe('SessionManager', () => {
     expect(last().runningAgent).toBeUndefined();
   });
 
+  it('an agent names its session with its window title; a plain shell does not', async () => {
+    const { m, pty, last } = setup();
+    const { nonce: n } = await m.create(spec);
+    const title = (t: string) => `\x1b]0;${t}\x07`;
+    pty.emit(hello(n) + mark(n, 'A') + mark(n, 'B') + title('some shell title'));
+    expect(last().agentTopic).toBeUndefined();
+    pty.emit(cmd(n, 1, 'claude') + mark(n, 'C') + title('✳ Fix tab status'));
+    expect(last().agentTopic).toBe('Fix tab status');
+    pty.emit(title('⠂ Fix tab status')); // same subject, other spinner frame
+    expect(last().agentTopic).toBe('Fix tab status');
+    pty.emit(title('◑ Another subject'));
+    expect(last().agentTopic).toBe('Another subject'); // follows the conversation
+    pty.emit(title('✳ Claude Code'));
+    expect(last().agentTopic).toBeUndefined(); // /clear: the generic name means no subject, the tab's own name is back
+    pty.emit(title('◐ Fresh subject'));
+    expect(last().agentTopic).toBe('Fresh subject');
+    pty.emit(mark(n, 'D', ';0') + mark(n, 'A') + mark(n, 'B'));
+    expect(last().agentTopic).toBeUndefined();
+  });
+
   it('close kills the process and resolves', async () => {
     const { m, pty } = setup();
     const { id } = await m.create(spec);

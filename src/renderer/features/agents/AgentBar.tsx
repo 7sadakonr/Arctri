@@ -1,4 +1,5 @@
-import { Asterisk, ChevronDown, Folder, FolderOpen, GitBranch, Hexagon, History, MessageSquarePlus, Paperclip, RotateCcw, Settings, TriangleAlert, X } from 'lucide-react';
+import { AgentLogo } from './AgentLogo';
+import { ChevronDown, Folder, FolderOpen, History, MessageSquarePlus, Paperclip, RotateCcw, Settings, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AGENT_META } from '@shared/agents/meta';
 import { envLabel } from '@shared/types/env';
@@ -12,6 +13,7 @@ import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { focusActiveSession } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
+import { useAgentStatus } from '@/stores/agent-status';
 import { useUi } from '@/stores/ui';
 import { agentLaunchOf, closeSession, openAgent, openShellHere, restartSession } from '../launcher/actions';
 import { sendCommand } from './commands';
@@ -23,55 +25,7 @@ import { useChanges } from './useChanges';
 
 export const TOGGLE_RICH_EVENT = 'arctri:toggle-rich';
 
-const Glyph = ({ agent, size = 14 }: { agent: AgentId; size?: number }) =>
-  agent === 'claude-code' ? <Asterisk size={size} className="text-orange-400" /> : <Hexagon size={size} className="text-accent" />;
-
-/** Offers to switch on Codex notifications, once, and only when the configuration can really be changed. */
-function CodexNotificationsChip({ sessionId }: { sessionId: string }) {
-  const t = useT();
-  const dismissed = useUi((s) => s.prefs.dismissedHints.includes('codex-notifications'));
-  const [state, setState] = useState<'hidden' | 'offer' | 'done'>('hidden');
-
-  useEffect(() => {
-    if (dismissed) return;
-    let alive = true;
-    void api.agents.codexNotifications(sessionId, 'status').then((r) => alive && setState(r.available && !r.enabled ? 'offer' : 'hidden'), () => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [sessionId, dismissed]);
-
-  if (dismissed || state === 'hidden' || state === 'done') return null;
-  return (
-    <span className="inline-flex h-6 items-center overflow-hidden rounded-md border border-ok/40 bg-ok/10 text-[11px] font-medium text-ok">
-      <button
-        className="h-full px-2 hover:bg-ok/20"
-        onClick={async () => {
-          const r = await api.agents.codexNotifications(sessionId, 'enable').catch(() => undefined);
-          if (r?.enabled) {
-            setState('done');
-            useUi.getState().toast(tNow('agent.notif.enabled'));
-          } else useUi.getState().toast(tNow('agent.notif.failed'), 'error');
-          focusActiveSession();
-        }}
-      >
-        {t('agent.notif.enable')}
-      </button>
-      <button
-        aria-label={t('agent.notif.dismiss')}
-        title={t('agent.notif.dismiss')}
-        className="h-full px-1.5 hover:bg-ok/20"
-        onClick={async () => {
-          const prefs = useUi.getState().prefs;
-          useUi.getState().setPrefs(await api.prefs.set({ dismissedHints: [...prefs.dismissedHints, 'codex-notifications'] }));
-          focusActiveSession();
-        }}
-      >
-        <X size={11} />
-      </button>
-    </span>
-  );
-}
+const Glyph = ({ agent, size = 14 }: { agent: AgentId; size?: number }) => <AgentLogo agent={agent} size={size} />;
 
 /**
  * The bar shown while an agent is in the conversation: a tab that IS an agent, or a shell tab in which the user started
@@ -83,6 +37,7 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
   const meta = AGENT_META[agentId];
   const ownsTab = info.kind === 'agent';
   const running = info.state === 'running';
+  const model = useAgentStatus((s) => s.byId[info.id]?.model);
   const caps = info.agentCaps;
   const [rich, setRich] = useState(false);
   const changes = useChanges(info.id, active && running);
@@ -118,6 +73,14 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
           </span>
         </Tip>
 
+        {running && model && (
+          <Tip label={t('agent.model', { model })}>
+            <span data-testid="agent-model" className="max-w-[180px] truncate font-mono text-[11px] text-fg-muted">
+              {model}
+            </span>
+          </Tip>
+        )}
+
         {running && (
           <Tip label={t('agent.attach')}>
             <Chip
@@ -135,8 +98,6 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
         )}
 
         <ChangesChip sessionId={info.id} data={changes} />
-
-        {agentId === 'codex' && running && <CodexNotificationsChip sessionId={info.id} />}
 
         {meta.remoteControl && running && (
           <Tip label={`${t('agent.sendCommand', { text: meta.remoteControl.text, agent: meta.name, hint: meta.remoteControl.hint })}`}>
@@ -220,12 +181,6 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
               </span>
             </Chip>
           </Tip>
-        )}
-        {info.gitBranch && (
-          <Chip className="max-w-[160px] cursor-default" tabIndex={-1} title={info.gitBranch}>
-            <GitBranch size={12} className="shrink-0" />
-            <span className="truncate">{info.gitBranch}</span>
-          </Chip>
         )}
         <Tip label={t('launcher.settings')}>
           <Button variant="ghost" size="icon" aria-label={t('launcher.settings')} onClick={() => useUi.getState().openSettings(true)}>

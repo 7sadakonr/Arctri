@@ -23,6 +23,7 @@ function ExternalLink({ url, label }: { url: string; label: string }) {
 }
 
 const SHORTCUTS: Array<[string, string]> = [
+  ['Ctrl+Shift+P', 'cmd.palette'],
   ['Ctrl+Shift+T', 'menu.newTerminal'],
   ['Ctrl+K Ctrl+O', 'menu.openFolder'],
   ['Ctrl+Shift+W', 'menu.closeTab'],

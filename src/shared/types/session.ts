@@ -46,6 +46,8 @@ export interface SessionInfo {
   launchNote?: string;
   /** An agent CLI the user started inside this shell tab; set while that command runs. */
   runningAgent?: { agentId: AgentId; startedAt: number; command: string };
+  /** What the agent says it is working on (its own window title), cleaned. Only a label, never a status. */
+  agentTopic?: string;
   /** Agent sessions: what the CLI was started with, e.g. "--model opus". */
   launchSummary?: string;
   /** Agent sessions: the user supplied flags that turn permission checks off. */
