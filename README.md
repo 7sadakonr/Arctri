@@ -356,4 +356,4 @@ GitHub: [@7sadakonr](https://github.com/7sadakonr)
 **Kittipop Sanpho (กิตติภพ สารโพธิ์)**  
 GitHub: [@kttpx](https://github.com/kktpx)
 
-© 2026 Jetsadakorn Muangwichit. Licensed under MIT.
+© 2026 Arctri. Licensed under MIT.
