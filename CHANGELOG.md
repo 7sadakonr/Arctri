@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3-beta
+
+- **Terminal.** Fixes garbled text after switching tabs: the terminal is repainted once the layout has settled and after a WebGL context loss.
+
 ## 0.3.2-beta
 
 - **Git sync.** Branches and Changes share one sync status (ahead / behind) per repository, fed by an automatic fetch (deduplicated across tabs). An **Update Branch**
