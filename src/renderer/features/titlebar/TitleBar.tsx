@@ -9,6 +9,7 @@ import { tNow, useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { MenuBar } from './MenuBar';
+import { NativeMenu } from './NativeMenu';
 
 /**
  * The window's top strip: the menus, the folder of the tab in front in the middle (click copies it, double-click opens it
@@ -37,7 +38,7 @@ export function TitleBar() {
       }}
     >
       {!isMac && <TerminalSquare size={14} className="mr-1 shrink-0 text-accent" />}
-      <MenuBar />
+      {isMac ? <NativeMenu /> : <MenuBar />}
       <div className="flex min-w-0 flex-1 justify-center px-3 text-[11px] text-fg-muted">
         {id && cwd ? (
           <Tip label={t('toolbar.copyPath')} side="bottom">

@@ -1,4 +1,5 @@
 import { Menu, type MenuItemConstructorOptions } from 'electron';
+import type { NativeMenuItem } from '@shared/ipc/contract';
 
 /**
  * The application menu on macOS. The window has its own menu bar everywhere else (Windows); on a Mac the system menu
@@ -25,6 +26,37 @@ export function installAppMenu(platform: NodeJS.Platform = process.platform): vo
         { role: 'selectAll', registerAccelerator: false }
       ]
     },
+    { role: 'windowMenu' }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function toTemplate(items: NativeMenuItem[], click: (id: string) => void): MenuItemConstructorOptions[] {
+  return items.map((it): MenuItemConstructorOptions => {
+    if ('sep' in it) return { type: 'separator' };
+    const { id, label, accelerator, enabled, checked, submenu } = it;
+    if (submenu) return { label, enabled: enabled !== false, submenu: toTemplate(submenu, click) };
+    return {
+      label,
+      enabled: enabled !== false,
+      // shown only: the page handles the key press itself, so the system must not fire the item a second time
+      registerAccelerator: false,
+      ...(accelerator ? { accelerator } : {}),
+      ...(checked ? { type: 'checkbox' as const, checked: true } : {}),
+      ...(id ? { click: () => click(id) } : {})
+    };
+  });
+}
+
+/**
+ * macOS: the page's menus (File, Edit, View, Terminal, Help) go into the system menu bar, between the app menu and Window.
+ * A click is reported back by the id the page gave the entry.
+ */
+export function setAppMenus(menus: Array<{ label: string; items: NativeMenuItem[] }>, click: (id: string) => void): void {
+  if (process.platform !== 'darwin') return;
+  const template: MenuItemConstructorOptions[] = [
+    { role: 'appMenu' },
+    ...menus.map((m): MenuItemConstructorOptions => ({ label: m.label, submenu: toTemplate(m.items, click) })),
     { role: 'windowMenu' }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

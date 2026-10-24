@@ -23,3 +23,13 @@ export function matchKey(e: KeyEventLike, keys: PlatformKeys | PlatformKeys[], m
     return e.ctrlKey === wantCtrl && e.metaKey === wantMeta && e.altKey === !!s.alt && (!!s.anyShift || e.shiftKey === !!s.shift);
   });
 }
+
+const ACCEL_KEYS: Record<string, string> = { tab: 'Tab', ',': ',', '=': 'Plus', '+': 'Plus', '-': '-' };
+
+/** The Electron accelerator for the Mac menu bar, where the key is only displayed. */
+export function toAccelerator(keys: PlatformKeys | PlatformKeys[] | undefined): string | undefined {
+  if (!keys) return undefined;
+  const s = pick(Array.isArray(keys) ? keys[0]! : keys, true);
+  const key = s.key.length === 1 && /[a-z]/.test(s.key) ? s.key.toUpperCase() : s.key === 'f2' ? 'F2' : ACCEL_KEYS[s.key] ?? s.key;
+  return [s.mod ? 'Cmd' : '', s.ctrl ? 'Ctrl' : '', s.alt ? 'Alt' : '', s.shift ? 'Shift' : '', key].filter(Boolean).join('+');
+}
