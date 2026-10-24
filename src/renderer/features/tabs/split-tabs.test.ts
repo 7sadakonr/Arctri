@@ -13,7 +13,7 @@ describe('splitTabs', () => {
     expect([...r.shown, ...r.hidden].sort()).toEqual(ids);
   });
   it('pinned tabs are always shown', () => {
-    const r = splitTabs(['p', ...ids], { p: true }, 'a', 64 + 40 + 110 * 2);
+    const r = splitTabs(['p', ...ids], { p: true }, 'a', 64 + 110 * 3);
     expect(r.shown).toContain('p');
     expect(r.hidden).not.toContain('p');
   });

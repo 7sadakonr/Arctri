@@ -1,5 +1,5 @@
 const TAB_MIN = 110;
-const PINNED_W = 40;
+const PINNED_W = TAB_MIN; // a pinned tab is as wide as any other
 const RESERVED = 64; // the "+" buttons and the overflow button
 
 /** Which tabs fit: pinned ones always, the rest as many as the width allows, and the active one is never hidden. */
