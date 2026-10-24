@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { active, activeBlocks, launch, waitForEditor } from './fixtures';
@@ -156,6 +156,123 @@ test('source control: stage a file, commit with a Thai message, publish, create 
     await expect
       .poll(() => { try { return git(repo, 'rev-parse', '--abbrev-ref', '@{u}').toString().trim(); } catch { return ''; } }, { timeout: 20_000 })
       .toBe('origin/feature/x');
+  } finally {
+    await f.app.close().catch(() => undefined);
+  }
+});
+
+test('file panel: dotfiles are listed; the right-click menu creates, renames and deletes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arctri-files-'));
+  writeFileSync(join(dir, '.env'), 'KEY=1\n');
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  const data = mkdtempSync(join(tmpdir(), 'arctri-e2e-'));
+  writeFileSync(join(data, 'preferences.json'), JSON.stringify({ prefs: { defaultProfile: 'pwsh' } }));
+  const f = await launch({ ARCTRI_E2E_WELCOME: '1', ARCTRI_E2E_PICK: JSON.stringify([dir]) }, data);
+  const { page } = f;
+  try {
+    await page.getByRole('menubar').getByRole('button', { name: 'File' }).click();
+    await page.getByRole('menuitem', { name: /Open Folder/ }).click();
+    await waitForEditor(page);
+    const panel = active(page).getByTestId('file-panel');
+    await expect(panel.locator('[data-path=".env"]')).toBeVisible();
+
+    // New File… from the menu of the empty area: type the name, Enter
+    await panel.getByRole('tree').click({ button: 'right', position: { x: 20, y: 150 } });
+    await page.getByRole('menuitem', { name: /New File/ }).click();
+    await page.keyboard.type('c.txt');
+    await page.keyboard.press('Enter');
+    await expect(panel.locator('[data-path="c.txt"]')).toBeVisible();
+    expect(existsSync(join(dir, 'c.txt'))).toBe(true);
+
+    // F2 renames the selected row
+    await panel.locator('[data-path="c.txt"]').click();
+    await panel.getByRole('tree').press('F2');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('d.txt');
+    await page.keyboard.press('Enter');
+    await expect(panel.locator('[data-path="d.txt"]')).toBeVisible();
+    expect(existsSync(join(dir, 'c.txt'))).toBe(false);
+    expect(existsSync(join(dir, 'd.txt'))).toBe(true);
+
+    // a taken name is refused and the field stays
+    await panel.locator('[data-path="d.txt"]').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /Rename/ }).click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('a.txt');
+    await page.keyboard.press('Enter');
+    await expect(panel.getByRole('alert')).toContainText('already exists');
+    await page.keyboard.press('Escape');
+
+    // Delete asks first
+    await panel.locator('[data-path="d.txt"]').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /Delete/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+    await expect(panel.locator('[data-path="d.txt"]')).toHaveCount(0);
+    expect(existsSync(join(dir, 'd.txt'))).toBe(false);
+  } finally {
+    await f.app.close().catch(() => undefined);
+  }
+});
+
+test('file panel: changes from elsewhere appear by themselves; several files can be copied, moved, dragged and deleted', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arctri-files2-'));
+  for (const n of ['x1.txt', 'x2.txt', 'y.txt', 'z.txt', 'w.txt']) writeFileSync(join(dir, n), n);
+  mkdirSync(join(dir, 'box'));
+  const data = mkdtempSync(join(tmpdir(), 'arctri-e2e-'));
+  writeFileSync(join(data, 'preferences.json'), JSON.stringify({ prefs: { defaultProfile: 'pwsh' } }));
+  const f = await launch({ ARCTRI_E2E_WELCOME: '1', ARCTRI_E2E_PICK: JSON.stringify([dir]) }, data);
+  const { page } = f;
+  const row = (rel: string) => active(page).getByTestId('file-panel').locator(`[data-path="${rel.replace(/\\/g, '\\\\')}"]`);
+  try {
+    await page.getByRole('menubar').getByRole('button', { name: 'File' }).click();
+    await page.getByRole('menuitem', { name: /Open Folder/ }).click();
+    await waitForEditor(page);
+    await expect(row('x1.txt')).toBeVisible();
+
+    // a file written by another program shows up with no click and no refresh
+    writeFileSync(join(dir, '.env.local'), 'A=1\n');
+    await expect(row('.env.local')).toBeVisible({ timeout: 10_000 });
+    rmSync(join(dir, '.env.local'));
+    await expect(row('.env.local')).toHaveCount(0, { timeout: 10_000 });
+
+    // Ctrl+click picks two files, Ctrl+C / Ctrl+V copies both into the folder
+    await row('x1.txt').click();
+    await row('x2.txt').click({ modifiers: ['Control'] });
+    await page.keyboard.press('Control+C');
+    await row('box').click();
+    await page.keyboard.press('Control+V');
+    await expect(row('box\\x2.txt')).toBeVisible({ timeout: 10_000 });
+    expect(existsSync(join(dir, 'box', 'x1.txt'))).toBe(true);
+    expect(existsSync(join(dir, 'x1.txt'))).toBe(true);
+
+    // Ctrl+X / Ctrl+V moves
+    await row('y.txt').click();
+    await page.keyboard.press('Control+X');
+    await row('box').click();
+    await page.keyboard.press('Control+V');
+    await expect(row('box\\y.txt')).toBeVisible({ timeout: 10_000 });
+    expect(existsSync(join(dir, 'y.txt'))).toBe(false);
+
+    // dragging onto a folder moves; with Alt it copies
+    await row('z.txt').dragTo(row('box'));
+    await expect(row('box\\z.txt')).toBeVisible({ timeout: 10_000 });
+    expect(existsSync(join(dir, 'z.txt'))).toBe(false);
+    await page.keyboard.down('Alt');
+    await row('w.txt').dragTo(row('box'));
+    await page.keyboard.up('Alt');
+    await expect(row('box\\w.txt')).toBeVisible({ timeout: 10_000 });
+    expect(existsSync(join(dir, 'w.txt'))).toBe(true);
+
+    // Delete takes everything that is picked, after asking once
+    await row('x1.txt').click();
+    await row('x2.txt').click({ modifiers: ['Control'] });
+    await page.keyboard.press('Delete');
+    await expect(page.getByRole('dialog')).toContainText('2');
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+    await expect(row('x1.txt')).toHaveCount(0);
+    expect(existsSync(join(dir, 'x1.txt'))).toBe(false);
+    expect(existsSync(join(dir, 'x2.txt'))).toBe(false);
+    expect(existsSync(join(dir, 'box', 'x1.txt'))).toBe(true);
   } finally {
     await f.app.close().catch(() => undefined);
   }

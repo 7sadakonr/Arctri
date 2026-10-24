@@ -40,3 +40,5 @@ export type ImageReadResult =
 export type FileWriteResult =
   | { ok: true; mtimeMs: number }
   | { ok: false; error: 'conflict' | 'denied' | 'failed'; mtimeMs?: number };
+
+export type FsOpResult = { ok: true } | { ok: false; error: 'exists' | 'not-found' | 'denied' | 'failed' };

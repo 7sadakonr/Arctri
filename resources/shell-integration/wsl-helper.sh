@@ -13,6 +13,18 @@ expand_home() {
 }
 # milliseconds since the epoch; %3N is not honoured by every `date`, so divide nanoseconds ourselves
 mtime_ms() { echo $(( $(date -r "$1" +%s%N) / 1000000 )); }
+# true when $1 (absolute, may not exist yet) lies below the resolved root $2 (never the root itself)
+inside_root() {
+  case "$1" in /*) ;; *) return 1 ;; esac
+  case "/$1/" in */../*) return 1 ;; esac
+  _real=$(readlink -f -- "$1" 2>/dev/null)
+  if [ -z "$_real" ]; then
+    _par=$(readlink -f -- "$(dirname "$1")" 2>/dev/null)
+    [ -n "$_par" ] || return 1
+    _real="$_par/$(basename "$1")"
+  fi
+  case "$_real" in "$2"/*) return 0 ;; *) return 1 ;; esac
+}
 TAB=$(printf '\t')
 while IFS="$TAB" read -r id op a1 a2 a3; do
   out=""
@@ -169,6 +181,33 @@ $(base64 -w0 <"$f")"; fi
               && out="OK $(mtime_ms "$f")" || { rm -f -- "$tmp"; out="ERR failed"; }
           fi
         fi
+      fi
+      ;;
+    mkfile|mkdir|mv|rm|cp)
+      # a1 = path, a2 = target path (mv, cp), a3 = "<root>|"; every path must stay below the tab's working folder
+      p=$(dec "$a1")
+      ra=$(dec "$a3")
+      rr=$(readlink -f -- "${ra%%|*}" 2>/dev/null)
+      if [ -z "$rr" ] || ! inside_root "$p" "$rr"; then out="ERR denied"
+      else
+        case "$op" in
+          mkfile|mkdir)
+            if [ -e "$p" ] || [ -L "$p" ]; then out="ERR exists"
+            elif { [ "$op" = mkdir ] && mkdir -- "$p" || [ "$op" = mkfile ] && : > "$p"; } 2>/dev/null; then out="OK"
+            else out="ERR failed"; fi ;;
+          mv|cp)
+            q=$(dec "$a2")
+            if ! inside_root "$q" "$rr"; then out="ERR denied"
+            elif case "$q/" in "$p"/*) true ;; *) false ;; esac; then out="ERR denied"   # into itself
+            elif [ ! -e "$p" ] && [ ! -L "$p" ]; then out="ERR notfound"
+            elif [ -e "$q" ] || [ -L "$q" ]; then out="ERR exists"
+            elif { [ "$op" = mv ] && mv -- "$p" "$q" || [ "$op" = cp ] && cp -R -P -- "$p" "$q"; } 2>/dev/null; then out="OK"
+            else out="ERR failed"; fi ;;
+          rm)
+            if [ ! -e "$p" ] && [ ! -L "$p" ]; then out="ERR notfound"
+            elif rm -rf -- "$p" 2>/dev/null; then out="OK"
+            else out="ERR failed"; fi ;;
+        esac
       fi
       ;;
     home) out=$HOME ;;

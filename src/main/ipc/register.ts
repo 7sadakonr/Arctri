@@ -13,8 +13,12 @@ import { Router } from './router';
 import type { EnvironmentQuery, GitHistoryQuery } from '../env-query/service';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
 import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
+import { copyMany, moveMany, type TransferResult } from '../files/transfer';
+import type { FileWatcher } from '../files/watcher';
+import { posix, win32 } from 'node:path';
 import type { WslManager } from '../wsl/wsl-manager';
 import { mark } from '../timing';
+import { logger } from '../logger';
 import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
 import { applyUiScale } from '../window';
 
@@ -31,6 +35,7 @@ export interface Services {
   diagnostics: () => Record<string, unknown>;
   envQuery: EnvironmentQuery & GitHistoryQuery;
   wsl: WslManager;
+  fileWatcher: FileWatcher;
   getWindow: () => BrowserWindow | undefined;
   origins: () => string[];
 }
@@ -175,6 +180,65 @@ export function registerIpc(s: Services, hub: PortHub): void {
   r.handle('fs:stat', async ({ sessionId, rel }) => {
     const t = target(sessionId, rel);
     return t ? s.envQuery.statFile(t.info.env, t.root, t.abs) : null;
+  });
+  // Creating, renaming and deleting below the tab's folder (the file panel's context menu). The folder itself is never touched.
+  r.handle('fs:create', async ({ sessionId, rel, kind }) => {
+    const t = target(sessionId, rel);
+    return t ? s.envQuery.createEntry(t.info.env, t.root, t.abs, kind) : { ok: false as const, error: 'denied' as const };
+  });
+  r.handle('fs:rename', async ({ sessionId, from, to }) => {
+    const a = target(sessionId, from);
+    const b = target(sessionId, to);
+    return a && b ? s.envQuery.renameEntry(a.info.env, a.root, a.abs, b.abs) : { ok: false as const, error: 'denied' as const };
+  });
+  r.handle('fs:delete', async ({ sessionId, rel }) => {
+    const t = target(sessionId, rel);
+    if (!t) return { ok: false as const, error: 'denied' as const };
+    // Windows and macOS have a recycle bin; a WSL folder has none, so there it is removed for good
+    return s.envQuery.deleteEntry(t.info.env, t.root, t.abs, t.info.env.kind === 'wsl' ? undefined : (p) => shell.trashItem(p));
+  });
+  r.handle('fs:reveal', async ({ sessionId, rel }) => {
+    const info = s.sessions.get(sessionId);
+    if (!info?.cwd) return;
+    const abs = rel ? resolveWithin(info.cwd.path, rel, info.env.kind) : info.cwd.path;
+    if (!abs) return;
+    if (info.env.kind === 'wsl') {
+      // the file manager cannot select an item through the WSL share: open the folder (the item's own, or the one holding it)
+      const asUnc = (p: string) => `\\\\wsl.localhost\\${info.env.kind === 'wsl' ? info.env.distro : ''}${p.replace(/\//g, '\\')}`;
+      const isDir = (await s.envQuery.listDirResult(info.env, abs)).ok;
+      const err = await shell.openPath(asUnc(isDir ? abs : posix.dirname(abs)));
+      if (err) logger.warn('reveal failed', err);
+    } else shell.showItemInFolder(abs);
+  });
+  // Moving and copying (cut/copy/paste and drag & drop). The answers use paths relative to the tab's folder.
+  const transfer = async (
+    sessionId: string, from: string[], toDir: string,
+    run: typeof moveMany
+  ): Promise<{ ok: boolean; results: Array<{ from: string; to?: string; error?: string }> }> => {
+    const info = s.sessions.get(sessionId);
+    const dest = target(sessionId, toDir || '.');
+    const sources = from.map((f) => target(sessionId, f));
+    if (!info?.cwd || !dest || sources.some((x) => !x)) return { ok: false, results: [{ from: from[0] ?? '', error: 'denied' }] };
+    const lib = info.env.kind === 'windows' ? win32 : posix;
+    const root = info.cwd.path;
+    // the folder itself is a valid destination; resolveWithin of '.' gives it
+    const results: TransferResult[] = await run(s.envQuery, info.env, root, sources.map((x) => x!.abs), dest.abs);
+    return {
+      ok: results.every((x) => !x.error),
+      results: results.map((x) => ({
+        from: lib.relative(root, x.from),
+        ...(x.to ? { to: lib.relative(root, x.to) } : {}),
+        ...(x.error ? { error: x.error } : {})
+      }))
+    };
+  };
+  r.handle('fs:move', ({ sessionId, from, toDir }) => transfer(sessionId, from, toDir, moveMany));
+  r.handle('fs:copy', ({ sessionId, from, toDir }) => transfer(sessionId, from, toDir, copyMany));
+  // The folders the panel shows open; changes in them come back as 'fs:changed'. `polling` = the panel has to look itself.
+  r.handle('fs:watch', ({ sessionId, dirs }) => {
+    const info = s.sessions.get(sessionId);
+    if (!info?.cwd) return { polling: true };
+    return { polling: !s.fileWatcher.setDirs(sessionId, info.env, info.cwd.path, dirs) };
   });
   r.handle('git:status', async ({ sessionId }) => {
     const info = s.sessions.get(sessionId);
