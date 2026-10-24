@@ -22,9 +22,12 @@ export function useTabStatus(id: string): {
   return { info, agent, status };
 }
 
-/** The name a tab goes by: the user's own name wins; else what the agent says it is working on; else the tab's title. */
-export const tabLabel = (info: Pick<SessionInfo, 'title' | 'titleSource' | 'agentTopic'>): string =>
-  info.titleSource !== 'user' && info.agentTopic ? info.agentTopic : info.title;
+/**
+ * The name a tab goes by: the user's own name wins; else what the agent is doing right now; else the subject of its session
+ * (its window title); else the tab's title.
+ */
+export const tabLabel = (info: Pick<SessionInfo, 'title' | 'titleSource' | 'agentTopic' | 'agentActivity'>): string =>
+  info.titleSource === 'user' ? info.title : (info.agentActivity ?? info.agentTopic ?? info.title);
 
 export const stateLabelKey = (s: TabStatus): MessageKey => `agent.state.${s}` as MessageKey;
 

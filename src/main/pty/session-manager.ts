@@ -69,7 +69,12 @@ interface Session {
   markExited: () => void;
   exitedFlag: boolean;
   closing: boolean;
+  /** A pending return to the session's name once a tool call is over (see `setActivity`). */
+  activityTimer?: ReturnType<typeof setTimeout>;
 }
+
+/** How long the tab keeps a tool's label after the tool call ends. */
+const ACTIVITY_HOLD_MS = 1200;
 
 export class SessionManager {
   private sessions = new Map<SessionId, Session>();
@@ -83,6 +88,34 @@ export class SessionManager {
   refreshBranch(id: SessionId): void {
     const s = this.sessions.get(id);
     if (s?.info.cwd) void this.resolveBranch(s, s.info.cwd);
+  }
+
+  /**
+   * What the agent is doing now, shown as the name of its tab; null when the tool call is over. Back to the session's name
+   * is held for a moment, so the tab does not flicker between two tool calls that follow each other.
+   */
+  setActivity(id: SessionId, activity: string | null): void {
+    const s = this.sessions.get(id);
+    if (!s) return;
+    if (activity === null) {
+      if (s.info.agentActivity === undefined || s.activityTimer) return;
+      s.activityTimer = setTimeout(() => this.dropActivity(s), ACTIVITY_HOLD_MS);
+      s.activityTimer.unref?.();
+      return;
+    }
+    if (s.activityTimer) clearTimeout(s.activityTimer);
+    delete s.activityTimer;
+    if (s.info.agentActivity === activity || (s.info.kind !== 'agent' && !s.info.runningAgent)) return;
+    s.info.agentActivity = activity;
+    this.emit(s);
+  }
+
+  private dropActivity(s: Session): void {
+    if (s.activityTimer) clearTimeout(s.activityTimer);
+    delete s.activityTimer;
+    if (s.info.agentActivity === undefined) return;
+    delete s.info.agentActivity;
+    this.emit(s);
   }
 
   get(id: SessionId): SessionInfo | undefined {
@@ -262,6 +295,9 @@ export class SessionManager {
     if (tr.kind === 'blockFinished' && s.info.runningAgent) {
       delete s.info.runningAgent;
       delete s.info.agentTopic;
+      if (s.activityTimer) clearTimeout(s.activityTimer);
+      delete s.activityTimer;
+      delete s.info.agentActivity;
       changed = true;
     }
     if (tr.kind === 'anomaly') {
@@ -330,6 +366,9 @@ export class SessionManager {
       });
     }
     delete s.info.runningAgent;
+    if (s.activityTimer) clearTimeout(s.activityTimer);
+    delete s.activityTimer;
+    delete s.info.agentActivity;
     if (s.info.kind === 'shell') delete s.info.agentTopic; // an agent tab keeps the subject of its last work
     s.info.state = 'exited';
     s.info.phase = 'unknown';

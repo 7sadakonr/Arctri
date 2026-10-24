@@ -138,6 +138,12 @@ async function start(): Promise<void> {
       return !!i && (i.kind === 'agent' || !!i.runningAgent);
     },
     windowFocused: () => !!win && !win.isDestroyed() && win.isFocused(),
+    onActivity: (id, activity) => sessions.setActivity(id, activity),
+    transcriptFile: (id, p) => {
+      const env = sessions.get(id)?.env;
+      if (!env) return null;
+      return env.kind === 'wsl' ? `\\\\wsl.localhost\\${env.distro}${p.replace(/\//g, '\\')}` : env.kind === 'local' ? p : null;
+    },
     onChanged: (status, id) => {
       if (win && !win.isDestroyed()) win.webContents.send('agentStatus:changed', { id, status });
       gitSyncRef.current?.agentChanged(id);

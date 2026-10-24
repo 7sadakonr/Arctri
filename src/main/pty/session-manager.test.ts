@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { encodeB64 } from '@shared/osc/protocol';
 import type { ShellProfile } from '@shared/types/env';
 import type { SessionInfo } from '@shared/types/session';
@@ -155,6 +155,30 @@ describe('SessionManager', () => {
     expect(cmds[0]).toMatchObject({ command: 'sleep 100' });
     await m.close(id);
     expect(m.list()).toHaveLength(0);
+  });
+
+  it('the activity of an agent names the tab; it goes after a tool call, but not between two that follow each other', async () => {
+    vi.useFakeTimers();
+    try {
+      const { m, pty, last } = setup();
+      const { id, nonce: n } = await m.create(spec);
+      pty.emit(hello(n) + mark(n, 'A') + mark(n, 'B'));
+      m.setActivity(id, 'Show disk space');
+      expect(last().agentActivity).toBeUndefined(); // no agent runs in this tab: nothing to show
+      pty.emit(cmd(n, 1, 'claude') + mark(n, 'C'));
+      m.setActivity(id, 'Show disk space');
+      expect(last().agentActivity).toBe('Show disk space');
+      m.setActivity(id, null); // PostToolUse
+      expect(last().agentActivity).toBe('Show disk space'); // held for a moment
+      m.setActivity(id, 'Edit foo.ts'); // the next tool follows at once
+      vi.advanceTimersByTime(5000);
+      expect(last().agentActivity).toBe('Edit foo.ts');
+      m.setActivity(id, null);
+      vi.advanceTimersByTime(1300);
+      expect(last().agentActivity).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('marks the tab while an agent CLI typed in the shell is running, and clears it afterwards', async () => {
