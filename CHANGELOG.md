@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2-beta
+
+- **Git sync.** Branches and Changes share one sync status (ahead / behind) per repository, fed by an automatic fetch (deduplicated across tabs). An **Update Branch**
+  dialog does a safe fast-forward, and Arctri checks the branch before an agent starts work. Changes made to the repository outside Arctri are detected.
+- **Live tab names.** A tab is named after the tool the agent is running; the model is read at SessionStart, follows `/model`, and is refreshed after tool calls.
+- **Notifications.** The title says what happened (agent and state); the body shows the project folder instead of the session name.
+- **Terminal.** Cascadia Mono with no negative letter spacing, and the glyph atlas is rebuilt when WebGL is re-enabled.
+
 ## 0.3.1-beta
 
 - **Files panel.** Dotfiles are shown (dimmed), with a right-click menu, multi-select, cut / copy / paste, drag and drop and live updates when files change on disk.
