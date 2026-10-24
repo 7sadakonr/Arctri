@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { useGitSyncStore } from '@/stores/git-sync';
+import { refreshChanges } from '@/features/agents/useChanges';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { useSessions } from '@/stores/sessions';
@@ -86,6 +88,7 @@ export function App() {
     const offClosed = api.sessions.onClosed((id) => {
       forgetNotified(id);
       useSessions.getState().remove(id);
+      useGitSyncStore.getState().forget(id);
     });
     const offFocus = api.sessions.onFocusRequested((id) => {
       if (useSessions.getState().infos[id]) useSessions.getState().setActive(id);
@@ -95,6 +98,11 @@ export function App() {
       useAgentStatus.getState().set(id, status);
       if (status) notifyStatus(prev, status);
     });
+    const offSync = api.gitSync.onChanged(({ sessionIds, snapshot }) => useGitSyncStore.getState().set(sessionIds, snapshot));
+    const offRepo = api.gitSync.onRepoChanged(({ sessionIds }) => {
+      useGitSyncStore.getState().bump(sessionIds);
+      for (const id of sessionIds) refreshChanges(id);
+    });
     void api.agentStatus.list().then((l) => useAgentStatus.getState().reset(l), () => undefined);
     // the main process marks the front tab's news as read, but only while this window is the one being looked at
     const reportActive = () => void api.agentStatus.active(useSessions.getState().activeId ?? null);
@@ -102,6 +110,8 @@ export function App() {
     void bootstrap().finally(() => useSessions.getState().setBooted());
     return () => {
       offStatus();
+      offSync();
+      offRepo();
       window.removeEventListener('focus', reportActive);
       offChanged();
       offClosed();

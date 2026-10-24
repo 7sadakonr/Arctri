@@ -106,6 +106,28 @@ describe('GitSyncService', () => {
   });
 });
 
+describe('GitSyncService.scheduleFetch', () => {
+  it('turns a burst of reasons into one fetch and skips a recent one unless asked by hand', async () => {
+    const { a } = makeRemote();
+    const { svc } = setup({ t1: a });
+    const id = (await svc.attach('t1'))!;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    svc.scheduleFetch(id, 'open', 20);
+    svc.scheduleFetch(id, 'focus', 20);
+    svc.scheduleFetch(id, 'switch', 20);
+    await wait(400);
+    const first = (await svc.compute(id))!.fetchedAt;
+    expect(first).toBeTypeOf('number');
+    svc.scheduleFetch(id, 'focus', 20); // fetched a moment ago
+    await wait(300);
+    expect((await svc.compute(id))!.fetchedAt).toBe(first);
+    await wait(5);
+    svc.scheduleFetch(id, 'manual', 20);
+    await wait(400);
+    expect((await svc.compute(id))!.fetchedAt).toBeGreaterThan(first!);
+  });
+});
+
 describe('GitSyncService.updateSafe', () => {
   const behindBy = (b: string, n: number) => {
     for (let i = 0; i < n; i++) commitFile(b, `n${i}.txt`, String(i));

@@ -126,6 +126,9 @@ export function SettingsDialog() {
         <Row label={t('settings.agentNotifications')}>
           <Switch checked={prefs.agentNotifications} onCheckedChange={(v) => void save({ agentNotifications: v })} />
         </Row>
+        <Row label={t('settings.gitAutoFetch')}>
+          <Switch checked={prefs.gitAutoFetch} onCheckedChange={(v) => void save({ gitAutoFetch: v })} />
+        </Row>
         <Row label={t('settings.historyLimit')}>{num('historyLimit', 100, 200000)}</Row>
         <Row label={t('settings.history')}>
           <Button

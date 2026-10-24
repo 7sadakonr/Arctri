@@ -1,4 +1,4 @@
-import { ArrowUp, Check, GitBranch, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, GitBranch, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
@@ -9,6 +9,9 @@ import { cn } from '@/lib/cn';
 import { tNow, useT } from '@/lib/i18n';
 import { useUi } from '@/stores/ui';
 import { refreshChanges } from '../agents/useChanges';
+import { useGitEpoch, useGitSync } from '@/stores/git-sync';
+import { GitSyncStatus } from './GitSyncStatus';
+import { UpdateBranchDialog } from './UpdateBranchDialog';
 
 /** Mirrors the rules the main process applies before `git switch -c`. */
 const NEW_BRANCH = /^[A-Za-z0-9_][\w./+-]*$/;
@@ -29,6 +32,9 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const cwd = info.cwd?.path;
+  const snap = useGitSync(info.id);
+  const epoch = useGitEpoch(info.id);
+  const [updating, setUpdating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -40,7 +46,7 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
 
   useEffect(() => {
     void load();
-  }, [load, cwd, info.gitBranch]);
+  }, [load, cwd, info.gitBranch, epoch, snap?.fetchedAt, snap?.headSha]);
   useEffect(() => {
     if (!active) return;
     window.addEventListener('focus', load);
@@ -123,6 +129,9 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
 
   const row = (b: Branch, isRemote: boolean) => {
     const current = !isRemote && b.name === refs.current;
+    // the current branch's numbers come from the shared reading (it knows when the server was last asked)
+    const ahead = current && snap ? (snap.ahead ?? 0) : b.ahead;
+    const behind = current && snap ? (snap.behind ?? 0) : b.behind;
     return (
       <div
         key={`${isRemote ? 'r' : 'l'}:${b.name}`}
@@ -145,9 +154,25 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
       >
         {switching === b.name ? <Loader2 size={12} className="shrink-0 animate-spin" /> : current ? <Check size={12} className="shrink-0 text-ok" /> : <GitBranch size={12} className="shrink-0 opacity-60" />}
         <span className={cn('min-w-0 flex-1 truncate', current && 'font-semibold')}>{b.name}</span>
-        {!!b.ahead && <span className="shrink-0 text-[10px] text-ok">{t('sidebar.toUpload', { n: b.ahead })}</span>}
-        {!!b.behind && <span className="shrink-0 text-[10px] text-warn">{t('sidebar.toDownload', { n: b.behind })}</span>}
-        {current && (!b.upstream || !!b.ahead) && (
+        {!!ahead && <span className="shrink-0 text-[10px] text-ok">{t('sidebar.toUpload', { n: ahead })}</span>}
+        {!!behind && <span className="shrink-0 text-[10px] text-warn">{t('sidebar.toDownload', { n: behind })}</span>}
+        {current && snap?.status === 'behind' && (
+          <span
+            role="button"
+            tabIndex={0}
+            data-testid="branch-update"
+            title={t('sync.updateHint')}
+            onClick={(e) => {
+              e.stopPropagation();
+              setUpdating(true);
+            }}
+            className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-fg-muted hover:bg-border hover:text-fg"
+          >
+            <ArrowDown size={11} />
+            {t('sync.update')}
+          </span>
+        )}
+        {current && (!b.upstream || !!ahead) && snap?.status !== 'diverged' && (
           <span
             role="button"
             tabIndex={0}
@@ -160,7 +185,7 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
             className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-fg-muted hover:bg-border hover:text-fg"
           >
             <ArrowUp size={11} />
-            {b.upstream ? t('sidebar.pushN', { n: b.ahead ?? 0 }) : t('sidebar.publish')}
+            {b.upstream ? t('sidebar.pushN', { n: ahead ?? 0 }) : t('sidebar.publish')}
           </span>
         )}
         {!current && (
@@ -201,6 +226,8 @@ export function BranchesView({ info, active }: { info: SessionInfo; active: bool
         <button type="button" title={t('sidebar.refresh')} aria-label={t('sidebar.refresh')} onClick={() => void load()}
           className="rounded p-1 text-fg-muted hover:bg-hover hover:text-fg"><RefreshCw size={14} /></button>
       </div>
+      <GitSyncStatus sessionId={info.id} snap={snap} />
+      <UpdateBranchDialog sessionId={info.id} snap={snap} open={updating} onOpenChange={setUpdating} />
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent title={t('sidebar.newBranch')} closeLabel={t('viewer.close')}>
           <div className="mb-2 text-[12px] text-fg-muted">{t('sidebar.createFrom', { name: refs.current ?? 'HEAD' })}</div>
