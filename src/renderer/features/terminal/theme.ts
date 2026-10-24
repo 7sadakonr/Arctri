@@ -1,10 +1,10 @@
 import type { ITheme } from '@xterm/xterm';
 
-/** Keep in step with --font-mono in styles/globals.css. */
-export const TERMINAL_FONT = "'Roboto Mono', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace";
+/** Terminal-only face; the rest of the app keeps --font-mono (Roboto Mono) in styles/globals.css. */
+export const TERMINAL_FONT = "'Cascadia Mono', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace";
 
-/** xterm adds this many device pixels to every cell; Roboto Mono's 0.6em advance reads loose without it. */
-export const TERMINAL_LETTER_SPACING = -1;
+/** Extra device pixels per cell. Kept at 0: tightening cells crowds the Thai fallback glyphs and stacked vowels/tone marks. */
+export const TERMINAL_LETTER_SPACING = 0;
 
 let fontsReady: Promise<void> | undefined;
 
@@ -12,7 +12,7 @@ let fontsReady: Promise<void> | undefined;
 export function terminalFontsReady(): Promise<void> {
   fontsReady ??= Promise.all(
     ['400', '600'].flatMap((w) => [
-      document.fonts.load(`${w} 13px 'Roboto Mono'`, 'Aa'),
+      document.fonts.load(`${w} 13px 'Cascadia Mono'`, 'Aa'),
       document.fonts.load(`${w} 13px 'Arctri Thai'`, 'กิ่ง')
     ])
   ).then(
