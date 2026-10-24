@@ -199,26 +199,42 @@ export class TerminalHost {
       gl.onContextLoss(() => {
         gl.dispose();
         if (this.webgl === gl) this.webgl = undefined;
+        this.repaint();
       });
       this.term.loadAddon(gl);
       this.webgl = gl;
-      // A renderer swapped in after a tab switch can inherit a stale or half-built glyph atlas (garbled text); rebuild it and repaint.
-      this.term.clearTextureAtlas();
-      if (this.term.rows > 0) this.term.refresh(0, this.term.rows - 1);
+      this.repaint();
       this.redrawWhenFontsReady();
     } catch {
       this.webgl = undefined; // falls back to the DOM renderer
     }
   }
 
+  /** A renderer swapped in or a canvas shown again can hold a stale or half-built glyph atlas (garbled text); rebuild it and repaint. */
+  private repaint(): void {
+    if (this.disposed || !this.term.element) return;
+    this.term.clearTextureAtlas();
+    if (this.term.rows > 0) this.term.refresh(0, this.term.rows - 1);
+  }
+
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private active = false;
 
   /** Browsers allow only a handful of WebGL contexts, so tabs left in the background give theirs up. */
   setActive(active: boolean): void {
     clearTimeout(this.idleTimer);
+    this.active = active;
     if (active) {
       this.enableWebgl();
       this.scheduleFit(0);
+      // fit() does not repaint when cols/rows are unchanged, so repaint once layout and paint have settled.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (!this.active) return;
+          this.fitNow();
+          this.repaint();
+        }),
+      );
     } else {
       this.idleTimer = setTimeout(() => {
         this.webgl?.dispose();
