@@ -767,7 +767,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
                     ) : (
                       <span className="w-3 shrink-0" />
                     )}
-                    <img src={iconUrl(e.name, e.isDir, e.open)} alt="" width={16} height={16} draggable={false} className="shrink-0" />
+                    <img src={iconUrl(e.name, e.isDir, e.open)} alt="" width={16} height={16} draggable={false} className={cn('shrink-0', e.name.startsWith('.') && 'opacity-50')} />
                     {naming ? (
                       <NameInput
                         initial={e.name}
@@ -777,7 +777,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
                         onCancel={stopEdit}
                       />
                     ) : (
-                      <span className="min-w-0 flex-1 truncate">{e.name}</span>
+                      <span className={cn('min-w-0 flex-1 truncate', e.name.startsWith('.') && !isPicked && 'opacity-60')}>{e.name}</span>
                     )}
                     {status && !naming && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDot(status))} />}
                   </div>
