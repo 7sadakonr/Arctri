@@ -9,6 +9,7 @@ import { useUi } from '@/stores/ui';
 import { INSERT_EVENT } from '../agents/insert';
 import { SnapshotView } from '../blocks/styled-lines';
 import { AutocompleteOverlay } from './AutocompleteOverlay';
+import { deleteBackward } from './thai';
 
 const drafts = new Map<string, string>();
 let requestSeq = 0;
@@ -177,6 +178,13 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
       e.preventDefault();
       if (open && selected >= 0 && items[selected]) accept(items[selected]!);
       else void submit();
+    } else if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && el.selectionStart === el.selectionEnd) {
+      const r = deleteBackward(text, el.selectionStart);
+      if (r) {
+        e.preventDefault();
+        caretAfter.current = r.caret;
+        change(r.text, r.caret);
+      }
     } else if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       if (open && items.length > 0) accept(items[Math.max(0, selected)]!);

@@ -1,14 +1,36 @@
 @import 'tailwindcss';
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/500.css';
-@import '@fontsource/inter/600.css';
-@import '@fontsource/ibm-plex-sans-thai/400.css';
-@import '@fontsource/ibm-plex-sans-thai/500.css';
-@import '@fontsource/ibm-plex-sans-thai/600.css';
-@import '@fontsource/jetbrains-mono/400.css';
-@import '@fontsource/jetbrains-mono/600.css';
-@import '@fontsource/noto-sans-thai/400.css';
-@import '@fontsource/noto-sans-thai/600.css';
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto-mono/400.css';
+@import '@fontsource/roboto-mono/500.css';
+@import '@fontsource/roboto-mono/600.css';
+
+/* Roboto Mono has no Thai glyphs; this looped Plex face is the one Thai font for the whole app. */
+@font-face {
+  font-family: 'Arctri Thai';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(../../../node_modules/@fontsource/ibm-plex-sans-thai-looped/files/ibm-plex-sans-thai-looped-thai-400-normal.woff2) format('woff2');
+  unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Arctri Thai';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url(../../../node_modules/@fontsource/ibm-plex-sans-thai-looped/files/ibm-plex-sans-thai-looped-thai-500-normal.woff2) format('woff2');
+  unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Arctri Thai';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url(../../../node_modules/@fontsource/ibm-plex-sans-thai-looped/files/ibm-plex-sans-thai-looped-thai-600-normal.woff2) format('woff2');
+  unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC;
+}
 
 @custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
 
@@ -24,8 +46,9 @@
   --color-ok: #3fa24c;
   --color-danger: #e0554c;
   --color-warn: #e5c07b;
-  --font-sans: 'Inter', 'IBM Plex Sans Thai', 'Segoe UI', -apple-system, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace;
+  --font-sans: 'Roboto', 'Arctri Thai', 'Segoe UI', -apple-system, system-ui, sans-serif;
+  /* Keep in step with TERMINAL_FONT in features/terminal/theme.ts. */
+  --font-mono: 'Roboto Mono', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace;
 }
 
 :root,
@@ -83,6 +106,10 @@ button {
   scrollbar-color: var(--ad-border) transparent;
 }
 
+.font-mono {
+  letter-spacing: -0.02em;
+}
+
 .xterm-host {
   position: absolute;
   inset: 0;
@@ -98,6 +125,7 @@ button {
   font-family: var(--font-mono);
   font-size: var(--ad-term-size, 13px);
   line-height: 1.45;
+  letter-spacing: -0.02em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
