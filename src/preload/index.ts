@@ -5,6 +5,7 @@ import type { CompletionResponse } from '@shared/types/completion';
 import type { AgentEntry } from '@shared/types/agent';
 import type { AgentStatus } from '@shared/types/agent-status';
 import type { NativeMenuItem } from '@shared/ipc/contract';
+import type { GitSyncResult, PreWorkCheck, RepoChanged, RepoSyncSnapshot } from '@shared/git/sync';
 import type { ProfilesResult } from '../main/shell/registry';
 
 type GitActionResult = { ok: true; out: string } | { ok: false; error: string };
@@ -152,6 +153,19 @@ const api = {
       ipcRenderer.invoke('fs:copy', { sessionId, from, toDir }),
     watch: (sessionId: SessionId, dirs: string[]): Promise<{ polling: boolean }> => ipcRenderer.invoke('fs:watch', { sessionId, dirs }),
     onChanged: (cb: (v: { id: SessionId; dirs: string[] }) => void): Unsub => subscribe('fs:changed', cb)
+  },
+  gitSync: {
+    status: (sessionId: SessionId): Promise<RepoSyncSnapshot | null> => ipcRenderer.invoke('git:syncStatus', { sessionId }),
+    fetch: (sessionId: SessionId): Promise<GitSyncResult> => ipcRenderer.invoke('git:syncFetch', { sessionId }),
+    /** Fast-forward only; `expect` is the branch the user was looking at. */
+    update: (sessionId: SessionId, expect: { head?: string; upstream?: string }): Promise<GitSyncResult> =>
+      ipcRenderer.invoke('git:updateSafe', { sessionId, expectHead: expect.head, expectUpstream: expect.upstream }),
+    preWorkCheck: (cwd: import('@shared/types/env').EnvPath): Promise<PreWorkCheck> => ipcRenderer.invoke('git:preWorkCheck', { cwd }),
+    /** Files with unsaved edits in this tab's editor. */
+    reportUnsaved: (sessionId: SessionId, rels: string[]): void => ipcRenderer.send('git:unsaved', { sessionId, rels }),
+    onChanged: (cb: (v: { repoId: string; sessionIds: SessionId[]; snapshot: RepoSyncSnapshot }) => void): Unsub => subscribe('git:syncChanged', cb),
+    /** The repository moved on outside the page's own actions (or after one): reload what shows git. */
+    onRepoChanged: (cb: (v: RepoChanged) => void): Unsub => subscribe('git:repoChanged', cb)
   },
   agentStatus: {
     list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agentStatus:list'),

@@ -7,6 +7,7 @@ import { useUi } from '@/stores/ui';
 import { disposeHost } from '../terminal/xterm-host';
 import { useBlocks } from '@/stores/blocks';
 import { pushRecent, toRecent } from '../welcome/recent';
+import { confirmPreWork } from './preWork';
 
 const INITIAL = { cols: 120, rows: 30 };
 
@@ -96,6 +97,8 @@ export async function openAgent(
   options: AgentLaunchOptions = {},
   cwd?: EnvPath
 ): Promise<SessionInfo | undefined> {
+  // Arctri's own buttons look at the repository first (a typed `claude` is never intercepted); the user decides
+  if (cwd && !(await confirmPreWork(cwd))) return undefined;
   useSessions.getState().addPending(1);
   try {
     const info = await api.sessions.create({

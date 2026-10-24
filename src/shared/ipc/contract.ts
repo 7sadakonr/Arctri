@@ -95,6 +95,11 @@ export const requestSchemas = {
   'git:fetch': z.object({ sessionId: id }),
   'git:pull': z.object({ sessionId: id }),
   'git:switch': z.object({ sessionId: id, name: z.string().min(1).max(200), remote: z.boolean() }),
+  'git:syncStatus': z.object({ sessionId: id }),
+  'git:syncFetch': z.object({ sessionId: id }),
+  'git:updateSafe': z.object({ sessionId: id, expectHead: z.string().max(100).optional(), expectUpstream: z.string().max(300).optional() }),
+  'git:preWorkCheck': z.object({ cwd: envPath }),
+  'git:unsaved': z.object({ sessionId: id, rels: z.array(z.string().min(1).max(4096)).max(500) }),
   'git:log': z.object({ sessionId: id, limit: z.number().int().min(1).max(500) }),
   'git:commitFiles': z.object({ sessionId: id, hash: z.string().regex(/^[0-9a-f]{7,40}$/) }),
   'git:revText': z.object({
@@ -116,5 +121,5 @@ export const requestSchemas = {
 export type RequestChannel = keyof typeof requestSchemas;
 export type Req<C extends RequestChannel> = z.infer<(typeof requestSchemas)[C]>;
 
-export const eventChannels = ['session:changed', 'session:closed', 'session:port', 'app:menu', 'app:focus-session', 'agentStatus:changed'] as const;
+export const eventChannels = ['session:changed', 'session:closed', 'session:port', 'app:menu', 'app:focus-session', 'agentStatus:changed', 'git:syncChanged', 'git:repoChanged'] as const;
 export type EventChannel = (typeof eventChannels)[number];

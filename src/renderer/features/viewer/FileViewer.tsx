@@ -15,6 +15,7 @@ import { useT } from '@/lib/i18n';
 import { kbd } from '@/lib/platform';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { useGitEpoch, useGitExternalEpoch } from '@/stores/git-sync';
 import { insertText, refOf } from '../agents/insert';
 import { refreshChanges, useChanges } from '../agents/useChanges';
 import { iconUrl } from '@/lib/file-icon';
@@ -156,6 +157,26 @@ export function FileViewer({ info, active }: { info: SessionInfo; active: boolea
     for (const r of [...cache.current.keys()]) if (!open.has(r)) cache.current.delete(r);
     for (const r of [...dirtyRels.current]) if (!open.has(r)) markDirty(r, false);
   }, [view]);
+
+  // the main process refuses to update the branch under files that have unsaved edits here, so it must know which
+  useEffect(() => {
+    api.gitSync.reportUnsaved(info.id, [...dirtySet].map((r) => (view?.tabs.find((x) => x.rel === r)?.path ?? r)));
+  }, [info.id, dirtySet]);
+  useEffect(() => () => api.gitSync.reportUnsaved(info.id, []), [info.id]);
+
+  // the repository moved on (a switch, pull or reset here or elsewhere): files without edits are read again, files with edits are kept
+  const gitEpoch = useGitEpoch(info.id);
+  const externalEpoch = useGitExternalEpoch(info.id);
+  const seenEpoch = useRef({ any: gitEpoch, external: externalEpoch });
+  useEffect(() => {
+    const external = externalEpoch !== seenEpoch.current.external;
+    if (gitEpoch === seenEpoch.current.any && !external) return;
+    seenEpoch.current = { any: gitEpoch, external: externalEpoch };
+    for (const r of [...cache.current.keys()]) if (!dirtyRels.current.has(r)) cache.current.delete(r);
+    if (!rel || rev) return; // a commit's own view never changes
+    if (!dirtyRef.current) reload(rel);
+    else if (external) setStale(true); // the text on screen may not match the new branch; it stays as it is
+  }, [gitEpoch, externalEpoch]);
 
   // (re)load the file and build the editor
   useEffect(() => {

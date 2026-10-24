@@ -22,6 +22,8 @@ import { logger } from '../logger';
 import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
 import { applyUiScale } from '../window';
 import { setAppMenus } from '../app-menu';
+import type { GitSyncService } from '../git/sync-service';
+import type { EnvironmentRef } from '@shared/types/env';
 
 export interface Services {
   sessions: SessionManager;
@@ -37,6 +39,7 @@ export interface Services {
   envQuery: EnvironmentQuery & GitHistoryQuery;
   wsl: WslManager;
   fileWatcher: FileWatcher;
+  gitSync: GitSyncService;
   getWindow: () => BrowserWindow | undefined;
   origins: () => string[];
 }
@@ -297,6 +300,10 @@ export function registerIpc(s: Services, hub: PortHub): void {
   };
   // Git actions that write (stage, commit, branch, push). Paths are checked to stay below the tab's folder.
   const afterGit = (sessionId: string, res: GitResult): GitResult => {
+    if (s.gitSync.repoOf(sessionId)) {
+      void s.gitSync.invalidate(sessionId);
+      return res;
+    }
     const target = repo(sessionId);
     for (const tab of s.sessions.list()) {
       if (target && tab.cwd?.path === target.cwd && tab.env.kind === target.info.env.kind &&
@@ -306,6 +313,8 @@ export function registerIpc(s: Services, hub: PortHub): void {
     }
     return res;
   };
+  /** Git actions that write go one at a time per worktree, whichever tab asked. */
+  const mutate = <T,>(sessionId: string, fn: () => Promise<T>): Promise<T> => s.gitSync.queue(s.gitSync.repoOf(sessionId), fn);
   const NO_TAB: GitResult = { ok: false, error: 'no folder' };
   const branchPreflight = async (sessionId: string) => {
     const t = repo(sessionId);
@@ -317,42 +326,70 @@ export function registerIpc(s: Services, hub: PortHub): void {
   r.handle('git:branchPreflight', ({ sessionId }) => branchPreflight(sessionId));
   r.handle('git:stage', async ({ sessionId, paths }) => {
     const t = repo(sessionId);
-    return t ? afterGit(sessionId, await gitStage(t.info.env, t.cwd, paths)) : NO_TAB;
+    return t ? mutate(sessionId, async () => afterGit(sessionId, await gitStage(t.info.env, t.cwd, paths))) : NO_TAB;
   });
   r.handle('git:unstage', async ({ sessionId, paths }) => {
     const t = repo(sessionId);
-    return t ? afterGit(sessionId, await gitUnstage(t.info.env, t.cwd, paths)) : NO_TAB;
+    return t ? mutate(sessionId, async () => afterGit(sessionId, await gitUnstage(t.info.env, t.cwd, paths))) : NO_TAB;
   });
   r.handle('git:commit', async ({ sessionId, message }) => {
     const t = repo(sessionId);
-    return t ? afterGit(sessionId, await gitCommit(t.info.env, t.cwd, message)) : NO_TAB;
+    return t ? mutate(sessionId, async () => afterGit(sessionId, await gitCommit(t.info.env, t.cwd, message))) : NO_TAB;
   });
   r.handle('git:createBranch', async ({ sessionId, name }) => {
     const t = repo(sessionId);
     if (!t) return NO_TAB;
-    const gate = await branchPreflight(sessionId);
-    if (!gate.ok) return { ok: false as const, error: gate.error ?? 'git failed' };
-    return afterGit(sessionId, await gitCreateBranch(t.info.env, t.cwd, name));
+    return mutate(sessionId, async () => {
+      const gate = await branchPreflight(sessionId);
+      if (!gate.ok) return { ok: false as const, error: gate.error ?? 'git failed' };
+      return afterGit(sessionId, await gitCreateBranch(t.info.env, t.cwd, name));
+    });
   });
   r.handle('git:push', async ({ sessionId }) => {
     const t = repo(sessionId);
-    return t ? afterGit(sessionId, await gitPush(t.info.env, t.cwd)) : NO_TAB;
+    return t ? mutate(sessionId, async () => afterGit(sessionId, await gitPush(t.info.env, t.cwd))) : NO_TAB;
   });
   r.handle('git:fetch', async ({ sessionId }) => {
     const t = repo(sessionId);
-    return t ? afterGit(sessionId, await gitFetch(t.info.env, t.cwd)) : NO_TAB;
+    if (!t) return NO_TAB;
+    const repoId = s.gitSync.repoOf(sessionId);
+    if (!repoId) return afterGit(sessionId, await gitFetch(t.info.env, t.cwd));
+    const r = await s.gitSync.fetch(repoId); // shares a fetch that is already running
+    void s.gitSync.invalidate(sessionId);
+    return r.ok ? { ok: true, out: '' } : { ok: false, error: r.error };
   });
   r.handle('git:pull', async ({ sessionId }) => {
     const t = repo(sessionId);
-    return t ? afterGit(sessionId, await gitPull(t.info.env, t.cwd)) : NO_TAB;
+    return t ? mutate(sessionId, async () => afterGit(sessionId, await gitPull(t.info.env, t.cwd))) : NO_TAB;
   });
   r.handle('git:switch', async ({ sessionId, name, remote }) => {
     const t = repo(sessionId);
     if (!t) return NO_TAB;
-    const gate = await branchPreflight(sessionId);
-    if (!gate.ok) return { ok: false as const, error: gate.error ?? 'git failed' };
-    return afterGit(sessionId, await gitSwitch(t.info.env, t.cwd, name, remote));
+    return mutate(sessionId, async () => {
+      const gate = await branchPreflight(sessionId);
+      if (!gate.ok) return { ok: false as const, error: gate.error ?? 'git failed' };
+      const res = afterGit(sessionId, await gitSwitch(t.info.env, t.cwd, name, remote));
+      const repoId = s.gitSync.repoOf(sessionId);
+      if (res.ok && repoId && s.prefs.get().gitAutoFetch) s.gitSync.scheduleFetch(repoId, 'switch');
+      return res;
+    });
   });
+
+  // Where the branch stands against its upstream, shared by every tab in the worktree.
+  r.handle('git:syncStatus', async ({ sessionId }) => (await s.gitSync.status(sessionId)) ?? null);
+  r.handle('git:syncFetch', async ({ sessionId }) => {
+    const repoId = s.gitSync.repoOf(sessionId) ?? (await s.gitSync.attach(sessionId));
+    return repoId ? s.gitSync.fetch(repoId) : { ok: false as const, code: 'FAILED' as const, error: 'no repository' };
+  });
+  r.handle('git:updateSafe', async ({ sessionId, expectHead, expectUpstream }) => {
+    if (!s.gitSync.repoOf(sessionId)) await s.gitSync.attach(sessionId);
+    return s.gitSync.updateSafe(sessionId, { head: expectHead, upstream: expectUpstream });
+  });
+  r.handle('git:preWorkCheck', async ({ cwd }) => {
+    const env: EnvironmentRef = cwd.env === 'wsl' ? { kind: 'wsl', distro: cwd.distro } : { kind: cwd.env };
+    return s.gitSync.preWork(env, cwd.path);
+  });
+  r.on('git:unsaved', ({ sessionId, rels }) => s.gitSync.reportUnsaved(sessionId, rels));
 
   r.handle('git:refs', async ({ sessionId }) => {
     const t = repo(sessionId);

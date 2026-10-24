@@ -6,6 +6,7 @@ import { envKeyOf } from '@shared/types/env';
 import { appOrigins, createMainWindow } from './window';
 import { PortHub, registerIpc, sendInfo } from './ipc/register';
 import { FileWatcher } from './files/watcher';
+import { GitSyncService } from './git/sync-service';
 import { openDb } from './persistence/db';
 import { HistoryRepo } from './persistence/history-repo';
 import { PrefsStore } from './persistence/prefs';
@@ -128,6 +129,7 @@ async function start(): Promise<void> {
     if (win && !win.isDestroyed()) win.webContents.send('fs:changed', { id, dirs });
   });
 
+  const gitSyncRef: { current?: GitSyncService } = {};
   const agentStatus = new AgentStatusService({
     root: join(app.getPath('userData'), 'agent-events'),
     log: (message, extra) => logger.info(message, extra),
@@ -138,10 +140,12 @@ async function start(): Promise<void> {
     windowFocused: () => !!win && !win.isDestroyed() && win.isFocused(),
     onChanged: (status, id) => {
       if (win && !win.isDestroyed()) win.webContents.send('agentStatus:changed', { id, status });
+      gitSyncRef.current?.agentChanged(id);
     }
   });
 
   const warmed = new Set<string>();
+  const attachedAt = new Map<string, string>();
   const sessions = new SessionManager({
     agentLaunch: async (spec, ctx) => {
       const eventsDir = agentStatus.watch(ctx.id, ctx.nonce);
@@ -192,12 +196,19 @@ async function start(): Promise<void> {
           if (!agentStatus.has(info.id)) agentStatus.begin(info.id, info.runningAgent.agentId, agentStatus.noHooksReason(info.id));
         }
       }
+      const here = info.cwd ? `${info.cwd.env}:${info.cwd.path}` : '';
+      if (here && attachedAt.get(info.id) !== here) {
+        attachedAt.set(info.id, here);
+        void gitSyncRef.current?.attach(info.id);
+      }
       sendInfo(win, info);
     },
     onClosed: (id) => {
       hub.detach(id);
       agentStatus.forget(id);
       fileWatcher.clear(id);
+      attachedAt.delete(id);
+      gitSyncRef.current?.detach(id);
       if (win && !win.isDestroyed()) win.webContents.send('session:closed', id);
     },
     onCommand: (c) => {
@@ -210,11 +221,33 @@ async function start(): Promise<void> {
     }
   });
 
+  const send = (channel: string, payload: unknown) => {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  };
+  const gitSync = new GitSyncService({
+    session: (id) => {
+      const i = sessions.get(id);
+      return i?.cwd ? { env: i.env, cwd: i.cwd.path } : undefined;
+    },
+    agentActivity: (id) => {
+      const i = sessions.get(id);
+      if (!i || i.state === 'exited' || i.state === 'failed' || (i.kind !== 'agent' && !i.runningAgent)) return 'idle';
+      const st = agentStatus.list().find((a) => a.sessionId === id)?.state;
+      if (!st || st === 'unknown') return 'unknown';
+      return st === 'working' || st === 'needs-approval' || st === 'starting' ? 'active' : 'idle';
+    },
+    emit: send,
+    refreshBranch: (id) => sessions.refreshBranch(id),
+    autoFetch: () => prefs.get().gitAutoFetch,
+    signature: (env, cwd) => envQuery.gitSignature(env, cwd)
+  });
+
+  gitSyncRef.current = gitSync;
   const completion = new CompletionEngine({ sessions, history, env: envQuery });
 
   registerIpc(
     {
-      sessions, registry, prefs, history, completion, envQuery, fileWatcher, wsl, agentStatus,
+      sessions, registry, prefs, history, completion, envQuery, fileWatcher, gitSync, wsl, agentStatus,
       agents: { detect: (refresh) => agents.detect(refresh) },
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
@@ -240,6 +273,8 @@ async function start(): Promise<void> {
       busyCount: () => sessions.list().filter((s) => s.state === 'running' && (s.kind === 'agent' || s.phase === 'executing')).length
     });
     win.on('closed', () => (win = undefined));
+    win.on('focus', () => gitSync.setFocused(true));
+    win.on('blur', () => gitSync.setFocused(false));
     win.once('ready-to-show', () => mark('windowShown'));
   };
   create();
@@ -267,6 +302,7 @@ async function start(): Promise<void> {
     }
     void sessions.closeAll(5000).finally(() => {
       fileWatcher.dispose();
+      gitSync.dispose();
       envQuery.dispose();
       db.close();
       app.quit();

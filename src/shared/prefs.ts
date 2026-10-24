@@ -25,6 +25,7 @@ const shape = {
   historyLimit: z.number().int().min(100).max(200000),
   agentPaths: z.record(z.string().max(100), z.string().max(1000)),
   agentNotifications: z.boolean(),
+  gitAutoFetch: z.boolean(),
   dismissedHints: z.array(z.string().max(100)).max(50),
   recentProjects: z
     .array(
@@ -55,6 +56,7 @@ export const prefsSchema = z.object({
   historyLimit: shape.historyLimit.default(10000),
   agentPaths: shape.agentPaths.default({}),
   agentNotifications: shape.agentNotifications.default(true),
+  gitAutoFetch: shape.gitAutoFetch.default(true),
   dismissedHints: shape.dismissedHints.default([]),
   recentProjects: shape.recentProjects.default([]),
   window: z

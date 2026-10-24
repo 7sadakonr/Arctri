@@ -104,6 +104,20 @@ $out"
         git --no-optional-locks for-each-ref --format='%(refname)%09%(HEAD)%09%(upstream:short)%09%(upstream:track,nobracket)' refs/heads refs/remotes 2>/dev/null
       })
       ;;
+    gitsig)
+      # the same reading as repoFingerprint (src/main/git/repo-watcher.ts): current branch, its commit, upstream and distance, operations under way
+      d=$(expand_home "$(dec "$a1")")
+      out=$(cd "$d" 2>/dev/null && gd=$(git --no-optional-locks rev-parse --absolute-git-dir 2>/dev/null) && {
+        printf 'OK\n'
+        c=$(git --no-optional-locks for-each-ref --format='%(HEAD)%09%(refname:short)%09%(objectname)%09%(upstream)%09%(upstream:track)' refs/heads 2>/dev/null | grep '^\*' | head -n 1 | cut -c3-)
+        [ -n "$c" ] || c=$(printf '(detached)\t%s\t\t' "$(git --no-optional-locks rev-parse --verify -q HEAD 2>/dev/null)")
+        ops=""
+        for n in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+          [ -e "$gd/$n" ] && ops="${ops:+$ops,}$n"
+        done
+        printf '%s\t%s' "$c" "$ops"
+      })
+      ;;
     gitlog)
       d=$(expand_home "$(dec "$a1")")
       n=$(dec "$a2")
