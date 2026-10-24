@@ -33,9 +33,11 @@ describe.skipIf(process.platform === 'win32')('hook script: the model in use', (
     expect(run('claude', { hook_event_name: 'SessionStart', transcript_path: t })['model']).toBe('claude-opus-5-5');
   });
 
-  it('Claude: other events, a relative path, a path with .. or odd characters give no model; the payload is untouched', () => {
+  it('Claude: a prompt, a relative path, a path with .. or odd characters give no model; the payload is untouched', () => {
     const t = transcript(line('claude-opus-5-5'));
-    expect(run('claude', { hook_event_name: 'PostToolUse', transcript_path: t })['model']).toBe('');
+    expect(run('claude', { hook_event_name: 'UserPromptSubmit', transcript_path: t })['model']).toBe('');
+    expect(run('claude', { hook_event_name: 'PostToolUse', transcript_path: t })['model']).toBe('claude-opus-5-5');
+    expect(run('claude', { hook_event_name: 'PostToolUseFailure', transcript_path: t })['model']).toBe('claude-opus-5-5');
     expect(run('claude', { hook_event_name: 'Stop', transcript_path: 't.jsonl' })['model']).toBe('');
     expect(run('claude', { hook_event_name: 'Stop', transcript_path: `${t}/../t.jsonl` })['model']).toBe('');
     expect(run('claude', { hook_event_name: 'Stop', transcript_path: `${t};x` })['model']).toBe('');

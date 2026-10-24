@@ -23,6 +23,10 @@ export interface AgentStatusEvent {
   reason?: StatusReason;
   /** The model in use, as the agent's own session files say; absent until known. */
   model?: string;
+  /** What the agent is doing now (a tool's description or file, or the subject of the prompt it thinks about): goes to the name of the tab, never kept in the status. */
+  activity?: string;
+  /** Where the agent keeps the transcript of its session (a path as the agent sees it); used to follow `/model`, never kept in the status. */
+  transcriptPath?: string;
 }
 
 export interface AgentStatus extends AgentStatusEvent {
