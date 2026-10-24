@@ -31,6 +31,17 @@ describe.skipIf(!!process.env['ARCTRI_SKIP_WSL'])('WSL helper (real Ubuntu)', ()
     expect(await svc.listDirResult(env, `${base}/does not exist`)).toEqual({ ok: false });
   });
 
+  it('gives the watcher a reading of the repository that changes with the branch', async () => {
+    const before = await svc.gitSignature(env, `${base}/repo`);
+    expect(before).toMatch(/^[^\t]+\t[0-9a-f]{40}\t/);
+    expect(await svc.gitSignature(env, `${base}/my docs`)).toBeNull(); // not a repository
+    await run(`cd '${base}/repo' && git switch -q feature/ทดสอบ`);
+    const after = await svc.gitSignature(env, `${base}/repo`);
+    expect(after).not.toBe(before);
+    expect(after!.startsWith('feature/ทดสอบ\t')).toBe(true);
+    await run(`cd '${base}/repo' && git switch -q -`);
+  });
+
   it('lists folders while the git/PATH lane is busy', async () => {
     await svc.listDir(env, base); // the file lane is up
     const order: string[] = [];

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, ChevronDown, GitBranch, Loader2, Maximize2, Minus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, GitBranch, Loader2, Maximize2, Minus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SessionInfo } from '@shared/types/session';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,9 @@ import { tNow, useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { refreshChanges, refreshChangesNow, useChanges, type ChangesData } from '../agents/useChanges';
+import { useGitEpoch, useGitSync } from '@/stores/git-sync';
+import { GitSyncStatus } from './GitSyncStatus';
+import { UpdateBranchDialog } from './UpdateBranchDialog';
 
 type File = ChangesData['files'][number];
 type Refs = NonNullable<Awaited<ReturnType<typeof api.files.refs>>>;
@@ -89,6 +92,9 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
   const stageQueue = useRef<Promise<unknown>>(Promise.resolve());
   const [refs, setRefs] = useState<Refs | null | undefined>(undefined);
+  const snap = useGitSync(info.id);
+  const epoch = useGitEpoch(info.id);
+  const [updating, setUpdating] = useState(false);
 
   const loadRefs = useCallback(async () => {
     try {
@@ -100,7 +106,7 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
   const signature = data ? data.files.map((f) => `${f.status}${f.path}`).join('\n') : '';
   useEffect(() => {
     void loadRefs();
-  }, [loadRefs, info.gitBranch, signature]);
+  }, [loadRefs, info.gitBranch, signature, epoch, snap?.fetchedAt, snap?.headSha]);
 
   useEffect(() => {
     drafts.set(info.id, message);
@@ -121,18 +127,29 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
   // The one button next to the branch name does what is most useful now (as in Zed); the arrow beside it offers all three.
   const remoteActions = {
     fetch: { busy: 'fetch', icon: RefreshCw, label: t('sidebar.fetch'), title: t('sidebar.fetchHint'), run: () => api.files.fetch(info.id), done: tNow('sidebar.fetched') },
-    pull: { busy: 'pull', icon: ArrowDown, label: t('sidebar.pull'), title: t('sidebar.pullHint'), run: () => api.files.pull(info.id), done: tNow('sidebar.pulled') },
+    update: { busy: 'pull', icon: ArrowDown, label: t('sync.update'), title: t('sync.updateHint'), run: undefined, done: undefined },
     push: { busy: 'push', icon: ArrowUp, label: t('sidebar.push'), title: t('sidebar.pushHint', { name: current?.upstream ?? current?.name ?? '' }), run: () => api.files.push(info.id), done: tNow('sidebar.pushed') }
   } as const;
-  const primary: { act: keyof typeof remoteActions; label: string; title?: string } =
-    current && !current.upstream
-      ? { act: 'push', label: t('sidebar.publish'), title: t('sidebar.publishHint', { name: current.name }) }
-      : current?.behind
-        ? { act: 'pull', label: t('sidebar.pullN', { n: current.behind }) }
-        : current?.ahead
-          ? { act: 'push', label: t('sidebar.pushN', { n: current.ahead }) }
-          : { act: 'fetch', label: t('sidebar.fetch') };
-  const doRemote = (k: keyof typeof remoteActions) => {
+  const behindN = snap?.behind ?? current?.behind ?? 0;
+  const aheadN = snap?.ahead ?? current?.ahead ?? 0;
+  const status = snap?.status;
+  const primary: { act: keyof typeof remoteActions | 'resolve'; label: string; title?: string } =
+    status === 'diverged'
+      ? { act: 'resolve', label: t('sync.resolve'), title: t('sync.resolveHint') }
+      : status === 'no-upstream' || (!snap && current && !current.upstream)
+        ? { act: 'push', label: t('sidebar.publish'), title: t('sidebar.publishHint', { name: snap?.branch ?? current?.name ?? '' }) }
+        : status === 'behind' || (!snap && behindN)
+          ? { act: 'update', label: t('sync.updateN', { n: behindN }) }
+          : status === 'ahead' || (!snap && aheadN)
+            ? { act: 'push', label: t('sidebar.pushN', { n: aheadN }) }
+            : { act: 'fetch', label: t('sidebar.fetch') };
+  const fetching = status === 'fetching' || busy === 'fetch';
+  const doRemote = (k: keyof typeof remoteActions | 'resolve') => {
+    if (k === 'resolve') return undefined;
+    if (k === 'update') {
+      setUpdating(true);
+      return undefined;
+    }
     const a = remoteActions[k];
     return run(a.busy, a.run, a.done);
   };
@@ -300,14 +317,16 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
             <button
               type="button"
               data-testid="remote-primary"
-              title={primary.title ?? remoteActions[primary.act].title}
-              disabled={!!busy || !refs}
+              title={primary.title ?? (primary.act === 'resolve' ? undefined : remoteActions[primary.act].title)}
+              disabled={!!busy || !refs || primary.act === 'resolve' || (primary.act === 'fetch' && fetching)}
               onClick={() => void doRemote(primary.act)}
               className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-fg hover:bg-hover disabled:opacity-50"
             >
-              {busy === remoteActions[primary.act].busy
-                ? <Loader2 size={12} className="animate-spin" />
-                : (() => { const Icon = remoteActions[primary.act].icon; return <Icon size={12} />; })()}
+              {primary.act === 'resolve'
+                ? <AlertTriangle size={12} />
+                : busy === remoteActions[primary.act].busy || (primary.act === 'fetch' && fetching)
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : (() => { const Icon = remoteActions[primary.act].icon; return <Icon size={12} />; })()}
               {primary.label}
             </button>
             <DropdownMenu>
@@ -323,7 +342,7 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[160px]">
-                {(['fetch', 'pull', 'push'] as const).map((k) => {
+                {(['fetch', 'update', 'push'] as const).map((k) => {
                   const Icon = remoteActions[k].icon;
                   return (
                     <DropdownMenuItem key={k} onSelect={() => void doRemote(k)}>
@@ -336,6 +355,7 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
             </DropdownMenu>
           </div>
         </div>
+        <GitSyncStatus sessionId={info.id} snap={snap} />
         <div className="border-y border-border bg-bg focus-within:border-accent/60">
           <div className="relative">
             {messageField(false)}
@@ -361,6 +381,7 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
           </div>
         </div>
       </div>
+      <UpdateBranchDialog sessionId={info.id} snap={snap} open={updating} onOpenChange={setUpdating} />
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent title={t('sidebar.commitTitle')} closeLabel={t('common.close')} className="w-[640px] max-w-[92vw]">
           {messageField(true)}

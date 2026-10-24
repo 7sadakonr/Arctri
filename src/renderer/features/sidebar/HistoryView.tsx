@@ -8,6 +8,7 @@ import { useLang, useT } from '@/lib/i18n';
 import type { MessageKey } from '@shared/i18n';
 import { relativeTime } from '@/lib/relative-time';
 import { useSessions } from '@/stores/sessions';
+import { useGitEpoch } from '@/stores/git-sync';
 import { useChanges } from '../agents/useChanges';
 import { baseName, dirName } from './ChangesView';
 
@@ -27,6 +28,7 @@ export function HistoryView({ info, active }: { info: SessionInfo; active: boole
   const [open, setOpen] = useState<string | undefined>(undefined);
   const [files, setFiles] = useState<Record<string, CommitFile[] | null>>({});
   const changes = useChanges(info.id, active);
+  const epoch = useGitEpoch(info.id);
   const signature = changes ? changes.files.map((f) => `${f.status}${f.path}`).join('\n') : '';
 
   const load = useCallback(async () => {
@@ -40,7 +42,7 @@ export function HistoryView({ info, active }: { info: SessionInfo; active: boole
   // a commit empties the list of changes and a switch moves the branch: both are reasons to read the log again
   useEffect(() => {
     void load();
-  }, [load, info.gitBranch, info.cwd?.path, signature]);
+  }, [load, info.gitBranch, info.cwd?.path, signature, epoch]);
   useEffect(() => {
     if (!active) return;
     window.addEventListener('focus', load);

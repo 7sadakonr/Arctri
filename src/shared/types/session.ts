@@ -48,6 +48,8 @@ export interface SessionInfo {
   runningAgent?: { agentId: AgentId; startedAt: number; command: string };
   /** What the agent says it is working on (its own window title), cleaned. Only a label, never a status. */
   agentTopic?: string;
+  /** What the agent is doing right now (a tool's description, a file); not saved. The tab shows it while the agent works. */
+  agentActivity?: string;
   /** Agent sessions: what the CLI was started with, e.g. "--model opus". */
   launchSummary?: string;
   /** Agent sessions: the user supplied flags that turn permission checks off. */

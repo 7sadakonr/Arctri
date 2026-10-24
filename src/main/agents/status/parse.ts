@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { activityOf } from '@shared/agents/activity';
 import type { AgentId } from '@shared/types/agent';
 import type { AgentState, AgentStatusEvent } from '@shared/types/agent-status';
 
@@ -15,7 +16,11 @@ const claudePayload = z.object({
   hook_event_name: z.string().max(80),
   session_id: z.string().max(200).optional(),
   notification_type: z.string().max(80).optional(),
-  tool_name: z.string().max(200).optional()
+  tool_name: z.string().max(200).optional(),
+  tool_input: z.unknown().optional(),
+  /** SessionStart names the model: an id, or an object with `id` / `display_name`. */
+  model: z.unknown().optional(),
+  transcript_path: z.string().max(1000).optional()
 });
 
 const codexPayload = z.object({
@@ -27,9 +32,23 @@ const codexPayload = z.object({
 type Base = { sessionId: string; now: number };
 
 /** Event names verified against Claude Code 2.1.x hooks (see ADR-010). Anything not listed is not guessed at: it is dropped. */
-const MODEL = /^[A-Za-z0-9._:/@+-]{1,80}$/;
+const MODEL = /^[A-Za-z0-9._:/@+-]+( [A-Za-z0-9._:/@+-]+)*$/; // an id (claude-opus-5-5) or a name as /model shows it (Opus 5.5)
 /** A model name is shown as it is reported, so it must be plain: anything else is ignored. */
-export const cleanModel = (m: string | undefined): string | undefined => (m && MODEL.test(m) ? m : undefined);
+export const cleanModel = (m: string | undefined): string | undefined => (m && m.length <= 80 && MODEL.test(m) ? m : undefined);
+
+/** The model as the SessionStart payload names it. */
+const payloadModel = (m: unknown): string | undefined => {
+  if (typeof m === 'string') return cleanModel(m);
+  if (m && typeof m === 'object') {
+    const o = m as Record<string, unknown>;
+    for (const k of ['display_name', 'id']) if (typeof o[k] === 'string' && cleanModel(o[k] as string)) return o[k] as string;
+  }
+  return undefined;
+};
+
+const SAFE_TRANSCRIPT = /^\/[A-Za-z0-9._/@+ -]+\.jsonl$/;
+/** A transcript is followed only when its path is plain and absolute: it comes from the agent's own payload. */
+export const cleanTranscriptPath = (p: string | undefined): string | undefined => (p && !p.includes('..') && SAFE_TRANSCRIPT.test(p) ? p : undefined);
 
 export function parseClaudeHook(payload: unknown, b: Base): AgentStatusEvent | null {
   const p = claudePayload.safeParse(payload);
@@ -103,6 +122,15 @@ export function parseEnvelope(text: string, expectedNonce: string, b: Base): Age
   const e = envelopeSchema.safeParse(json);
   if (!e.success || e.data.nonce !== expectedNonce) return null;
   const ev = e.data.agent === 'claude' ? parseClaudeHook(e.data.payload, b) : parseCodexNotify(e.data.payload, b);
-  const model = cleanModel(e.data.model);
-  return ev && model ? { ...ev, model } : ev;
+  if (!ev) return ev;
+  const claude = e.data.agent === 'claude' ? claudePayload.safeParse(e.data.payload).data : undefined;
+  const model = cleanModel(e.data.model) ?? payloadModel(claude?.model);
+  const event = ev.detail?.event;
+  const activity = !claude ? undefined
+    : event === 'PreToolUse' && claude.tool_name ? activityOf(claude.tool_name, claude.tool_input)
+    : undefined;
+  const transcriptPath = cleanTranscriptPath(claude?.transcript_path);
+  return model || activity || transcriptPath
+    ? { ...ev, ...(model ? { model } : {}), ...(activity ? { activity } : {}), ...(transcriptPath ? { transcriptPath } : {}) }
+    : ev;
 }

@@ -12,6 +12,61 @@ import { EventSpool } from './spool';
 const b = { sessionId: 's1', now: 1000 };
 const env = (agent: string, payload: unknown, nonce = 'n1') => JSON.stringify({ nonce, agent, payload });
 
+describe('what the agent is doing now', () => {
+  const hook = (payload: object) => parseEnvelope(env('claude', payload), 'n1', b);
+  it('comes from the tool call being made, never from the prompt', () => {
+    expect(hook({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the login bug' })?.activity).toBeUndefined();
+    expect(hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf x', description: 'Show disk space' } })?.activity).toBe('Show disk space');
+    expect(hook({ hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: '/a/b/foo.ts', old_string: 'secret' } })?.activity).toBe('Edit foo.ts');
+    expect(hook({ hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { description: 'x' } })?.activity).toBeUndefined();
+    expect(JSON.stringify(hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'secret' } }))).not.toContain('secret');
+  });
+  it('SessionStart names the model, as an id or as an object', () => {
+    expect(hook({ hook_event_name: 'SessionStart', model: 'claude-opus-5-5' })?.model).toBe('claude-opus-5-5');
+    expect(hook({ hook_event_name: 'SessionStart', model: { id: 'claude-opus-5-5', display_name: 'Opus 5.5' } })?.model).toBe('Opus 5.5');
+    expect(hook({ hook_event_name: 'SessionStart', model: { nope: 1 } })?.model).toBeUndefined();
+    expect(hook({ hook_event_name: 'SessionStart', model: 42 })?.state).toBe('ready'); // an odd model never costs the status
+  });
+  it('the transcript path of the payload is carried when plain, and dropped otherwise', () => {
+    const at = (t: string) => parseEnvelope(env('claude', { hook_event_name: 'Stop', transcript_path: t }), 'n1', b)?.transcriptPath;
+    expect(at('/home/me/.claude/projects/x/abc.jsonl')).toBe('/home/me/.claude/projects/x/abc.jsonl');
+    expect(at('rel/abc.jsonl')).toBeUndefined();
+    expect(at('/home/me/../etc/abc.jsonl')).toBeUndefined();
+    expect(at('/home/me/abc.txt')).toBeUndefined();
+  });
+  it('a model picked with /model changes only the model of the status', () => {
+    const changed = vi.fn();
+    let file = '';
+    const dir = mkdtempSync(join(tmpdir(), 'arctri-st-'));
+    file = join(dir, 't.jsonl');
+    writeFileSync(file, '');
+    const svc = new AgentStatusService({ root: dir, windowFocused: () => true, transcriptFile: () => file, onChanged: changed });
+    svc.apply({ sessionId: 's1', agentId: 'claude-code', state: 'ready', timestamp: 1, source: 'claude-hook', confidence: 'high', model: 'claude-opus-5-5', transcriptPath: '/x/t.jsonl' });
+    writeFileSync(file, 'Set model to `Sonnet 5.5`\n');
+    return vi.waitFor(() => {
+      const last = changed.mock.calls.at(-1)![0] as AgentStatus;
+      expect(last).toMatchObject({ state: 'ready', model: 'Sonnet 5.5', since: 1 });
+      expect('transcriptPath' in last).toBe(false);
+      svc.forget('s1');
+    }, { timeout: 3000 });
+  });
+  it('goes to onActivity while the agent works, is dropped from the status, and ends with the work', () => {
+    const onActivity = vi.fn();
+    const svc = new AgentStatusService({ root: tmpdir(), windowFocused: () => true, onActivity, onChanged: () => undefined });
+    const ev = (state: AgentStatusEvent['state'], timestamp: number, activity?: string): AgentStatusEvent => ({
+      sessionId: 's1', agentId: 'claude-code', state, timestamp, source: 'claude-hook', confidence: 'high', ...(activity ? { activity } : {})
+    });
+    svc.apply(ev('working', 1, 'Show disk space'));
+    expect(onActivity).toHaveBeenLastCalledWith('s1', 'Show disk space');
+    svc.apply({ ...ev('working', 2), detail: { event: 'PostToolUse', tool: 'Bash' } }); // the tool call is over: back to the session's name
+    expect(onActivity).toHaveBeenLastCalledWith('s1', null);
+    svc.apply(ev('working', 3, 'Edit foo.ts'));
+    expect(onActivity).toHaveBeenLastCalledWith('s1', 'Edit foo.ts');
+    svc.apply(ev('finished', 4));
+    expect(onActivity).toHaveBeenLastCalledWith('s1', null);
+  });
+});
+
 describe('claude hook parsing', () => {
   it('maps verified events and carries only event names', () => {
     expect(parseClaudeHook({ hook_event_name: 'Stop', session_id: 'c1' }, b)).toMatchObject({ state: 'finished', confidence: 'high', agentSessionId: 'c1' });
@@ -379,7 +434,7 @@ describe('the model in use', () => {
   it('is taken from the envelope when it is a plain name, and ignored otherwise', () => {
     expect(parseEnvelope(withModel('claude-opus-5-5'), 'n', base)?.model).toBe('claude-opus-5-5');
     expect(parseEnvelope(withModel('gpt-6-sol', 'codex', { type: 'agent-turn-complete' }), 'n', base)?.model).toBe('gpt-6-sol');
-    for (const bad of ['', 'a b', 'x'.repeat(81), '<script>', 'a;b']) expect(parseEnvelope(withModel(bad), 'n', base)?.model).toBeUndefined();
+    for (const bad of ['', 'a  b', ' a', 'x'.repeat(81), '<script>', 'a;b']) expect(parseEnvelope(withModel(bad), 'n', base)?.model).toBeUndefined();
     expect(parseEnvelope(JSON.stringify({ nonce: 'n', agent: 'claude', payload: { hook_event_name: 'Stop' } }), 'n', base)?.model).toBeUndefined();
   });
 

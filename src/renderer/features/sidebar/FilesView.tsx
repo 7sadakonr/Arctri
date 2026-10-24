@@ -14,6 +14,7 @@ import { useSessions } from '@/stores/sessions';
 import { useFileClip } from './fileClipboard';
 import { insertText, refOf } from '../agents/insert';
 import { useChanges } from '../agents/useChanges';
+import { useGitEpoch } from '@/stores/git-sync';
 
 interface Entry {
   name: string;
@@ -146,6 +147,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
   const known = useRef(tree);
   known.current = tree;
   const changes = useChanges(info.id, active);
+  const gitEpoch = useGitEpoch(info.id);
 
   const changed = useMemo(() => {
     const m = new Map<string, string>();
@@ -241,6 +243,10 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
       }),
     [info.id, load]
   );
+  // a branch switch, pull or reset (here or elsewhere) rewrites files: read the open folders again
+  useEffect(() => {
+    if (gitEpoch) refreshRef.current();
+  }, [gitEpoch]);
   useEffect(() => {
     if (!active || !polling) return;
     const timer = setInterval(() => {

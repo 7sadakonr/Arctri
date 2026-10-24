@@ -1,8 +1,13 @@
 import { useEffect } from 'react';
+import { useGitSyncStore } from '@/stores/git-sync';
+import { refreshChanges } from '@/features/agents/useChanges';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { tNow } from '@/lib/i18n';
+import { warnAgentStarted } from '@/features/launcher/preWork';
+import { PreWorkCheckDialog } from '@/features/launcher/PreWorkCheckDialog';
 import { useAgentStatus } from '@/stores/agent-status';
 import { forgetNotified, notifyStatus } from '@/features/attention/notify';
 import { defaultProfile, openShell, wasClosedHere } from '@/features/launcher/actions';
@@ -76,7 +81,9 @@ export function App() {
   useEffect(() => {
     const offChanged = api.sessions.onChanged((info) => {
       if (wasClosedHere(info.id)) return;
+      const startedAgent = !!info.runningAgent && !useSessions.getState().infos[info.id]?.runningAgent;
       useSessions.getState().upsert(info);
+      if (startedAgent) void warnAgentStarted(info.id);
       const h = peekHost(info.id);
       if (h) {
         h.update(info);
@@ -86,6 +93,7 @@ export function App() {
     const offClosed = api.sessions.onClosed((id) => {
       forgetNotified(id);
       useSessions.getState().remove(id);
+      useGitSyncStore.getState().forget(id);
     });
     const offFocus = api.sessions.onFocusRequested((id) => {
       if (useSessions.getState().infos[id]) useSessions.getState().setActive(id);
@@ -95,6 +103,16 @@ export function App() {
       useAgentStatus.getState().set(id, status);
       if (status) notifyStatus(prev, status);
     });
+    const offSync = api.gitSync.onChanged(({ sessionIds, snapshot }) => useGitSyncStore.getState().set(sessionIds, snapshot));
+    const offRepo = api.gitSync.onRepoChanged(({ sessionIds, reason }) => {
+      useGitSyncStore.getState().bump(sessionIds, reason === 'head' || reason === 'branch');
+      for (const id of sessionIds) refreshChanges(id);
+      if (reason === 'local' || reason === 'update' || reason === 'refs') return;
+      // the branch or its commits moved outside Arctri: say so where it could matter, and touch nothing
+      const snap = useGitSyncStore.getState().bySession[sessionIds[0] ?? ''];
+      if (snap?.activeAgent || snap?.agentUnknown) useUi.getState().toast(tNow('sync.externalAgent'));
+      else if (snap?.unsavedInArctri.length) useUi.getState().toast(tNow('sync.externalChange'));
+    });
     void api.agentStatus.list().then((l) => useAgentStatus.getState().reset(l), () => undefined);
     // the main process marks the front tab's news as read, but only while this window is the one being looked at
     const reportActive = () => void api.agentStatus.active(useSessions.getState().activeId ?? null);
@@ -102,6 +120,8 @@ export function App() {
     void bootstrap().finally(() => useSessions.getState().setBooted());
     return () => {
       offStatus();
+      offSync();
+      offRepo();
       window.removeEventListener('focus', reportActive);
       offChanged();
       offClosed();
@@ -147,6 +167,7 @@ export function App() {
         </main>
       </div>
       <SettingsDialog />
+      <PreWorkCheckDialog />
       <CloneDialog />
       <HelpDialogs />
       <CommandPalette />

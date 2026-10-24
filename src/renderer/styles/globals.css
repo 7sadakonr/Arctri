@@ -5,6 +5,8 @@
 @import '@fontsource/roboto-mono/400.css';
 @import '@fontsource/roboto-mono/500.css';
 @import '@fontsource/roboto-mono/600.css';
+@import '@fontsource/cascadia-mono/400.css';
+@import '@fontsource/cascadia-mono/600.css';
 
 /* Roboto Mono has no Thai glyphs; this looped Plex face is the one Thai font for the whole app. */
 @font-face {
@@ -47,7 +49,6 @@
   --color-danger: #e0554c;
   --color-warn: #e5c07b;
   --font-sans: 'Roboto', 'Arctri Thai', 'Segoe UI', -apple-system, system-ui, sans-serif;
-  /* Keep in step with TERMINAL_FONT in features/terminal/theme.ts. */
   --font-mono: 'Roboto Mono', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace;
 }
 

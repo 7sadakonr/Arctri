@@ -2,8 +2,10 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterUserInput, reduceStatus, type UserInputKind } from '@shared/agents/status-rules';
 import type { AgentId } from '@shared/types/agent';
-import type { AgentStatus, AgentStatusEvent, StatusReason } from '@shared/types/agent-status';
+import type { AgentState, AgentStatus, AgentStatusEvent, StatusReason } from '@shared/types/agent-status';
 import type { SessionId } from '@shared/types/session';
+import { TranscriptModelWatch } from './status/model-watch';
+import { cleanModel } from './status/parse';
 import { EventSpool, type EventMeta } from './status/spool';
 
 export interface StatusServiceDeps {
@@ -17,6 +19,10 @@ export interface StatusServiceDeps {
   log?: (message: string, extra?: unknown) => void;
   /** How long an agent may stay `starting` without any event (tests shorten it). */
   noEventsMs?: number;
+  /** What the agent is doing now, for the name of the tab; null once it is not working on anything. */
+  onActivity?: (id: SessionId, activity: string | null) => void;
+  /** Where to read a transcript the agent named (a path as the agent sees it); null when it cannot be reached from here. */
+  transcriptFile?: (id: SessionId, agentPath: string) => string | null;
   onChanged: (status: AgentStatus | null, id: SessionId) => void;
   now?: () => number;
 }
@@ -26,6 +32,9 @@ export interface StatusServiceDeps {
  * and from plain terminal signals; they are merged by the pure rules in `@shared/agents/status-rules`.
  * With no trustworthy signal a tab's state is `unknown`: output text is never interpreted.
  */
+/** States in which the agent is busy with something, so what it does is worth showing. */
+const ACTIVE = new Set<AgentState>(['working', 'needs-approval', 'waiting']);
+
 export const NO_EVENTS_MS = 20_000;
 
 export class AgentStatusService {
@@ -100,7 +109,8 @@ export class AgentStatusService {
     this.startTimers.delete(id);
   }
 
-  apply(ev: AgentStatusEvent, meta: EventMeta = {}): void {
+  apply(raw: AgentStatusEvent, meta: EventMeta = {}): void {
+    const { activity, transcriptPath, ...ev } = raw; // the activity and the transcript go elsewhere, not into the status
     if (ev.source !== 'pty' && this.deps.acceptsEvents && !this.deps.acceptsEvents(ev.sessionId)) {
       this.deps.log?.('agent event ignored: no agent runs in this tab', { id: ev.sessionId, event: ev.detail?.event });
       return;
@@ -122,11 +132,45 @@ export class AgentStatusService {
       this.lastSentAt.set(ev.sessionId, meta.sentAt);
     }
     if (ev.source !== 'pty') this.cancelStartTimer(ev.sessionId);
+    if (transcriptPath) this.followTranscript(ev.sessionId, transcriptPath);
+    if (ev.state === 'exited') this.stopTranscript(ev.sessionId);
     const next = reduceStatus(this.status.get(ev.sessionId), ev, this.watching(ev.sessionId));
     if (next === this.status.get(ev.sessionId)) return;
+    // the tool's label lasts as long as the tool call; after it (and when the agent stops) the tab goes back to the session's name
+    const toolDone = ev.detail?.event === 'PostToolUse' || ev.detail?.event === 'PostToolUseFailure';
+    if (ACTIVE.has(next.state) && !toolDone) {
+      if (activity) this.deps.onActivity?.(ev.sessionId, activity);
+    } else this.deps.onActivity?.(ev.sessionId, null);
     this.status.set(ev.sessionId, next);
     this.deps.log?.('agent status', { id: ev.sessionId, state: next.state, source: next.source, event: ev.detail?.event, ...meta });
     this.deps.onChanged(next, ev.sessionId);
+  }
+
+  private transcripts = new Map<SessionId, TranscriptModelWatch>();
+
+  /** `/model` writes to the transcript at once; following it keeps the model of the agent bar current between hook events. */
+  private followTranscript(id: SessionId, agentPath: string): void {
+    const file = this.deps.transcriptFile?.(id, agentPath);
+    if (!file || this.transcripts.get(id)?.file === file) return;
+    this.stopTranscript(id);
+    const w = new TranscriptModelWatch(file, (model) => this.setModel(id, model));
+    this.transcripts.set(id, w);
+    w.start();
+  }
+
+  private stopTranscript(id: SessionId): void {
+    this.transcripts.get(id)?.stop();
+    this.transcripts.delete(id);
+  }
+
+  /** A model named on its own: the state, its age and its unread mark stay as they are. */
+  private setModel(id: SessionId, model: string): void {
+    const cur = this.status.get(id);
+    const clean = cleanModel(model);
+    if (!cur || !clean || cur.model === clean) return;
+    const next = { ...cur, model: clean };
+    this.status.set(id, next);
+    this.deps.onChanged(next, id);
   }
 
   /** BEL / OSC 9 / OSC 777 seen in a tab that runs an agent: a hint that something wants attention, nothing more. */
@@ -193,6 +237,7 @@ export class AgentStatusService {
     // a file the ended agent wrote but we have not read yet must not land on the next agent of this tab
     this.spools.get(id)?.discardPending();
     this.spools.get(id)?.setFast(false);
+    this.stopTranscript(id);
     if (this.status.delete(id)) {
       this.deps.log?.('agent status cleared', { id });
       this.deps.onChanged(null, id);

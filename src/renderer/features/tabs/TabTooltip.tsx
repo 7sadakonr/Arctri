@@ -30,7 +30,7 @@ export function TabTooltip({ id }: { id: string }) {
       <div className="font-medium">{heading}</div>
       <div>{t('tooltip.status', { state: t(statusLabelKey(status, agent)) })}</div>
       {agentId && <div>{t('tooltip.session', { name: tabLabel(info) })}</div>}
-      {agentId && info.agentTopic && tabLabel(info) !== info.title && <div className="text-fg-muted">{info.title}</div>}
+      {agentId && tabLabel(info) !== info.title && <div className="text-fg-muted">{info.agentTopic && info.agentTopic !== tabLabel(info) ? info.agentTopic : info.title}</div>}
       {live && agent && <div>{t('tooltip.elapsed', { time: formatElapsed(now - agent.since) })}</div>}
       {note && <div className="text-fg-muted">{note}</div>}
       {agentId === 'codex' && status !== 'unknown' && status !== 'starting' && <div className="text-fg-muted">{t('tooltip.codexLimit')}</div>}
