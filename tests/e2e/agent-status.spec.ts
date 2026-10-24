@@ -140,7 +140,7 @@ test('structured events drive the tab, the attention center and the palette; pla
   }
 });
 
-test('pinned tabs stay at the left, show only an icon and cannot be closed with the middle button', async () => {
+test('pinned tabs stay at the left, are as wide as the others, show a filled pin instead of close and cannot be closed with the middle button', async () => {
   const { app, page } = await launch();
   try {
     await waitForEditor(page);
@@ -148,16 +148,25 @@ test('pinned tabs stay at the left, show only an icon and cannot be closed with 
     await page.keyboard.press('Control+Shift+T');
     await expect(page.getByRole('tab')).toHaveCount(3);
     const third = page.getByRole('tab').nth(2);
-    await third.hover();
-    await third.getByRole('button', { name: /pin tab/i }).click();
-    await expect(page.getByRole('tab').first().getByRole('button', { name: /close tab/i })).toHaveCount(0);
-    await page.getByRole('tab').first().click({ button: 'middle' });
+    await third.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /^pin tab/i }).click();
+    const pinnedTab = page.getByRole('tab').first();
+    await expect(pinnedTab.getByRole('button', { name: /close tab/i })).toHaveCount(0);
+    await expect(pinnedTab.getByRole('button', { name: /unpin tab/i })).toBeVisible();
+    const [pw, ow] = [(await pinnedTab.boundingBox())!.width, (await page.getByRole('tab').nth(1).boundingBox())!.width];
+    expect(Math.abs(pw - ow)).toBeLessThan(2);
+    await pinnedTab.click({ button: 'middle' });
     await expect(page.getByRole('tab')).toHaveCount(3);
 
-    // hovering a pinned tab offers an unpin button, which restores the normal tab
-    const pinnedTab = page.getByRole('tab').first();
-    await pinnedTab.hover();
+    // the pin in the tab unpins it and brings the close button back
     await pinnedTab.getByRole('button', { name: /unpin tab/i }).click();
+    await expect(page.getByRole('tab').first().getByRole('button', { name: /close tab/i })).toHaveCount(1);
+
+    // and so does the context menu
+    await page.getByRole('tab').nth(2).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /^pin tab/i }).click();
+    await page.getByRole('tab').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /unpin tab/i }).click();
     await expect(page.getByRole('tab').first().getByRole('button', { name: /close tab/i })).toHaveCount(1);
   } finally {
     await app.close();

@@ -1,16 +1,26 @@
-import { ChevronDown, ChevronsRight, PanelRight, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
+import { ChevronDown, ChevronsRight, PanelRight, Pin, Plus, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { copyText } from '@/lib/clipboard';
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
+import { isMac, kbd } from '@/lib/platform';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { toggleSidebar } from '../sidebar/toggle';
-import { closeSession, openSimilarTab } from '../launcher/actions';
+import { closeOtherSessions, closeSession, closeSessionsToRight, duplicateSession, openSimilarTab, restartSession } from '../launcher/actions';
 import { NewTabMenu } from '../launcher/NewTabMenu';
 import { AttentionCenter } from '../attention/AttentionCenter';
 import { StatusIndicator } from '../attention/StatusIndicator';
@@ -64,7 +74,9 @@ function Tab({ id, index }: { id: string; index: number }) {
     if (draft.trim() !== tabLabel(info)) void api.sessions.rename(id, draft);
   };
   return (
+    <ContextMenu onOpenChange={(open) => open && useSessions.getState().setActive(id)}>
     <Tip label={<TabTooltip id={id} />} side="bottom">
+    <ContextMenuTrigger asChild>
     <div
       role="tab"
       aria-selected={active}
@@ -104,7 +116,7 @@ function Tab({ id, index }: { id: string; index: number }) {
       className={cn(
         // square tabs divided by thin lines, as in Zed; the active one is the colour of the terminal and open to it below
         'no-drag group relative flex h-full items-center gap-1.5 border-r border-border text-xs transition-colors',
-        pinned ? 'w-10 shrink-0 justify-center px-0' : 'min-w-[110px] max-w-[220px] flex-1 px-3',
+        'min-w-[110px] max-w-[220px] flex-1 px-3',
         active
           ? 'bg-bg text-fg after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-bg'
           : 'text-fg-muted hover:bg-hover hover:text-fg',
@@ -112,7 +124,7 @@ function Tab({ id, index }: { id: string; index: number }) {
       )}
     >
       <TabIcon id={id} />
-      {pinned ? null : editing ? (
+      {editing ? (
         <input
           ref={input}
           value={draft}
@@ -129,37 +141,24 @@ function Tab({ id, index }: { id: string; index: number }) {
       ) : (
         <span className="min-w-0 flex-1 truncate">{tabLabel(info)}</span>
       )}
-      {!pinned && status === 'approval' && (
+      {status === 'approval' && (
         <span data-testid="tab-approval" className="shrink-0 rounded bg-yellow-400/20 px-1 text-[10px] font-medium text-yellow-500">
           {t('tab.approval')}
         </span>
       )}
       <TabStatusMark id={id} />
-      {pinned && (
+      {pinned ? (
         <Tip label={t('tab.unpin')} side="bottom">
           <button
             aria-label={t('tab.unpin')}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => useSessions.getState().togglePin(id)}
-            className="absolute right-0.5 top-0.5 rounded bg-bg p-0.5 opacity-0 shadow-sm hover:bg-border focus-visible:opacity-100 group-hover:opacity-80 group-hover:hover:opacity-100"
+            className="rounded p-0.5 opacity-70 hover:bg-border hover:opacity-100"
           >
-            <PinOff size={10} />
+            <Pin size={12} fill="currentColor" />
           </button>
         </Tip>
-      )}
-      {!pinned && (
-        <Tip label={t('tab.pin')} side="bottom">
-          <button
-            aria-label={t('tab.pin')}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => useSessions.getState().togglePin(id)}
-            className="rounded p-0.5 opacity-0 hover:bg-border group-hover:opacity-70"
-          >
-            <Pin size={11} />
-          </button>
-        </Tip>
-      )}
-      {!pinned && (
+      ) : (
         <Tip label={t('tab.close')} side="bottom">
           <button
             aria-label={t('tab.close')}
@@ -172,7 +171,38 @@ function Tab({ id, index }: { id: string; index: number }) {
         </Tip>
       )}
     </div>
+    </ContextMenuTrigger>
     </Tip>
+    <ContextMenuContent onCloseAutoFocus={(e) => { e.preventDefault(); focusActiveSession(); }}>
+      <ContextMenuItem onSelect={() => void duplicateSession(info)}>{t('tab.duplicate')}</ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => useSessions.getState().togglePin(id)}>{pinned ? t('tab.unpin') : t('tab.pin')}</ContextMenuItem>
+      <ContextMenuItem
+        onSelect={() => {
+          setDraft(tabLabel(info));
+          setEditing(true);
+        }}
+      >
+        {t('menu.renameTab')}
+        <ContextMenuShortcut>F2</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => void restartSession(info)}>{t('menu.restart')}</ContextMenuItem>
+      {info.cwd && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void copyText(info.cwd!.path)}>{t('tab.copyPath')}</ContextMenuItem>
+          <ContextMenuItem onSelect={() => void api.app.openPath(id)}>{t(isMac ? 'menu.showFolderMac' : 'menu.showFolder')}</ContextMenuItem>
+        </>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => void closeSession(id)}>
+        {t('tab.close')}
+        <ContextMenuShortcut>{kbd('Ctrl+Shift+W')}</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => closeOtherSessions(id)}>{t('tab.closeOthers')}</ContextMenuItem>
+      <ContextMenuItem onSelect={() => closeSessionsToRight(id)}>{t('tab.closeRight')}</ContextMenuItem>
+    </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

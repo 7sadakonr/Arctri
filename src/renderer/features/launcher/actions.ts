@@ -137,19 +137,30 @@ export async function closeSession(id: string): Promise<void> {
   }
 }
 
-/** Starts the same shell or agent again in the same folder and closes the ended tab. */
-export async function restartSession(info: SessionInfo): Promise<void> {
+/** Starts the same shell or agent again in the same folder, leaving the given tab open. */
+export async function duplicateSession(info: SessionInfo): Promise<SessionInfo | undefined> {
   const cwd = info.cwd;
-  let next: SessionInfo | undefined;
   if (info.kind === 'agent') {
     const l = agentLaunchOf(info.id);
-    if (l) next = await openAgent(l.adapterId, l.profileId, l.displayName, l.options, cwd);
-  } else {
-    const profile = useUi.getState().profiles.find((p) => p.id === info.profileId);
-    next = await openShell(profile, cwd ? { cwd } : {});
+    return l ? openAgent(l.adapterId, l.profileId, l.displayName, l.options, cwd) : undefined;
   }
-  if (next) await closeSession(info.id);
+  const profile = useUi.getState().profiles.find((p) => p.id === info.profileId);
+  return openShell(profile, cwd ? { cwd } : {});
 }
+
+/** Starts the same shell or agent again in the same folder and closes the ended tab. */
+export async function restartSession(info: SessionInfo): Promise<void> {
+  if (await duplicateSession(info)) await closeSession(info.id);
+}
+
+/** Closes the tabs picked by `pick` from the current order; pinned tabs are kept, as with the middle button. */
+function closeWhere(pick: (order: string[]) => string[]): void {
+  const { order, pinned } = useSessions.getState();
+  for (const id of pick(order)) if (!pinned[id]) void closeSession(id);
+}
+
+export const closeOtherSessions = (keep: string): void => closeWhere((order) => order.filter((x) => x !== keep));
+export const closeSessionsToRight = (from: string): void => closeWhere((order) => order.slice(order.indexOf(from) + 1));
 
 /** A plain shell in the environment and folder of the given session. */
 export async function openShellHere(info: SessionInfo): Promise<void> {
