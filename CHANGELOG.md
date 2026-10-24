@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1-beta
+
+- **Files panel.** Dotfiles are shown (dimmed), with a right-click menu, multi-select, cut / copy / paste, drag and drop and live updates when files change on disk.
+- **Tabs.** Pin and unpin moved into a right-click menu, together with duplicate, close others and more.
+- **Fonts.** Roboto for the app, Roboto Mono for code and one Thai face; Thai Backspace fixes.
+- **macOS menus.** File, Edit, View, Terminal and Help live in the system menu bar.
+
 ## 0.3.0-beta
 
 - **Model in the agent bar.** The bar under an agent's terminal names the model the session is really using, for Claude Code and Codex, and follows `/model`
