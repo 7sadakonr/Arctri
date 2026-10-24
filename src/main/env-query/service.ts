@@ -285,6 +285,13 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
     return (await windowsGitRevText(cwd, rel, rev)) ?? undefined;
   }
 
+  /** The repository's reading for the watcher (see `repoFingerprint`), from the persistent helper inside the distribution. */
+  async gitSignature(env: EnvironmentRef, cwd: string): Promise<string | null> {
+    if (env.kind !== 'wsl') return null;
+    const out = await this.ask(env.distro, 'gitsig', [cwd], 5000);
+    return out?.startsWith('OK\n') ? out.slice(3) : null;
+  }
+
   async gitHeadText(env: EnvironmentRef, cwd: string, rel: string): Promise<string | undefined> {
     const quick = await this.viaWindowsGit(env, cwd, (w) => windowsGitHeadText(w, rel));
     if (quick !== undefined) return quick;

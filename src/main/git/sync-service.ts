@@ -7,6 +7,7 @@ import {
 } from '@shared/git/sync';
 import { errorText, gitFetch, runGit } from './actions';
 import { fsPathOf, resolveRepo, type RepoIdentity } from './repo-identity';
+import { GitRepoWatcher, repoFingerprint } from './repo-watcher';
 
 export type AgentActivity = 'active' | 'unknown' | 'idle';
 
@@ -20,6 +21,10 @@ export interface SyncDeps {
   refreshBranch(sessionId: string): void;
   autoFetch(): boolean;
   now?: () => number;
+  /** Watch git's metadata for changes made outside Arctri (default true). */
+  watch?: boolean;
+  /** A reading of the repository for a folder inside a WSL distribution, without starting git through wsl.exe each time. */
+  signature?: (env: EnvironmentRef, cwd: string) => Promise<string | null>;
 }
 
 interface Repo {
@@ -37,7 +42,7 @@ interface Repo {
   fetchTimer?: ReturnType<typeof setTimeout>;
   activityTimer?: ReturnType<typeof setTimeout>;
   interval?: ReturnType<typeof setInterval>;
-  stop?: () => void;
+  watcher?: GitRepoWatcher;
 }
 
 /** A queued git action that has not finished by now stops holding up the ones behind it. */
@@ -60,8 +65,6 @@ export class GitSyncService {
   private bySession = new Map<string, string>();
   private focused = true;
   private blurredAt = 0;
-  /** Starts watching a repository's git metadata (set by the owner; absent in tests). */
-  watchFactory?: (repo: { id: RepoIdentity; env: EnvironmentRef; cwd: string }, onChange: (reason: RepoChanged['reason']) => void) => () => void;
 
   constructor(private readonly deps: SyncDeps) {}
 
@@ -123,7 +126,19 @@ export class GitSyncService {
   }
 
   private start(repo: Repo): void {
-    repo.stop = this.watchFactory?.({ id: repo.id, env: repo.env, cwd: repo.cwd }, (reason) => void this.externalChange(repo, reason));
+    if (this.deps.watch !== false) {
+      // a folder inside a distribution is only reachable through the share, which does not report changes: poll there
+      const reachable = repo.env.kind !== 'wsl' || /^[a-zA-Z]:/.test(repo.id.root);
+      const gitDirFs = fsPathOf(repo.env, repo.id.gitDir);
+      repo.watcher = new GitRepoWatcher({
+        paths: reachable ? { gitDir: gitDirFs, commonDir: fsPathOf(repo.env, repo.id.commonDir) } : null,
+        fingerprint: () =>
+          !reachable && this.deps.signature ? this.deps.signature(repo.env, repo.cwd) : repoFingerprint(repo.env, repo.cwd, gitDirFs),
+        onChange: (reason) => void this.externalChange(repo, reason),
+        pollMs: (watching) => (watching ? 30_000 : this.focused ? 4000 : 20_000)
+      });
+      void repo.watcher.start().catch(() => undefined);
+    }
     repo.interval = setInterval(() => {
       if (!this.focused && this.now() - this.blurredAt > FETCH_EVERY_MS) return; // nobody is looking
       if (this.deps.autoFetch()) this.scheduleFetch(repo.id.repoId, 'interval');
@@ -132,7 +147,7 @@ export class GitSyncService {
   }
 
   private stop(repo: Repo): void {
-    repo.stop?.();
+    repo.watcher?.dispose();
     if (repo.interval) clearInterval(repo.interval);
     if (repo.fetchTimer) clearTimeout(repo.fetchTimer);
     if (repo.activityTimer) clearTimeout(repo.activityTimer);
@@ -180,6 +195,13 @@ export class GitSyncService {
   async compute(repoId: string): Promise<RepoSyncSnapshot | undefined> {
     const repo = this.repos.get(repoId);
     if (!repo) return undefined;
+    const snap = await this.read(repo);
+    this.publish(repo, snap);
+    return snap;
+  }
+
+  private async read(repo: Repo): Promise<RepoSyncSnapshot> {
+    const repoId = repo.id.repoId;
     const g = (args: string[]) => runGit(repo.env, repo.cwd, args, { timeoutMs: 20_000 });
     const [branchR, shaR, upR, statusR] = await Promise.all([
       g(['symbolic-ref', '-q', '--short', 'HEAD']),
@@ -224,7 +246,6 @@ export class GitSyncService {
       checkedAt: this.now(),
       ...(remoteError ? { remoteError } : {})
     };
-    this.publish(repo, snap);
     return snap;
   }
 
@@ -277,9 +298,10 @@ export class GitSyncService {
     })();
     repo.fetching = job;
     void this.compute(repoId); // shows "fetching"
-    void job.finally(() => {
+    void job.finally(async () => {
       repo.fetching = undefined;
-      return this.compute(repoId);
+      await this.compute(repoId);
+      await repo.watcher?.resync();
     });
     return job;
   }
@@ -320,12 +342,15 @@ export class GitSyncService {
   }
 
   /** After something changed the repository: every tab reads its branch, the standing is read again and views reload. */
-  async invalidate(sessionId: string, reason: RepoChanged['reason'] = 'refs'): Promise<void> {
+  async invalidate(sessionId: string, reason: RepoChanged['reason'] = 'local'): Promise<void> {
     const id = this.bySession.get(sessionId);
     const repo = id ? this.repos.get(id) : undefined;
     const ids = repo ? [...repo.sessions] : [sessionId];
     for (const s of ids) this.deps.refreshBranch(s);
-    if (repo) await this.compute(repo.id.repoId);
+    if (repo) {
+      await this.compute(repo.id.repoId);
+      await repo.watcher?.resync(); // what Arctri did itself is not news
+    }
     this.deps.emit('git:repoChanged', { sessionIds: ids, reason } satisfies RepoChanged);
   }
 
@@ -358,8 +383,11 @@ export class GitSyncService {
   async preWork(env: EnvironmentRef, cwd: string): Promise<PreWorkCheck> {
     const identity = await resolveRepo(env, cwd);
     if (!identity) return { snapshot: null, dirtyFiles: [] };
+    // a folder no tab works in yet is read without being registered
     const repo = this.repos.get(identity.repoId);
-    const snapshot = repo ? await this.compute(identity.repoId) : undefined;
+    const snapshot = repo
+      ? await this.compute(identity.repoId)
+      : await this.read({ id: identity, env, cwd, sessions: new Set(), unsaved: new Map(), tail: Promise.resolve() });
     const status = await runGit(env, cwd, ['status', '--porcelain', '--untracked-files=normal']);
     return { snapshot: snapshot ?? null, dirtyFiles: status.code === 0 ? porcelainPaths(status.stdout).slice(0, 10) : [] };
   }

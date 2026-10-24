@@ -61,7 +61,8 @@ export interface PreWorkCheck {
 
 export interface RepoChanged {
   sessionIds: string[];
-  reason: 'head' | 'branch' | 'refs' | 'update';
+  /** `head`, `branch` and `refs` were seen from outside Arctri; `local` and `update` are its own actions. */
+  reason: 'head' | 'branch' | 'refs' | 'update' | 'local';
 }
 
 export interface SyncInputs {

@@ -9,14 +9,15 @@ import { commitFile, git, makeRemote } from './sync-test-repos';
 const env: EnvironmentRef = { kind: 'local' };
 const services: GitSyncService[] = [];
 
-function setup(dirs: Record<string, string>, agent: (id: string) => AgentActivity = () => 'idle') {
+function setup(dirs: Record<string, string>, agent: (id: string) => AgentActivity = () => 'idle', watch = false) {
   const events: Array<{ channel: string; payload: unknown }> = [];
   const svc = new GitSyncService({
     session: (id) => (dirs[id] ? { env, cwd: dirs[id]! } : undefined),
     agentActivity: agent,
     emit: (channel, payload) => events.push({ channel, payload }),
     refreshBranch: () => undefined,
-    autoFetch: () => false
+    autoFetch: () => false,
+    watch
   });
   services.push(svc);
   return { svc, events };
@@ -106,6 +107,35 @@ describe('GitSyncService', () => {
   });
 });
 
+describe('GitSyncService external changes', () => {
+  it('reads the repository again and tells every tab when another program switches branch', async () => {
+    const { a } = makeRemote();
+    const { svc, events } = setup({ t1: a, t2: a }, () => 'idle', true);
+    await svc.attach('t1');
+    await svc.attach('t2');
+    await new Promise((r) => setTimeout(r, 400)); // the watcher has taken its first reading
+    git(a, 'switch', '-q', '-c', 'elsewhere');
+    await new Promise((r) => setTimeout(r, 1500));
+    const changed = events.filter((e) => e.channel === 'git:repoChanged');
+    expect(changed).toHaveLength(1);
+    expect(changed[0]!.payload).toMatchObject({ reason: 'branch', sessionIds: expect.arrayContaining(['t1', 't2']) });
+    expect((await svc.status('t1'))!.branch).toBe('elsewhere');
+  }, 15_000);
+
+  it('does not announce what Arctri did itself', async () => {
+    const { a, b } = makeRemote();
+    commitFile(b, 'z.txt', 'z');
+    git(b, 'push', '-q');
+    const { svc, events } = setup({ t1: a }, () => 'idle', true);
+    const id = (await svc.attach('t1'))!;
+    await new Promise((r) => setTimeout(r, 400));
+    await svc.fetch(id);
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(events.filter((e) => e.channel === 'git:repoChanged')).toHaveLength(0);
+    expect((await svc.status('t1'))!.behind).toBe(1);
+  }, 15_000);
+});
+
 describe('GitSyncService.scheduleFetch', () => {
   it('turns a burst of reasons into one fetch and skips a recent one unless asked by hand', async () => {
     const { a } = makeRemote();
@@ -125,6 +155,21 @@ describe('GitSyncService.scheduleFetch', () => {
     svc.scheduleFetch(id, 'manual', 20);
     await wait(400);
     expect((await svc.compute(id))!.fetchedAt).toBeGreaterThan(first!);
+  });
+});
+
+describe('GitSyncService.preWork', () => {
+  it('reads a folder no tab works in yet, with the changed files for the dialog', async () => {
+    const { a, b } = makeRemote();
+    commitFile(b, 'late.txt', 'l');
+    git(b, 'push', '-q');
+    git(a, 'fetch', '-q');
+    writeFileSync(join(a, 'one.txt'), 'edited');
+    const { svc } = setup({});
+    const c = await svc.preWork(env, a);
+    expect(c.snapshot).toMatchObject({ status: 'behind', behind: 1, dirtyOnDisk: true });
+    expect(c.dirtyFiles).toEqual(['one.txt']);
+    expect((await svc.preWork(env, tmpdir())).snapshot).toBeNull(); // not a repository
   });
 });
 
@@ -205,6 +250,23 @@ describe('GitSyncService.updateSafe', () => {
 
     git(a, 'switch', '-q', '-c', 'local-only');
     expect(await svc.updateSafe('t1', {})).toMatchObject({ ok: false, code: 'NO_UPSTREAM' });
+  });
+
+  it('refuses in the middle of a conflicted merge and leaves it as it is', async () => {
+    const { a, b } = makeRemote();
+    commitFile(a, 'one.txt', 'mine\n');
+    commitFile(b, 'one.txt', 'theirs\n');
+    git(b, 'push', '-q');
+    git(a, 'fetch', '-q');
+    expect(() => git(a, 'merge', 'origin/main')).toThrow(); // conflict, merge left open
+    const { svc } = setup({ t1: a });
+    await svc.attach('t1');
+    const head = git(a, 'rev-parse', 'HEAD');
+    const r = await svc.updateSafe('t1', {});
+    expect(r.ok).toBe(false);
+    expect(['GIT_BUSY', 'CONFLICTS']).toContain((r as { code: string }).code);
+    expect(git(a, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(a, 'status', '--porcelain')).toContain('UU one.txt');
   });
 
   it('stops at once when git is locked', async () => {

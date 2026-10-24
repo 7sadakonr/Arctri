@@ -238,7 +238,8 @@ async function start(): Promise<void> {
     },
     emit: send,
     refreshBranch: (id) => sessions.refreshBranch(id),
-    autoFetch: () => prefs.get().gitAutoFetch
+    autoFetch: () => prefs.get().gitAutoFetch,
+    signature: (env, cwd) => envQuery.gitSignature(env, cwd)
   });
 
   gitSyncRef.current = gitSync;
