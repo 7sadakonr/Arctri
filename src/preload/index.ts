@@ -4,6 +4,7 @@ import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session'
 import type { CompletionResponse } from '@shared/types/completion';
 import type { AgentEntry } from '@shared/types/agent';
 import type { AgentStatus } from '@shared/types/agent-status';
+import type { NativeMenuItem } from '@shared/ipc/contract';
 import type { ProfilesResult } from '../main/shell/registry';
 
 type GitActionResult = { ok: true; out: string } | { ok: false; error: string };
@@ -170,7 +171,10 @@ const api = {
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url }),
     openPath: (sessionId: SessionId): Promise<void> => ipcRenderer.invoke('app:openPath', { sessionId }),
     notify: (sessionId: SessionId, title: string, body: string): Promise<void> =>
-      ipcRenderer.invoke('app:notify', { sessionId, title, body })
+      ipcRenderer.invoke('app:notify', { sessionId, title, body }),
+    /** macOS: the menus of the system menu bar (File ... Help). */
+    setMenu: (menus: Array<{ label: string; items: NativeMenuItem[] }>): Promise<void> => ipcRenderer.invoke('app:setMenu', { menus }),
+    onMenu: (cb: (v: { id: string }) => void): Unsub => subscribe('app:menu', cb)
   }
 };
 

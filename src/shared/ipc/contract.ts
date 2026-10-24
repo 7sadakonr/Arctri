@@ -27,6 +27,24 @@ export const sessionSpecSchema = z.object({
 
 const id = z.string().min(1).max(100);
 
+/** One entry of the macOS menu bar, as the page describes it. A click comes back on `app:menu` with the entry's `id`. */
+export type NativeMenuItem =
+  | { sep: true }
+  | { id?: string; label: string; accelerator?: string; enabled?: boolean; checked?: boolean; submenu?: NativeMenuItem[] };
+const nativeMenuItem: z.ZodType<NativeMenuItem> = z.lazy(() =>
+  z.union([
+    z.object({ sep: z.literal(true) }),
+    z.object({
+      id: z.string().max(100).optional(),
+      label: z.string().max(300),
+      accelerator: z.string().max(50).optional(),
+      enabled: z.boolean().optional(),
+      checked: z.boolean().optional(),
+      submenu: z.array(nativeMenuItem).max(100).optional()
+    })
+  ])
+);
+
 /** Request schemas for every invoke/send channel. The main process validates all of them. */
 export const requestSchemas = {
   'profiles:list': z.object({ refreshWsl: z.boolean().optional(), waitWsl: z.boolean().optional() }).optional(),
@@ -91,7 +109,8 @@ export const requestSchemas = {
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),
   'app:openExternal': z.object({ url: z.string().max(2000) }),
-  'app:openPath': z.object({ sessionId: id })
+  'app:openPath': z.object({ sessionId: id }),
+  'app:setMenu': z.object({ menus: z.array(z.object({ label: z.string().max(100), items: z.array(nativeMenuItem).max(100) })).max(20) })
 } as const;
 
 export type RequestChannel = keyof typeof requestSchemas;

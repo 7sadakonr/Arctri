@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { filterRanked } from './filter';
-import { matchKey } from './keys';
+import { matchKey, toAccelerator } from './keys';
 
 const ev = (key: string, o: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }> = {}) =>
   ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...o });
@@ -35,5 +35,15 @@ describe('filterRanked', () => {
     expect(filterRanked(list, 'tab')[0]).toBe('Close Tab');
     expect(filterRanked(list, 'prefer')).toEqual(['Settings']);
     expect(filterRanked(list, 'new zzz')).toEqual([]);
+  });
+});
+
+describe('toAccelerator', () => {
+  it('writes the Mac chord of a command', () => {
+    expect(toAccelerator({ mac: { key: 't', mod: true }, other: { key: 't', mod: true, shift: true } })).toBe('Cmd+T');
+    expect(toAccelerator({ key: 'e', mod: true, shift: true })).toBe('Cmd+Shift+E');
+    expect(toAccelerator({ key: 'tab', ctrl: true, shift: true })).toBe('Ctrl+Shift+Tab');
+    expect(toAccelerator([{ key: '=', mod: true, anyShift: true }])).toBe('Cmd+Plus');
+    expect(toAccelerator(undefined)).toBeUndefined();
   });
 });

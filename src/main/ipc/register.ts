@@ -21,6 +21,7 @@ import { mark } from '../timing';
 import { logger } from '../logger';
 import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
 import { applyUiScale } from '../window';
+import { setAppMenus } from '../app-menu';
 
 export interface Services {
   sessions: SessionManager;
@@ -422,6 +423,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
     if (cwd?.env === 'wsl') return shell.openPath(`\\\\wsl.localhost\\${cwd.distro}${cwd.path.replace(/\//g, '\\')}`);
     return undefined;
   });
+  r.handle('app:setMenu', ({ menus }) => setAppMenus(menus, (id) => s.getWindow()?.webContents.send('app:menu', { id })));
 }
 
 export function sendInfo(win: BrowserWindow | undefined, info: SessionInfo): void {
