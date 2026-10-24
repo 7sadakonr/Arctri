@@ -6,6 +6,11 @@ import { FileWatcher } from './watcher';
 
 const env = process.platform === 'win32' ? ({ kind: 'windows' } as const) : ({ kind: 'local' } as const);
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// macOS replays what happened just before a watch began (the folders the test made): let that pass, then start counting
+const settle = async (seen: string[][]) => {
+  await wait(600);
+  seen.length = 0;
+};
 
 describe('FileWatcher', () => {
   let watcher: FileWatcher | undefined;
@@ -22,6 +27,7 @@ describe('FileWatcher', () => {
   it('reports a new file once, for the folder it is in', async () => {
     const { root, seen, watcher: w } = await setup();
     expect(w.setDirs('s', env, root, ['', 'sub'])).toBe(true);
+    await settle(seen);
     await writeFile(join(root, 'a.txt'), '1');
     await writeFile(join(root, 'b.txt'), '2');
     await wait(700);
@@ -33,6 +39,7 @@ describe('FileWatcher', () => {
     const { root, seen, watcher: w } = await setup();
     w.setDirs('s', env, root, ['', 'sub']);
     w.setDirs('s', env, root, ['']);
+    await settle(seen);
     await writeFile(join(root, 'sub', 'x.txt'), '1');
     await wait(500);
     expect(seen).toEqual([]);
