@@ -17,7 +17,8 @@ import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
-import { TERMINAL_FONT, terminalTheme } from './theme';
+import { ThaiInputTracker } from './thai-input';
+import { TERMINAL_FONT, TERMINAL_LETTER_SPACING, terminalFontsReady, terminalTheme } from './theme';
 
 /** Key chords handled by the app; xterm must not forward them to the shell. */
 function isAppChord(e: KeyboardEvent): boolean {
@@ -34,6 +35,7 @@ export class TerminalHost {
   readonly element: HTMLDivElement;
   readonly tracker: BlockTracker;
   private fit = new FitAddon();
+  private thaiInput = new ThaiInputTracker();
   private webgl: WebglAddon | undefined;
   private resizeTimer: ReturnType<typeof setTimeout> | undefined;
   private unsubData: () => void;
@@ -51,6 +53,7 @@ export class TerminalHost {
       allowProposedApi: true,
       fontFamily: TERMINAL_FONT,
       fontSize: ui.prefs.fontSize,
+      letterSpacing: TERMINAL_LETTER_SPACING,
       scrollback: ui.prefs.scrollback,
       cursorBlink: true,
       theme: terminalTheme(dark),
@@ -109,7 +112,10 @@ export class TerminalHost {
     });
 
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
-    this.term.onData((d) => api.sessions.write(info.id, d));
+    this.term.onData((d) => {
+      this.thaiInput.feed(d);
+      api.sessions.write(info.id, d);
+    });
     // Only real key presses count here: onData also carries the terminal's own replies and focus reports.
     // Esc / Ctrl+C while it works or asks for approval, or Enter after a finished turn (the main process decides what that means per agent).
     this.term.onKey(({ domEvent: e }) => {
@@ -172,8 +178,18 @@ export class TerminalHost {
     if (!this.term.element) {
       this.term.open(this.element);
       this.enableWebgl();
+      this.redrawWhenFontsReady();
     }
     this.scheduleFit(0);
+  }
+
+  /** Glyphs drawn before a font arrived stay in the texture atlas in the fallback face; draw them again once it is there. */
+  private redrawWhenFontsReady(): void {
+    void terminalFontsReady().then(() => {
+      if (this.disposed || !this.term.element) return;
+      this.term.clearTextureAtlas();
+      this.fitNow();
+    });
   }
 
   private enableWebgl(): void {
@@ -186,6 +202,7 @@ export class TerminalHost {
       });
       this.term.loadAddon(gl);
       this.webgl = gl;
+      this.redrawWhenFontsReady();
     } catch {
       this.webgl = undefined; // falls back to the DOM renderer
     }
@@ -212,9 +229,30 @@ export class TerminalHost {
     this.tracker.update({ env: info.env, shell: info.shell });
   }
 
+  /**
+   * readline in bash takes a Thai consonant together with its vowel or tone mark on Backspace.
+   * Sending the rest of the cluster again after the delete leaves the consonant behind, as zsh and PowerShell already do.
+   */
+  private thaiBackspace(): string | undefined {
+    const info = this.info;
+    if (info.kind !== 'shell' || info.runningAgent || info.shell !== 'bash' || this.tracker.sm.phase !== 'editing') return undefined;
+    const buf = this.term.buffer.active;
+    if (buf.type !== 'normal' || buf.cursorX < 1) return undefined;
+    const chars = buf.getLine(buf.cursorY + buf.viewportY)?.getCell(buf.cursorX - 1)?.getChars() ?? '';
+    return /^[\u0E01-\u0E30\u0E32\u0E33\u0E40-\u0E46][\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]+$/.test(chars) ? chars.slice(0, -1) : undefined;
+  }
+
   private onKey(e: KeyboardEvent): boolean {
     if (isAppChord(e)) return false;
     if (e.type !== 'keydown') return true;
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      const agent = this.info.kind === 'agent' || !!this.info.runningAgent;
+      const rest = agent ? this.thaiInput.backspace() : this.thaiBackspace();
+      if (rest !== undefined) {
+        api.sessions.write(this.info.id, '\x7f' + rest);
+        return false;
+      }
+    }
     const k = e.key.toLowerCase();
     if (isMac) {
       // Cmd+C copies the selection and Cmd+V pastes; Ctrl+C is always the shell's interrupt

@@ -67,3 +67,20 @@ test('WSL not installed: the app still works and says so', async () => {
     await f.app.close();
   }
 });
+
+test('the tab context menu duplicates and closes other tabs, and tabs have no pin button', async ({ ad }) => {
+  const { page } = ad;
+  {
+    await waitForEditor(page);
+    await expect(page.getByRole('tab')).toHaveCount(1);
+    const first = page.getByRole('tab').first();
+    await first.hover();
+    await expect(first.getByRole('button', { name: /pin tab/i })).toHaveCount(0);
+    await first.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /duplicate tab/i }).click();
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await page.getByRole('tab').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /close other tabs/i }).click();
+    await expect(page.getByRole('tab')).toHaveCount(1);
+  }
+});

@@ -23,7 +23,7 @@ import { languageFor } from './language';
 
 const theme = EditorView.theme({
   '&': { height: '100%', backgroundColor: 'var(--ad-bg)', color: 'var(--ad-fg)', fontSize: '12.5px' },
-  '.cm-scroller': { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', lineHeight: '1.55' },
+  '.cm-scroller': { fontFamily: 'var(--font-mono, "Roboto Mono", monospace)', lineHeight: '1.55' },
   '.cm-content': { caretColor: 'var(--ad-accent)' },
   '.cm-gutters': { backgroundColor: 'var(--ad-panel)', color: 'var(--ad-fg-muted)', border: 'none' },
   '.cm-activeLine': { backgroundColor: 'var(--ad-hover)' },
