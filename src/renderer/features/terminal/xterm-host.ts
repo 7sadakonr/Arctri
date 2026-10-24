@@ -202,6 +202,9 @@ export class TerminalHost {
       });
       this.term.loadAddon(gl);
       this.webgl = gl;
+      // A renderer swapped in after a tab switch can inherit a stale or half-built glyph atlas (garbled text); rebuild it and repaint.
+      this.term.clearTextureAtlas();
+      if (this.term.rows > 0) this.term.refresh(0, this.term.rows - 1);
       this.redrawWhenFontsReady();
     } catch {
       this.webgl = undefined; // falls back to the DOM renderer
