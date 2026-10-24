@@ -55,6 +55,13 @@ export const requestSchemas = {
     eol: z.enum(['lf', 'crlf']), bom: z.boolean(), expectMtimeMs: z.number().optional()
   }),
   'fs:stat': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
+  'fs:create': z.object({ sessionId: id, rel: z.string().min(1).max(4096), kind: z.enum(['file', 'dir']) }),
+  'fs:rename': z.object({ sessionId: id, from: z.string().min(1).max(4096), to: z.string().min(1).max(4096) }),
+  'fs:delete': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
+  'fs:reveal': z.object({ sessionId: id, rel: z.string().max(4096) }),
+  'fs:watch': z.object({ sessionId: id, dirs: z.array(z.string().max(4096)).max(500) }),
+  'fs:move': z.object({ sessionId: id, from: z.array(z.string().min(1).max(4096)).min(1).max(500), toDir: z.string().max(4096) }),
+  'fs:copy': z.object({ sessionId: id, from: z.array(z.string().min(1).max(4096)).min(1).max(500), toDir: z.string().max(4096) }),
   'git:changes': z.object({ sessionId: id }),
   'fs:list': z.object({ sessionId: id, rel: z.string().max(4096) }),
   'app:pickFiles': z.object({ sessionId: id }),

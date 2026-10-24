@@ -7,6 +7,8 @@ import type { AgentStatus } from '@shared/types/agent-status';
 import type { ProfilesResult } from '../main/shell/registry';
 
 type GitActionResult = { ok: true; out: string } | { ok: false; error: string };
+type FsOpResult = { ok: true } | { ok: false; error: 'exists' | 'not-found' | 'denied' | 'failed' };
+type TransferAnswer = { ok: boolean; results: Array<{ from: string; to?: string; error?: string }> };
 type Unsub = () => void;
 type DataHandler = (chunk: string) => void;
 
@@ -136,7 +138,19 @@ const api = {
     ): Promise<{ ok: true; mtimeMs: number } | { ok: false; error: 'conflict' | 'denied' | 'failed'; mtimeMs?: number }> =>
       ipcRenderer.invoke('fs:write', { sessionId, rel, text, eol, bom, ...(expectMtimeMs !== undefined ? { expectMtimeMs } : {}) }),
     stat: (sessionId: SessionId, rel: string): Promise<{ mtimeMs: number; size: number } | null> =>
-      ipcRenderer.invoke('fs:stat', { sessionId, rel })
+      ipcRenderer.invoke('fs:stat', { sessionId, rel }),
+    create: (sessionId: SessionId, rel: string, kind: 'file' | 'dir'): Promise<FsOpResult> =>
+      ipcRenderer.invoke('fs:create', { sessionId, rel, kind }),
+    rename: (sessionId: SessionId, from: string, to: string): Promise<FsOpResult> =>
+      ipcRenderer.invoke('fs:rename', { sessionId, from, to }),
+    remove: (sessionId: SessionId, rel: string): Promise<FsOpResult> => ipcRenderer.invoke('fs:delete', { sessionId, rel }),
+    reveal: (sessionId: SessionId, rel: string): Promise<void> => ipcRenderer.invoke('fs:reveal', { sessionId, rel }),
+    move: (sessionId: SessionId, from: string[], toDir: string): Promise<TransferAnswer> =>
+      ipcRenderer.invoke('fs:move', { sessionId, from, toDir }),
+    copy: (sessionId: SessionId, from: string[], toDir: string): Promise<TransferAnswer> =>
+      ipcRenderer.invoke('fs:copy', { sessionId, from, toDir }),
+    watch: (sessionId: SessionId, dirs: string[]): Promise<{ polling: boolean }> => ipcRenderer.invoke('fs:watch', { sessionId, dirs }),
+    onChanged: (cb: (v: { id: SessionId; dirs: string[] }) => void): Unsub => subscribe('fs:changed', cb)
   },
   agentStatus: {
     list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agentStatus:list'),

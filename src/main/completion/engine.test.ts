@@ -41,6 +41,10 @@ class FakeEnv implements EnvironmentQuery {
   async readImageFile(): Promise<never> { throw new Error('unused'); }
   async writeTextFile(): Promise<never> { throw new Error('unused'); }
   async statFile() { return null; }
+  async createEntry() { return { ok: false as const, error: 'failed' as const }; }
+  async renameEntry() { return { ok: false as const, error: 'failed' as const }; }
+  async copyEntry() { return { ok: false as const, error: 'failed' as const }; }
+  async deleteEntry() { return { ok: false as const, error: 'failed' as const }; }
   async gitHeadText() { return undefined; }
   async gitStatusAll() { return undefined; }
   async readCodexConfig() { return null; }

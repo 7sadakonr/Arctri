@@ -1,9 +1,9 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { delimiter, join, posix, win32 } from 'node:path';
 import type { EnvironmentRef } from '@shared/types/env';
 import { codexConfigBackupName } from '../agents/codex-config';
-import { decodeFile, encodeFile, MAX_EDIT_BYTES, MAX_IMAGE_BYTES, type Eol, type FileReadResult, type FileWriteResult, type ImageReadResult } from '../files/io';
+import { decodeFile, encodeFile, MAX_EDIT_BYTES, MAX_IMAGE_BYTES, type Eol, type FileReadResult, type FileWriteResult, type FsOpResult, type ImageReadResult } from '../files/io';
 import {
   parseHelperGitShow, parseHelperGitStat, parseLog, parseRefs, parseStatus, windowsGitChanges, windowsGitCommitFiles, windowsGitHeadText,
   windowsGitLog, windowsGitRefs, windowsGitRevText, windowsGitStatusAll,
@@ -48,6 +48,14 @@ export interface EnvironmentQuery {
     env: EnvironmentRef, root: string, abs: string, text: string, eol: Eol, bom: boolean, expectMtimeMs?: number
   ): Promise<FileWriteResult>;
   statFile(env: EnvironmentRef, root: string, abs: string): Promise<{ mtimeMs: number; size: number } | null>;
+  /** New empty file or folder below `root`; refuses to replace anything. */
+  createEntry(env: EnvironmentRef, root: string, abs: string, kind: 'file' | 'dir'): Promise<FsOpResult>;
+  /** Moves `from` to `to` (both below `root`); refuses to replace anything. */
+  renameEntry(env: EnvironmentRef, root: string, from: string, to: string): Promise<FsOpResult>;
+  /** Copies a file or folder to the new path `to` (both below `root`); refuses to replace anything. */
+  copyEntry(env: EnvironmentRef, root: string, from: string, to: string): Promise<FsOpResult>;
+  /** Removes a file or folder below `root`. `trash` (where the platform has one) is used instead of deleting for good. */
+  deleteEntry(env: EnvironmentRef, root: string, abs: string, trash?: (abs: string) => Promise<void>): Promise<FsOpResult>;
   /** The file as committed in HEAD; undefined when it is not tracked. */
   gitHeadText(env: EnvironmentRef, cwd: string, rel: string): Promise<string | undefined>;
 }
@@ -437,6 +445,70 @@ export class EnvironmentQueryService implements EnvironmentQuery, GitHistoryQuer
       return { mtimeMs: Math.round(st.mtimeMs), size: st.size };
     } catch {
       return null;
+    }
+  }
+
+  private async askFs(env: Extract<EnvironmentRef, { kind: 'wsl' }>, op: WslOp, args: string[]): Promise<FsOpResult> {
+    const out = await this.ask(env.distro, op, args, 15000);
+    if (out === null) return { ok: false, error: 'failed' };
+    if (out.startsWith('OK')) return { ok: true };
+    const e = out.slice(4).trim();
+    return { ok: false, error: e === 'exists' ? 'exists' : e === 'notfound' ? 'not-found' : e === 'denied' ? 'denied' : 'failed' };
+  }
+
+  async createEntry(env: EnvironmentRef, root: string, abs: string, kind: 'file' | 'dir'): Promise<FsOpResult> {
+    if (env.kind === 'wsl') return this.askFs(env, kind === 'dir' ? 'mkdir' : 'mkfile', [abs, '', `${root}|`]);
+    try {
+      if (!(await this.insideRoot(env, root, abs))) return { ok: false, error: 'denied' };
+      if (kind === 'dir') await mkdir(abs);
+      else await writeFile(abs, '', { flag: 'wx' });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as { code?: string }).code === 'EEXIST' ? 'exists' : 'failed' };
+    }
+  }
+
+  async renameEntry(env: EnvironmentRef, root: string, from: string, to: string): Promise<FsOpResult> {
+    if (env.kind === 'wsl') return this.askFs(env, 'mv', [from, to, `${root}|`]);
+    try {
+      if (!(await this.insideRoot(env, root, from)) || !(await this.insideRoot(env, root, to))) return { ok: false, error: 'denied' };
+      // renaming "a.txt" to "A.txt" names the same file on a case-insensitive disk: that is allowed
+      const sameName = from.toLowerCase() === to.toLowerCase();
+      if (!sameName && (await stat(to).then(() => true, () => false))) return { ok: false, error: 'exists' };
+      await rename(from, to);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as { code?: string }).code === 'ENOENT' ? 'not-found' : 'failed' };
+    }
+  }
+
+  async copyEntry(env: EnvironmentRef, root: string, from: string, to: string): Promise<FsOpResult> {
+    if (env.kind === 'wsl') return this.askFs(env, 'cp', [from, to, `${root}|`]);
+    try {
+      if (!(await this.insideRoot(env, root, from)) || !(await this.insideRoot(env, root, to))) return { ok: false, error: 'denied' };
+      const lib = env.kind === 'windows' ? win32 : posix;
+      const into = lib.relative(from, to);
+      if (!into || !(into === '..' || into.startsWith('..' + lib.sep) || lib.isAbsolute(into))) return { ok: false, error: 'denied' }; // into itself
+      if (!(await stat(from).then(() => true, () => false))) return { ok: false, error: 'not-found' };
+      // a folder would be merged into an existing one, so the name is checked first
+      if (await stat(to).then(() => true, () => false)) return { ok: false, error: 'exists' };
+      await cp(from, to, { recursive: true, errorOnExist: true, force: false });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as { code?: string }).code === 'ERR_FS_CP_EEXIST' ? 'exists' : 'failed' };
+    }
+  }
+
+  async deleteEntry(env: EnvironmentRef, root: string, abs: string, trash?: (abs: string) => Promise<void>): Promise<FsOpResult> {
+    if (env.kind === 'wsl') return this.askFs(env, 'rm', [abs, '', `${root}|`]);
+    try {
+      if (!(await this.insideRoot(env, root, abs))) return { ok: false, error: 'denied' };
+      if (!(await stat(abs).then(() => true, () => false))) return { ok: false, error: 'not-found' };
+      if (trash) await trash(abs);
+      else await rm(abs, { recursive: true });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'failed' };
     }
   }
 

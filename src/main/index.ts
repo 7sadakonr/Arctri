@@ -5,6 +5,7 @@ import Store from 'electron-store';
 import { envKeyOf } from '@shared/types/env';
 import { appOrigins, createMainWindow } from './window';
 import { PortHub, registerIpc, sendInfo } from './ipc/register';
+import { FileWatcher } from './files/watcher';
 import { openDb } from './persistence/db';
 import { HistoryRepo } from './persistence/history-repo';
 import { PrefsStore } from './persistence/prefs';
@@ -123,6 +124,9 @@ async function start(): Promise<void> {
   const startupSaved = sessionRepo.load().filter((x) => x.kind === 'shell');
   const agents = new AgentManager(wsl, registry, () => prefs.get().agentPaths);
   const envQuery = new EnvironmentQueryService();
+  const fileWatcher = new FileWatcher((id, dirs) => {
+    if (win && !win.isDestroyed()) win.webContents.send('fs:changed', { id, dirs });
+  });
 
   const agentStatus = new AgentStatusService({
     root: join(app.getPath('userData'), 'agent-events'),
@@ -193,6 +197,7 @@ async function start(): Promise<void> {
     onClosed: (id) => {
       hub.detach(id);
       agentStatus.forget(id);
+      fileWatcher.clear(id);
       if (win && !win.isDestroyed()) win.webContents.send('session:closed', id);
     },
     onCommand: (c) => {
@@ -209,7 +214,7 @@ async function start(): Promise<void> {
 
   registerIpc(
     {
-      sessions, registry, prefs, history, completion, envQuery, wsl, agentStatus,
+      sessions, registry, prefs, history, completion, envQuery, fileWatcher, wsl, agentStatus,
       agents: { detect: (refresh) => agents.detect(refresh) },
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
@@ -261,6 +266,7 @@ async function start(): Promise<void> {
       logger.error('saving sessions failed', err);
     }
     void sessions.closeAll(5000).finally(() => {
+      fileWatcher.dispose();
       envQuery.dispose();
       db.close();
       app.quit();
