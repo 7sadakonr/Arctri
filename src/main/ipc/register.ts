@@ -12,7 +12,8 @@ import type { ProfileRegistry } from '../shell/registry';
 import { Router } from './router';
 import type { EnvironmentQuery, GitHistoryQuery } from '../env-query/service';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
-import { formatRef, resolveWithin, uncToPosix } from '../files/refs';
+import { resolveWithin } from '../files/refs';
+import { attachmentsForPaths, clipboardAttachments } from '../files/attachments';
 import { copyMany, moveMany, type TransferResult } from '../files/transfer';
 import type { FileWatcher } from '../files/watcher';
 import { posix, win32 } from 'node:path';
@@ -234,16 +235,18 @@ export function registerIpc(s: Services, hub: PortHub): void {
       const r = await dialog.showOpenDialog(win!, { defaultPath: start, properties: ['openFile', 'multiSelections'] });
       picked = r.canceled ? [] : r.filePaths;
     }
-    const refs: string[] = [];
-    for (const f of picked) {
-      if (info.env.kind === 'windows') refs.push(formatRef(info.cwd.path, f, 'windows'));
-      else if (info.env.kind === 'local') refs.push(formatRef(info.cwd.path, f, 'local'));
-      else {
-        const posixPath = uncToPosix(f, info.env.distro) ?? (f.startsWith('/') ? f : await s.wsl.toPosix(info.env.distro, f));
-        if (posixPath) refs.push(formatRef(info.cwd.path, posixPath, 'wsl'));
-      }
-    }
-    return refs;
+    return attachmentsForPaths(info, s.wsl, picked);
+  });
+
+  r.handle('app:clipboardAttachments', async ({ sessionId }) => {
+    const info = s.sessions.get(sessionId);
+    return info?.cwd ? clipboardAttachments(info, s.wsl) : [];
+  });
+
+  // Files dropped on the terminal (absolute paths from the OS).
+  r.handle('app:attachPaths', async ({ sessionId, paths }) => {
+    const info = s.sessions.get(sessionId);
+    return info?.cwd ? attachmentsForPaths(info, s.wsl, paths) : [];
   });
 
   // Choose a project folder. Answers with the folder as the environment it lives in (a \\wsl.localhost path is a WSL folder).

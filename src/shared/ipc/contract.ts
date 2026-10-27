@@ -83,6 +83,8 @@ export const requestSchemas = {
   'git:changes': z.object({ sessionId: id }),
   'fs:list': z.object({ sessionId: id, rel: z.string().max(4096) }),
   'app:pickFiles': z.object({ sessionId: id }),
+  'app:clipboardAttachments': z.object({ sessionId: id }),
+  'app:attachPaths': z.object({ sessionId: id, paths: z.array(z.string().min(1).max(4096)).min(1).max(100) }),
   'app:pickFolder': z.undefined().or(z.null()),
   'git:headText': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
   'git:refs': z.object({ sessionId: id }),

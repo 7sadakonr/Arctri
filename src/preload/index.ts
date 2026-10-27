@@ -1,8 +1,9 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { Prefs } from '@shared/prefs';
 import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session';
 import type { CompletionResponse } from '@shared/types/completion';
 import type { AgentEntry } from '@shared/types/agent';
+import type { Attachment } from '@shared/types/attachment';
 import type { AgentStatus } from '@shared/types/agent-status';
 import type { NativeMenuItem } from '@shared/ipc/contract';
 import type { GitSyncResult, PreWorkCheck, RepoChanged, RepoSyncSnapshot } from '@shared/git/sync';
@@ -111,7 +112,13 @@ const api = {
     } | null> => ipcRenderer.invoke('git:changes', { sessionId }),
     list: (sessionId: SessionId, rel: string): Promise<{ ok: true; entries: Array<{ name: string; isDir: boolean }> } | { ok: false }> =>
       ipcRenderer.invoke('fs:list', { sessionId, rel }),
-    pick: (sessionId: SessionId): Promise<string[]> => ipcRenderer.invoke('app:pickFiles', { sessionId }),
+    pick: (sessionId: SessionId): Promise<Attachment[]> => ipcRenderer.invoke('app:pickFiles', { sessionId }),
+    clipboard: (sessionId: SessionId): Promise<Attachment[]> => ipcRenderer.invoke('app:clipboardAttachments', { sessionId }),
+    /** Files dropped from the OS: the dropped `File`s are turned into paths here, where that is allowed. */
+    fromDrop: (sessionId: SessionId, files: File[]): Promise<Attachment[]> => {
+      const paths = files.map((f) => webUtils.getPathForFile(f)).filter(Boolean);
+      return paths.length ? ipcRenderer.invoke('app:attachPaths', { sessionId, paths }) : Promise.resolve([]);
+    },
     headText: (sessionId: SessionId, rel: string): Promise<string | null> => ipcRenderer.invoke('git:headText', { sessionId, rel }),
     stage: (sessionId: SessionId, paths: string[] | 'all'): Promise<GitActionResult> => ipcRenderer.invoke('git:stage', { sessionId, paths }),
     unstage: (sessionId: SessionId, paths: string[] | 'all'): Promise<GitActionResult> => ipcRenderer.invoke('git:unstage', { sessionId, paths }),

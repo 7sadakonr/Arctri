@@ -5,16 +5,20 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandBlock } from '@shared/types/block';
+import { AGENT_META } from '@shared/agents/meta';
 import type { SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
 import { copyText, readClipboard } from '@/lib/clipboard';
 import { tNow } from '@/lib/i18n';
 import { commandForKey } from '../../commands/registry';
 import { useAgentStatus } from '@/stores/agent-status';
+import { useAttachments } from '@/stores/attachments';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
+import { reconcile } from '../agents/attachment-tracker';
+import { insertAttachments } from '../agents/insert';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
 import { ThaiInputTracker } from './thai-input';
@@ -109,6 +113,16 @@ export class TerminalHost {
     // The shell draws its prompt after it has said where the prompt is, so it is read once the drawing has been parsed.
     this.term.onWriteParsed(() => {
       if (this.tracker.sm.phase === 'editing') this.capturePromptSoon();
+      this.trackAttachmentsSoon();
+    });
+    this.element.addEventListener('dragover', (e) => {
+      if (this.isAgent() && e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    });
+    this.element.addEventListener('drop', (e) => {
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (!this.isAgent() || !files.length) return;
+      e.preventDefault();
+      void api.files.fromDrop(info.id, files).then((atts) => insertAttachments(info.id, atts));
     });
 
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
@@ -316,7 +330,43 @@ export class TerminalHost {
     this.term.selectAll();
   }
 
+  private isAgent(): boolean {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    return info.kind === 'agent' || !!info.runningAgent;
+  }
+
+  /** The rows of the live screen as text. */
+  screenLines(): string[] {
+    const b = this.term.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < this.term.rows; i++) lines.push(b.getLine(b.baseY + i)?.translateToString(true) ?? '');
+    return lines;
+  }
+
+  private attachTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** The preview in the agent bar keeps only what the message box still holds (it is looked at once the output has settled). */
+  private trackAttachmentsSoon(): void {
+    const store = useAttachments.getState();
+    if (!store.bySession[this.info.id]?.length || this.attachTimer) return;
+    this.attachTimer = setTimeout(() => {
+      this.attachTimer = undefined;
+      const info = useSessions.getState().infos[this.info.id] ?? this.info;
+      const list = useAttachments.getState().bySession[this.info.id];
+      if (!list?.length) return;
+      const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+      const input = agentId ? AGENT_META[agentId]?.input : undefined;
+      if (!input || info.state !== 'running') return void useAttachments.getState().clear(this.info.id);
+      const next = reconcile(this.screenLines(), list, input, Date.now());
+      if (next !== list) useAttachments.getState().set(this.info.id, next);
+    }, 120);
+  }
+
   async pasteFromClipboard(): Promise<void> {
+    if (this.isAgent()) {
+      const atts = await api.files.clipboard(this.info.id).catch(() => []);
+      if (atts.length) return insertAttachments(this.info.id, atts);
+    }
     const text = await readClipboard();
     if (!text) return;
     const lines = text.split(/\r\n|\r|\n/).length;

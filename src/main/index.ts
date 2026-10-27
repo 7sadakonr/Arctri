@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Store from 'electron-store';
+import { sweepPastes } from './files/attachments';
 import { envKeyOf } from '@shared/types/env';
 import { appOrigins, approveQuit, confirmEndRunning, createMainWindow } from './window';
 import { PortHub, registerIpc, sendInfo } from './ipc/register';
@@ -101,6 +102,7 @@ async function start(): Promise<void> {
   app.setAppUserModelId('dev.arctri.app');
   installAppMenu();
   await app.whenReady();
+  void sweepPastes();
   mark('appReady');
 
   if (!customProfile) migrateLegacyUserData(app.getPath('userData'), app.getPath('appData'));

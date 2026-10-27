@@ -302,6 +302,7 @@ export const en = {
   'settings.diagnostics': 'Copy diagnostics',
   'settings.diagnosticsCopied': 'Diagnostics copied',
   'agent.attach': 'Attach files',
+  'agent.attachmentHide': 'Hide preview',
   'agent.files': 'Files',
   'agent.filesHint': 'Sidebar (Ctrl+Shift+E)',
   'agent.richInput': 'Rich Input',
