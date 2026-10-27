@@ -1,9 +1,12 @@
 # Changelog
 
-## 0.3.4-beta
+## Unreleased
 
 - **Attachments.** Ctrl+V of an image (saved under the temp folder, removed after a week), files copied in the file manager, dropped files and the paperclip now show a preview chip
   (thumbnail for images) in the agent bar. The chips follow the agent's message box: delete the attachment there, or send the message, and the chip goes.
+
+## 0.3.4-beta
+
 - **Updates.** Arctri checks GitHub Releases for a newer version (Help > Check for Updates, Settings > Updates, and automatically). On Windows the update is
   downloaded in the app and installed on **Restart to update**; if tabs are running work you are asked first and nothing is closed unattended. macOS shows the
   release link (the app is not signed or notarized). Betas and final releases are told apart by the prerelease flag of the GitHub release (the metadata is always `latest.yml`). Versions up to 0.3.3-beta have no updater and need one manual install.
