@@ -1,5 +1,4 @@
-import { app, clipboard, nativeImage } from 'electron';
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { clipboard, nativeImage } from 'electron';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Attachment } from '@shared/types/attachment';
@@ -9,9 +8,7 @@ import { formatRef, uncToPosix } from './refs';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const THUMB_WIDTH = 320;
-const KEEP_MS = 7 * 24 * 3600 * 1000;
 
-const pastesDir = () => join(app.getPath('temp'), 'arctri', 'pastes');
 
 function thumbOf(img: Electron.NativeImage): string | undefined {
   if (img.isEmpty()) return undefined;
@@ -49,7 +46,7 @@ async function readType(item: Electron.ClipboardItem, type: string): Promise<Blo
   }
 }
 
-/** What is on the clipboard for an agent: copied files, or an image (saved to the temp folder). Empty when it is plain text. */
+/** Files copied in the file manager, as references for an agent. Empty when the clipboard holds anything else. */
 export async function clipboardAttachments(info: SessionInfo, wsl: WslManager): Promise<Attachment[]> {
   let items: Electron.ClipboardItem[];
   try {
@@ -74,32 +71,5 @@ export async function clipboardAttachments(info: SessionInfo, wsl: WslManager): 
       : [];
     if (files.length) return attachmentsForPaths(info, wsl, files);
   }
-  for (const item of items) {
-    // any image format the clipboard offers (a screenshot may come as png or bmp); it is saved as png
-    const type = item.types.find((t) => t.startsWith('image/'));
-    const blob = type ? await readType(item, type) : undefined;
-    if (!blob) continue;
-    const img = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
-    if (img.isEmpty()) continue;
-    const dir = pastesDir();
-    await mkdir(dir, { recursive: true });
-    const file = join(dir, `paste-${Date.now()}.png`);
-    await writeFile(file, img.toPNG());
-    return (await attachmentsForPaths(info, wsl, [file])).map((a) => ({ ...a, pasted: true }));
-  }
   return [];
-}
-
-/** Pasted images older than a week are removed when the app starts. */
-export async function sweepPastes(): Promise<void> {
-  const dir = pastesDir();
-  try {
-    for (const name of await readdir(dir)) {
-      const p = join(dir, name);
-      const st = await stat(p).catch(() => null);
-      if (st && Date.now() - st.mtimeMs > KEEP_MS) await rm(p, { force: true });
-    }
-  } catch {
-    /* nothing pasted yet */
-  }
 }

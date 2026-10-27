@@ -6,10 +6,9 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandBlock } from '@shared/types/block';
 import { AGENT_META } from '@shared/agents/meta';
-import type { Attachment } from '@shared/types/attachment';
 import type { SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
-import { copyText, readClipboard } from '@/lib/clipboard';
+import { clipboardImageThumb, copyText, readClipboard } from '@/lib/clipboard';
 import { tNow } from '@/lib/i18n';
 import { commandForKey } from '../../commands/registry';
 import { useAgentStatus } from '@/stores/agent-status';
@@ -403,29 +402,27 @@ export class TerminalHost {
 
   private snapshotAgentPaste(): void {
     this.watchUntil = Date.now() + 5000;
-    void api.files.clipboard(this.info.id).then((atts) => this.rememberPreview(atts), () => undefined);
+    void clipboardImageThumb().then((img) => img && this.rememberPreview(img));
   }
 
   /** Keeps the preview of an image the agent pastes itself until its placeholder shows in the message box. */
-  private rememberPreview(atts: Attachment[]): void {
-    const a = atts.find((x) => x.image && x.thumb);
-    if (!a) return;
+  private rememberPreview(img: { name: string; thumb: string }): void {
     // the placeholder may already be showing (the agent is quicker): give its chip the preview
     const store = useAttachments.getState();
     const bare = (store.bySession[this.info.id] ?? []).find((x) => x.id.startsWith('token-') && !x.thumb);
-    if (bare) store.set(this.info.id, (store.bySession[this.info.id] ?? []).map((x) => (x === bare ? { ...x, thumb: a.thumb } : x)));
-    else this.agentPastes.push({ name: a.name, thumb: a.thumb, at: Date.now() });
+    if (bare) store.set(this.info.id, (store.bySession[this.info.id] ?? []).map((x) => (x === bare ? { ...x, thumb: img.thumb } : x)));
+    else this.agentPastes.push({ ...img, at: Date.now() });
     this.trackAttachmentsSoon();
   }
 
   /** Ctrl+V with an image on the clipboard: the agent's own paste key is sent, as if it had been pressed in the agent. */
-  private pasteImageIntoAgent(atts: Attachment[]): void {
+  private pasteImageIntoAgent(img: { name: string; thumb: string }): void {
     const info = useSessions.getState().infos[this.info.id] ?? this.info;
     const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
     const key = agentId ? AGENT_META[agentId]?.pasteImageKey(info.env.kind) : undefined;
     if (!key) return;
     this.watchUntil = Date.now() + 5000;
-    this.rememberPreview(atts);
+    this.rememberPreview(img);
     api.sessions.write(this.info.id, key);
   }
 
@@ -449,9 +446,10 @@ export class TerminalHost {
 
   async pasteFromClipboard(): Promise<void> {
     if (this.isAgent()) {
-      const atts = await api.files.clipboard(this.info.id).catch(() => []);
-      if (atts.some((a) => a.pasted)) return this.pasteImageIntoAgent(atts);
-      if (atts.length) return insertAttachments(this.info.id, atts);
+      const files = await api.files.clipboard(this.info.id).catch(() => []);
+      if (files.length) return insertAttachments(this.info.id, files);
+      const img = await clipboardImageThumb();
+      if (img) return this.pasteImageIntoAgent(img);
     }
     const text = await readClipboard();
     if (!text) return;
