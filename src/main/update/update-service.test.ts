@@ -7,7 +7,6 @@ class FakeUpdater implements UpdaterLike {
   autoInstallOnAppQuit = true;
   allowPrerelease = false;
   allowDowngrade = true;
-  channel: string | null = null;
   checks = 0;
   downloads = 0;
   installs = 0;
@@ -68,10 +67,8 @@ describe('UpdateService', () => {
     expect(defaultChannel('1.0.0')).toBe('stable');
     const { updater, svc } = setup();
     expect(updater.allowPrerelease).toBe(true);
-    expect(updater.channel).toBe('beta');
     svc.configure({ autoCheck: false, channel: 'stable' });
     expect(updater.allowPrerelease).toBe(false);
-    expect(updater.channel).toBe('latest');
     expect(svc.status().channel).toBe('stable');
   });
 

@@ -1,5 +1,5 @@
 // Update path of an installed build (Windows): installs version N, points it at a loopback feed that serves N+1, and checks what happens.
-//   node scripts/smoke-update.mjs --old <Setup-N.exe> --feed <dir with N+1 files and its latest.yml/beta.yml> --expect <N+1> [--scenario ok|missing|checksum]
+//   node scripts/smoke-update.mjs --old <Setup-N.exe> --feed <dir with N+1 files and its latest.yml> --expect <N+1> [--scenario ok|missing|checksum]
 // ok       N is offered N+1, downloads it, restarts into it; settings and the database are still there.
 // missing  the feed has nothing (404): an error is reported and N keeps running, untouched.
 // checksum the installer in the feed is damaged: the download is rejected and N keeps running, untouched.

@@ -4,7 +4,7 @@
 
 - **Updates.** Arctri checks GitHub Releases for a newer version (Help > Check for Updates, Settings > Updates, and automatically). On Windows the update is
   downloaded in the app and installed on **Restart to update**; if tabs are running work you are asked first and nothing is closed unattended. macOS shows the
-  release link (the app is not signed or notarized). Betas and final releases have separate channels. Versions up to 0.3.3-beta have no updater and need one manual install.
+  release link (the app is not signed or notarized). Betas and final releases are told apart by the prerelease flag of the GitHub release (the metadata is always `latest.yml`). Versions up to 0.3.3-beta have no updater and need one manual install.
 - **Releases.** The workflow now publishes updater metadata and blockmaps, checks that the tag equals the package version and that no release exists for it,
   verifies metadata against the files, and pins its actions. A pass of the Windows integration suite only on retry is flagged on the CI run.
 - **Tests.** CI installs the build, offers it the next version from a loopback feed and checks the upgrade, a missing feed and a damaged installer (`scripts/smoke-update.mjs`).

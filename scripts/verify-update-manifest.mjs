@@ -18,11 +18,9 @@ export async function verifyManifests(dir, tag) {
   const version = tag.replace(/^v/, '');
   const problems = [];
   const names = readdirSync(dir);
-  const manifests = names.filter((n) => /^(latest|beta)(-mac)?\.yml$/.test(n));
-  // A prerelease tag (v0.4.0-beta.1) is published to its own channel; a stable tag must also serve people on beta.
-  const pre = version.split('-')[1]?.split('.')[0];
-  const channels = pre ? [pre] : ['latest', 'beta'];
-  for (const c of channels) for (const name of [`${c}.yml`, `${c}-mac.yml`]) if (!names.includes(name)) problems.push(`missing ${name}`);
+  // With the GitHub provider every release carries latest.yml / latest-mac.yml; prerelease or not is the GitHub release's flag.
+  const manifests = names.filter((n) => /^latest(-mac)?\.yml$/.test(n));
+  for (const name of ['latest.yml', 'latest-mac.yml']) if (!names.includes(name)) problems.push(`missing ${name}`);
 
   for (const name of manifests) {
     let doc;

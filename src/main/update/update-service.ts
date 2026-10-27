@@ -8,7 +8,6 @@ export interface UpdaterLike {
   autoInstallOnAppQuit: boolean;
   allowPrerelease: boolean;
   allowDowngrade: boolean;
-  channel: string | null;
   on(event: 'download-progress', cb: (p: { percent: number; bytesPerSecond: number }) => void): unknown;
   on(event: 'error', cb: (err: Error) => void): unknown;
   checkForUpdates(): Promise<{ isUpdateAvailable: boolean; updateInfo: { version: string } } | null>;
@@ -163,9 +162,13 @@ export class UpdateService {
     if (this.interval) clearInterval(this.interval);
   }
 
+  /**
+   * With GitHub Releases the channel is the prerelease flag of the release, not a metadata file name: every release carries
+   * latest.yml, and `allowPrerelease` decides whether prereleases are considered. (Setting `updater.channel` to "beta" would
+   * look for a beta.yml that electron-builder does not write for GitHub.)
+   */
   private applyChannel(): void {
     this.o.updater.allowPrerelease = this.channel === 'beta';
-    this.o.updater.channel = this.channel === 'beta' ? 'beta' : 'latest';
   }
 
   private reschedule(): void {

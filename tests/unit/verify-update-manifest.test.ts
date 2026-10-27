@@ -34,43 +34,42 @@ function release(version: string, channel: string) {
 }
 
 describe('verifyManifests', () => {
-  it('accepts a consistent beta release', async () => {
-    release('0.4.0-beta.1', 'beta');
+  it('accepts a consistent release, beta or stable (the metadata is latest.yml either way)', async () => {
+    release('0.4.0-beta.1', 'latest');
     expect(await verifyManifests(dir, 'v0.4.0-beta.1')).toEqual([]);
   });
 
-  it('wants beta metadata next to latest for a stable release', async () => {
+  it('wants both the Windows and the macOS metadata', async () => {
     release('1.0.0', 'latest');
-    expect(await verifyManifests(dir, 'v1.0.0')).toEqual(['missing beta.yml', 'missing beta-mac.yml']);
-    release('1.0.0', 'beta');
-    expect(await verifyManifests(dir, 'v1.0.0')).toEqual([]);
+    rmSync(join(dir, 'latest-mac.yml'));
+    expect(await verifyManifests(dir, 'v1.0.0')).toEqual(['missing latest-mac.yml']);
   });
 
   it('rejects a manifest for another version than the tag', async () => {
-    release('0.4.0-beta.1', 'beta');
+    release('0.4.0-beta.1', 'latest');
     expect((await verifyManifests(dir, 'v0.4.0-beta.2')).some((p: string) => p.includes('does not match tag'))).toBe(true);
   });
 
   it('rejects a checksum that does not match the file', async () => {
-    const { exe } = release('0.4.0-beta.1', 'beta');
-    manifest('beta.yml', '0.4.0-beta.1', [{ ...exe, sha512: createHash('sha512').update('other').digest('base64') }]);
+    const { exe } = release('0.4.0-beta.1', 'latest');
+    manifest('latest.yml', '0.4.0-beta.1', [{ ...exe, sha512: createHash('sha512').update('other').digest('base64') }]);
     expect(await verifyManifests(dir, 'v0.4.0-beta.1')).toEqual([expect.stringContaining('sha512 of Arctri-Setup-0.4.0-beta.1-x64.exe differs')]);
   });
 
   it('rejects a manifest that points at a file that is not in the release', async () => {
-    const { exe } = release('0.4.0-beta.1', 'beta');
-    manifest('beta.yml', '0.4.0-beta.1', [{ ...exe, url: 'Arctri-Setup-gone.exe' }]);
+    const { exe } = release('0.4.0-beta.1', 'latest');
+    manifest('latest.yml', '0.4.0-beta.1', [{ ...exe, url: 'Arctri-Setup-gone.exe' }]);
     expect((await verifyManifests(dir, 'v0.4.0-beta.1'))[0]).toContain('is not among the release files');
   });
 
   it('rejects a mac manifest without both architectures', async () => {
-    const { arm } = release('0.4.0-beta.1', 'beta');
-    manifest('beta-mac.yml', '0.4.0-beta.1', [arm]);
-    expect(await verifyManifests(dir, 'v0.4.0-beta.1')).toEqual(['beta-mac.yml: no x64 zip listed']);
+    const { arm } = release('0.4.0-beta.1', 'latest');
+    manifest('latest-mac.yml', '0.4.0-beta.1', [arm]);
+    expect(await verifyManifests(dir, 'v0.4.0-beta.1')).toEqual(['latest-mac.yml: no x64 zip listed']);
   });
 
   it('rejects an installer without its blockmap', async () => {
-    release('0.4.0-beta.1', 'beta');
+    release('0.4.0-beta.1', 'latest');
     rmSync(join(dir, 'Arctri-Setup-0.4.0-beta.1-x64.exe.blockmap'));
     expect((await verifyManifests(dir, 'v0.4.0-beta.1'))[0]).toContain('blockmap is missing');
   });

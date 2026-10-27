@@ -8,7 +8,6 @@ export class FakeUpdater implements UpdaterLike {
   autoInstallOnAppQuit = false;
   allowPrerelease = false;
   allowDowngrade = false;
-  channel: string | null = null;
   installed = 0;
   private progress: Array<(p: { percent: number; bytesPerSecond: number }) => void> = [];
 

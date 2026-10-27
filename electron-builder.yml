@@ -15,14 +15,13 @@ nodeGypRebuild: false
 buildDependenciesFromSource: false
 asar: true
 afterPack: scripts/after-pack.mjs
-# Updater metadata (latest.yml / beta.yml, latest-mac.yml / beta-mac.yml, blockmaps) is generated next to the installers.
-# The release workflow uploads it with `gh release create`, so builds still run with --publish never and hold no token.
+# Updater metadata (latest.yml, latest-mac.yml, blockmaps) is generated next to the installers. With the GitHub provider the file
+# is always latest.yml; beta versus stable is decided by the prerelease flag of the GitHub release (the release workflow sets it
+# for tags with a "-"). The workflow uploads the files with `gh release create`, so builds run with --publish never and hold no token.
 publish:
   provider: github
   owner: 7sadakonr
   repo: Arctri
-# A stable release also writes beta.yml, so people on the beta channel are offered it too.
-generateUpdatesFilesForAllChannels: true
 asarUnpack:
   # conpty.dll / OpenConsole.exe / pty.node must be real files so they can be loaded and executed
   - node_modules/node-pty/**

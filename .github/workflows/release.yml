@@ -1,6 +1,6 @@
 name: Release
 # Builds the Windows installer and the macOS dmg/zip for a version tag (v0.4.0-beta.1, v1.0.0...) and attaches them, with the
-# updater metadata (latest.yml / beta.yml and the macOS equivalents, blockmaps), to a GitHub Release.
+# updater metadata (latest.yml, latest-mac.yml, blockmaps), to a GitHub Release.
 # Nothing is signed or notarized yet: Windows shows SmartScreen and macOS shows Gatekeeper on the first start, and the macOS
 # app does not update itself. A published tag and its binaries are never replaced: a fix is a new, higher version.
 # Actions are pinned to a commit (the comment names the tag it was).
