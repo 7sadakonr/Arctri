@@ -5,4 +5,6 @@ export interface Attachment {
   image: boolean;
   /** Small data URL of an image, for the preview in the agent bar. */
   thumb?: string;
+  /** An image taken from the clipboard (not a file the user chose). */
+  pasted?: boolean;
 }

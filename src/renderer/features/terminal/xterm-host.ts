@@ -6,6 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandBlock } from '@shared/types/block';
 import { AGENT_META } from '@shared/agents/meta';
+import type { Attachment } from '@shared/types/attachment';
 import type { SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
 import { copyText, readClipboard } from '@/lib/clipboard';
@@ -352,16 +353,30 @@ export class TerminalHost {
 
   private snapshotAgentPaste(): void {
     this.watchUntil = Date.now() + 5000;
-    void api.files.clipboard(this.info.id).then((atts) => {
-      const a = atts.find((x) => x.image && x.thumb);
-      if (!a) return;
-      // the placeholder may already be showing (the agent is quicker): give its chip the preview
-      const store = useAttachments.getState();
-      const bare = (store.bySession[this.info.id] ?? []).find((x) => x.id.startsWith('token-') && !x.thumb);
-      if (bare) store.set(this.info.id, (store.bySession[this.info.id] ?? []).map((x) => (x === bare ? { ...x, thumb: a.thumb } : x)));
-      else this.agentPastes.push({ name: a.name, thumb: a.thumb, at: Date.now() });
-      this.trackAttachmentsSoon();
-    }, () => undefined);
+    void api.files.clipboard(this.info.id).then((atts) => this.rememberPreview(atts), () => undefined);
+  }
+
+  /** Keeps the preview of an image the agent pastes itself until its placeholder shows in the message box. */
+  private rememberPreview(atts: Attachment[]): void {
+    const a = atts.find((x) => x.image && x.thumb);
+    if (!a) return;
+    // the placeholder may already be showing (the agent is quicker): give its chip the preview
+    const store = useAttachments.getState();
+    const bare = (store.bySession[this.info.id] ?? []).find((x) => x.id.startsWith('token-') && !x.thumb);
+    if (bare) store.set(this.info.id, (store.bySession[this.info.id] ?? []).map((x) => (x === bare ? { ...x, thumb: a.thumb } : x)));
+    else this.agentPastes.push({ name: a.name, thumb: a.thumb, at: Date.now() });
+    this.trackAttachmentsSoon();
+  }
+
+  /** Ctrl+V with an image on the clipboard: the agent's own paste key is sent, as if it had been pressed in the agent. */
+  private pasteImageIntoAgent(atts: Attachment[]): void {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const key = agentId ? AGENT_META[agentId]?.pasteImageKey(info.env.kind) : undefined;
+    if (!key) return;
+    this.watchUntil = Date.now() + 5000;
+    this.rememberPreview(atts);
+    api.sessions.write(this.info.id, key);
   }
 
   /** The preview in the agent bar keeps only what the message box still holds (it is looked at once the output has settled). */
@@ -385,6 +400,7 @@ export class TerminalHost {
   async pasteFromClipboard(): Promise<void> {
     if (this.isAgent()) {
       const atts = await api.files.clipboard(this.info.id).catch(() => []);
+      if (atts.some((a) => a.pasted)) return this.pasteImageIntoAgent(atts);
       if (atts.length) return insertAttachments(this.info.id, atts);
     }
     const text = await readClipboard();

@@ -85,7 +85,7 @@ export async function clipboardAttachments(info: SessionInfo, wsl: WslManager): 
     await mkdir(dir, { recursive: true });
     const file = join(dir, `paste-${Date.now()}.png`);
     await writeFile(file, img.toPNG());
-    return attachmentsForPaths(info, wsl, [file]);
+    return (await attachmentsForPaths(info, wsl, [file])).map((a) => ({ ...a, pasted: true }));
   }
   return [];
 }
