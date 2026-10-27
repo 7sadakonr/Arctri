@@ -18,7 +18,8 @@ import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
-import { reconcile } from '../agents/attachment-tracker';
+import { planRemoval, type RowCell } from '../agents/attachment-remove';
+import { inputRegion, reconcile, type TrackedAttachment } from '../agents/attachment-tracker';
 import { insertAttachments } from '../agents/insert';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
@@ -344,6 +345,55 @@ export class TerminalHost {
     const lines: string[] = [];
     for (let i = 0; i < this.term.rows; i++) lines.push(b.getLine(b.baseY + i)?.translateToString(true) ?? '');
     return lines;
+  }
+
+  /** The characters of one row of the live screen, with where the caret may be drawn. */
+  private rowCells(y: number): RowCell[] {
+    const line = this.term.buffer.active.getLine(this.term.buffer.active.baseY + y);
+    const cells: RowCell[] = [];
+    for (let x = 0; line && x < line.length; x++) {
+      const c = line.getCell(x);
+      if (!c || c.getWidth() === 0) continue;
+      cells.push({ x, ch: c.getChars() || ' ', inverse: !!c.isInverse() });
+    }
+    return cells;
+  }
+
+  /**
+   * Takes an attachment out of the agent's message box: the caret is moved behind it and Backspace is pressed. Done only when the
+   * text and the caret are on one row; otherwise nothing is typed and false is returned (the caller still drops the chip).
+   */
+  async removeAttachment(att: TrackedAttachment): Promise<boolean> {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    if (!input || info.state !== 'running') return false;
+    const first = inputRegion(this.screenLines(), input.prompt);
+    if (first === undefined) return false;
+    const lines = this.screenLines();
+    const startRow = lines.length - first.split('\n').length;
+    const buf = this.term.buffer.active;
+    for (const needle of [att.token, att.ref].filter((n): n is string => !!n)) {
+      for (let y = startRow; y < lines.length; y++) {
+        if (!lines[y]!.includes(needle)) continue;
+        const plan = planRemoval(this.rowCells(y), needle, y === buf.cursorY ? buf.cursorX : undefined);
+        if (!plan) return false;
+        const key = (code: string, n: number) => code.repeat(Math.abs(n));
+        api.sessions.write(this.info.id, key(plan.moves > 0 ? '\x1b[C' : '\x1b[D', plan.moves));
+        if (needle === att.ref) {
+          api.sessions.write(this.info.id, key('\x7f', plan.width));
+          return true;
+        }
+        // a placeholder is one unit for the agent: Backspace until it is gone (at most one press per character)
+        for (let i = 0; i < plan.width; i++) {
+          api.sessions.write(this.info.id, '\x7f');
+          await new Promise((r) => setTimeout(r, 70));
+          if (!this.screenLines().some((l) => l.includes(needle))) break;
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   private attachTimer: ReturnType<typeof setTimeout> | undefined;

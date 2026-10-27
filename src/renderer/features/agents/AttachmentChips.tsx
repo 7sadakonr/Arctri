@@ -2,11 +2,12 @@ import { FileText, X } from 'lucide-react';
 import { Tip } from '@/components/ui/tooltip';
 import { useT } from '@/lib/i18n';
 import { useAttachments } from '@/stores/attachments';
+import { peekHost } from '../terminal/xterm-host';
 import type { TrackedAttachment } from './attachment-tracker';
 
 const NONE: TrackedAttachment[] = [];
 
-/** What is in the agent's message box right now, as small previews. Hiding one does not change the message. */
+/** What is in the agent's message box right now, as small previews. The × takes the attachment out of the message too. */
 export function AttachmentChips({ sessionId }: { sessionId: string }) {
   const t = useT();
   const list = useAttachments((s) => s.bySession[sessionId]) ?? NONE;
@@ -37,8 +38,11 @@ export function AttachmentChips({ sessionId }: { sessionId: string }) {
             <span className="truncate">{a.name}</span>
             <button
               type="button"
-              aria-label={t('agent.attachmentHide')}
-              onClick={() => hide(sessionId, a.id)}
+              aria-label={t('agent.attachmentRemove')}
+              onClick={() => {
+                hide(sessionId, a.id);
+                void peekHost(sessionId)?.removeAttachment(a);
+              }}
               className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm hover:bg-hover hover:text-fg"
             >
               <X size={10} />
