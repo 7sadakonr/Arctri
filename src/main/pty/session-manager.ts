@@ -485,7 +485,7 @@ export class SessionManager {
     if (!s.exitedFlag && s.pty) {
       const pid = s.pty.pid;
       // Children can only be found while the root is alive, so record them first.
-      const tree = recorded ?? (pid ? ((await snapshotTrees([pid])).get(pid) ?? []) : []);
+      const tree = recorded ?? (pid ? ((await (this.deps.snapshotTrees ?? snapshotTrees)([pid])).get(pid) ?? []) : []);
       try {
         s.pty.kill();
       } catch {
@@ -516,7 +516,7 @@ export class SessionManager {
           const pty = this.sessions.get(id)?.pty;
           return pty && pty.pid && !this.sessions.get(id)!.exitedFlag ? [pty.pid] : [];
         });
-        const trees = await snapshotTrees(roots); // one look at the process table for all sessions
+        const trees = await (this.deps.snapshotTrees ?? snapshotTrees)(roots); // one look at the process table for all sessions
         await Promise.all(
           ids.map((id) => {
             const pid = this.sessions.get(id)?.pty?.pid;

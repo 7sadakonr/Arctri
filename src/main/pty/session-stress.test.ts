@@ -52,7 +52,9 @@ describe('session lifecycle under churn', () => {
       onInfo: (i) => infos.set(i.id, i),
       onClosed: (id) => closed.push(id),
       killTree: async (pid) => void killedTrees.push(pid),
-      killTreeSync: (pid) => void killedTrees.push(pid)
+      killTreeSync: (pid) => void killedTrees.push(pid),
+      snapshotTrees: async () => new Map(), // the real one asks PowerShell on Windows, seconds per call
+      busyPollMs: 0
     });
     const rand = rng(42);
     const spec = { profileId: profile.id, kind: 'shell' as const, cols: 100, rows: 30 };
@@ -84,5 +86,5 @@ describe('session lifecycle under churn', () => {
     const failed = [...infos.values()].filter((i) => i.state === 'failed');
     expect(failed.length).toBeGreaterThan(0);
     for (const f of failed) expect(killedTrees).toContain(f.pid);
-  });
+  }, 30_000);
 });

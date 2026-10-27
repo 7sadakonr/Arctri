@@ -52,6 +52,8 @@ function setup(opts: { helloTimeoutMs?: number; profile?: ShellProfile } = {}) {
     onCommand: (c) => cmds.push(c),
     killTree: async (pid) => void killed.push(pid),
     killTreeSync: (pid) => void killedSync.push(pid),
+    snapshotTrees: async () => new Map(), // the real one asks PowerShell on Windows, seconds per call
+    busyPollMs: 0,
     log: (level, msg, detail) => logs.push({ level, msg, detail }),
     ...(opts.helloTimeoutMs ? { helloTimeoutMs: opts.helloTimeoutMs } : {})
   });
