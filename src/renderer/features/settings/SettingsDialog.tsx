@@ -10,6 +10,8 @@ import { focusActiveSession } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
 import { isMac, isWindows } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
+import { useUpdate } from '@/stores/update';
+import { updateSummary } from '../update/summary';
 import { blockProfiles } from '../launcher/actions';
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -33,6 +35,7 @@ export function SettingsDialog() {
   const prefs = useUi((s) => s.prefs);
   const profiles = useUi((s) => s.profiles);
   const agents = useUi((s) => s.agents);
+  const update = useUpdate((s) => s.status);
   const [agentPaths, setAgentPaths] = useState<Record<string, string>>(prefs.agentPaths);
 
   useEffect(() => {
@@ -142,6 +145,36 @@ export function SettingsDialog() {
           </Button>
         </Row>
 
+        <div className="pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">{t('settings.updates')}</div>
+        <Row label={t('update.current')} hint={updateSummary(t, update) || undefined}>
+          <span className="font-mono text-xs" data-testid="settings-version">{update?.currentVersion ?? '–'}</span>
+        </Row>
+        <Row label={t('settings.updateAuto')}>
+          <Switch
+            checked={prefs.updates.autoCheck}
+            onCheckedChange={(v) => void save({ updates: { ...prefs.updates, autoCheck: v } })}
+            data-testid="settings-update-auto"
+          />
+        </Row>
+        <Row label={t('settings.updateChannel')} hint={t('settings.updateChannelHint')}>
+          <select
+            className={field}
+            value={update?.channel ?? 'stable'}
+            onChange={(e) => void save({ updates: { ...prefs.updates, channel: e.target.value as 'beta' | 'stable' } })}
+          >
+            <option value="beta">{t('update.channel.beta')}</option>
+            <option value="stable">{t('update.channel.stable')}</option>
+          </select>
+        </Row>
+        <Row label={t('update.lastChecked')}>
+          <span className="flex items-center gap-2 text-xs">
+            {update?.lastCheckedAt ? new Date(update.lastCheckedAt).toLocaleString() : t('update.never')}
+            <Button variant="outline" onClick={() => { useUpdate.getState().openDialog(true); void api.update.check(); }}>
+              {t('update.checkNow')}
+            </Button>
+          </span>
+        </Row>
+
         <div className="pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">{t('settings.agents')}</div>
         {agents.flatMap((a) =>
           a.environments
@@ -176,6 +209,16 @@ export function SettingsDialog() {
             }}
           >
             {t('settings.diagnostics')}
+          </Button>
+          <Button
+            variant="outline"
+            className="ml-2"
+            onClick={async () => {
+              await copyText(await api.app.logTail());
+              useUi.getState().toast(tNow('settings.logCopied'));
+            }}
+          >
+            {t('settings.copyLog')}
           </Button>
         </div>
       </DialogContent>

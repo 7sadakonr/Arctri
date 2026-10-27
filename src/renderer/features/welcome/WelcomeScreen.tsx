@@ -4,7 +4,9 @@ import { useEffect, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { useUi } from '@/stores/ui';
+import { useUpdate } from '@/stores/update';
 import { openProject, openShell, pickAndOpenProject, resolveDefaultProfile } from '../launcher/actions';
+import { EnvironmentPanel } from '../environment/EnvironmentPanel';
 import { projectName, removeRecent, toEnvPath, type RecentProject } from './recent';
 
 const RECENT_SHOWN = 5;
@@ -54,6 +56,7 @@ export function WelcomeScreen() {
   const recent = useUi((s) => s.prefs.recentProjects);
   const shown = recent.slice(0, RECENT_SHOWN);
   const cloning = useUi((s) => s.cloneOpen);
+  const version = useUpdate((s) => s.status?.currentVersion);
 
   useEffect(() => {
     let chordAt = 0;
@@ -104,6 +107,9 @@ export function WelcomeScreen() {
               removeLabel={t('welcome.removeRecent')}
             />
           ))}
+        </Section>
+        <Section title={t('env.title')}>
+          <EnvironmentPanel {...(version ? { version } : {})} />
         </Section>
       </div>
     </div>

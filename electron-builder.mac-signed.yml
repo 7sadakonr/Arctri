@@ -1,0 +1,14 @@
+# macOS build signed with a Developer ID certificate, hardened runtime and notarization. Used by `npm run dist:mac:signed`, only when
+# the repository variable SIGN_MACOS is "true" and the certificate and notarization secrets exist (see docs/RELEASE.md). Not exercised
+# yet: no Apple Developer account is provisioned. The identity comes from CSC_LINK / CSC_KEY_PASSWORD; notarization from
+# APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER.
+extends: electron-builder.yml
+mac:
+  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+dmg:
+  sign: true

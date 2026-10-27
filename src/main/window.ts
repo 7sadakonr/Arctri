@@ -1,6 +1,34 @@
 import { BrowserWindow, dialog, screen, session, shell } from 'electron';
 import { join } from 'node:path';
+import { logger } from './logger';
 import type { PrefsStore } from './persistence/prefs';
+
+let quitApproved = false;
+/** The user has said yes to ending running work (or an update install was confirmed): quitting must not ask again. */
+export const approveQuit = (): void => void (quitApproved = true);
+export const isQuitApproved = (): boolean => quitApproved;
+
+/**
+ * Asks before running work is ended. Quitting by any route (window button, menu, Cmd+Q, an update) asks here before
+ * anything is closed, so Cancel really leaves the sessions alone. Automated runs never wait for a person.
+ */
+export function confirmEndRunning(win: BrowserWindow | undefined, busy: number): boolean {
+  if (quitApproved || busy === 0) return true;
+  if (process.env['ARCTRI_E2E'] || process.env['ARCTRI_SMOKE_OUT'] || process.env['ARCTRI_SMOKE_UPDATE_OUT']) return true;
+  const options = {
+    type: 'warning' as const,
+    buttons: ['Quit', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Arctri',
+    message: busy === 1 ? '1 session is still running.' : `${busy} sessions are still running.`,
+    detail: 'Closing the window ends their processes.'
+  };
+  const choice = win && !win.isDestroyed() ? dialog.showMessageBoxSync(win, options) : dialog.showMessageBoxSync(options);
+  if (choice !== 0) return false;
+  quitApproved = true;
+  return true;
+}
 
 export const isDev = (): boolean => !!process.env['ELECTRON_RENDERER_URL'];
 
@@ -114,27 +142,20 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     if (input.key === 'F5' || (mod && input.key.toLowerCase() === 'r')) e.preventDefault();
   });
 
-  let confirmed = false;
   win.on('close', (e) => {
-    if (confirmed) return;
-    const busy = hooks.busyCount();
-    // Automated runs must never wait for a person to answer a dialog.
-    if (busy > 0 && !process.env['ARCTRI_E2E'] && !process.env['ARCTRI_SMOKE_OUT']) {
-      const choice = dialog.showMessageBoxSync(win, {
-        type: 'warning',
-        buttons: ['Quit', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        title: 'Arctri',
-        message: busy === 1 ? '1 session is still running.' : `${busy} sessions are still running.`,
-        detail: 'Closing the window ends their processes.'
-      });
-      if (choice !== 0) {
-        e.preventDefault();
-        return;
-      }
-    }
-    confirmed = true;
+    if (!confirmEndRunning(win, hooks.busyCount())) e.preventDefault();
+  });
+
+  // The page crashed. The terminals live in the main process and keep running; a reloaded page picks them up again
+  // (session:list re-attaches their ports). A page that keeps crashing is left alone instead of reloading in a loop.
+  const crashes: number[] = [];
+  win.webContents.on('render-process-gone', (_e, details) => {
+    logger.error('renderer process gone', { reason: details.reason, exitCode: details.exitCode });
+    if (details.reason === 'clean-exit' || details.reason === 'killed' || win.isDestroyed()) return;
+    const now = Date.now();
+    crashes.push(now);
+    while (crashes.length && now - crashes[0]! > 60_000) crashes.shift();
+    if (crashes.length <= 3) win.webContents.reload();
   });
 
   if (isDev()) void win.loadURL(process.env['ELECTRON_RENDERER_URL']!);

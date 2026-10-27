@@ -6,6 +6,8 @@ import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { kbd } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
+import { useUpdate } from '@/stores/update';
+import { updateSummary } from '../update/summary';
 
 function ExternalLink({ url, label }: { url: string; label: string }) {
   return (
@@ -44,6 +46,7 @@ export function HelpDialogs() {
   const t = useT();
   const which = useUi((s) => s.helpDialog);
   const [diag, setDiag] = useState<Record<string, unknown>>({});
+  const update = useUpdate((s) => s.status);
   useEffect(() => {
     if (which === 'about') void api.app.diagnostics().then(setDiag, () => undefined);
   }, [which]);
@@ -85,6 +88,7 @@ export function HelpDialogs() {
                 ['about.electron', String(diag['electron'] ?? '')],
                 ['about.node', String(diag['node'] ?? '')],
                 ['about.system', [diag['os'], diag['arch']].filter(Boolean).join(' · ')],
+                ['about.update', updateSummary(t, update)],
                 ['about.license', 'MIT']
               ] as const).map(([k, v]) => (
                 <div key={k} className="contents">

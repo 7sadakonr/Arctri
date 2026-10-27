@@ -27,6 +27,7 @@ const shape = {
   agentNotifications: z.boolean(),
   gitAutoFetch: z.boolean(),
   dismissedHints: z.array(z.string().max(100)).max(50),
+  updates: z.object({ autoCheck: z.boolean(), channel: z.enum(['beta', 'stable']).optional() }),
   recentProjects: z
     .array(
       z.object({
@@ -58,6 +59,10 @@ export const prefsSchema = z.object({
   agentNotifications: shape.agentNotifications.default(true),
   gitAutoFetch: shape.gitAutoFetch.default(true),
   dismissedHints: shape.dismissedHints.default([]),
+  // `channel` stays unset until the user picks one; the update service then follows the installed version (a prerelease follows beta).
+  updates: z
+    .object({ autoCheck: shape.updates.shape.autoCheck.default(true), channel: shape.updates.shape.channel })
+    .default({ autoCheck: true }),
   recentProjects: shape.recentProjects.default([]),
   window: z
     .object({

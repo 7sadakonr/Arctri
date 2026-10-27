@@ -1,4 +1,4 @@
-import { dialog, Notification, shell, MessageChannelMain, type BrowserWindow, type MessagePortMain } from 'electron';
+import { dialog, Notification, shell, type BrowserWindow } from 'electron';
 import type { SessionInfo, SessionSpec } from '@shared/types/session';
 import { envKeyOf } from '@shared/types/env';
 import type { CompletionResponse } from '@shared/types/completion';
@@ -18,11 +18,15 @@ import type { FileWatcher } from '../files/watcher';
 import { posix, win32 } from 'node:path';
 import type { WslManager } from '../wsl/wsl-manager';
 import { mark } from '../timing';
-import { logger } from '../logger';
+import { logger, logTail } from '../logger';
+import { PortHub } from './port-hub';
+
+export { PortHub };
 import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
 import { applyUiScale } from '../window';
 import { setAppMenus } from '../app-menu';
 import type { GitSyncService } from '../git/sync-service';
+import type { UpdateService } from '../update/update-service';
 import type { EnvironmentRef } from '@shared/types/env';
 
 export interface Services {
@@ -40,48 +44,13 @@ export interface Services {
   wsl: WslManager;
   fileWatcher: FileWatcher;
   gitSync: GitSyncService;
+  update: UpdateService;
   getWindow: () => BrowserWindow | undefined;
   origins: () => string[];
 }
 
 /** Notifications raised so far; recorded only in end-to-end runs so tests can look at them. */
 const notified: Array<{ sessionId: string; title: string; body: string }> = [];
-
-/** Moves PTY output to the renderer over a dedicated MessagePort per session. */
-export class PortHub {
-  private ports = new Map<string, MessagePortMain>();
-  private queue = new Map<string, string[]>();
-
-  constructor(private readonly win: () => BrowserWindow | undefined) {}
-
-  send(id: string, chunk: string): void {
-    const port = this.ports.get(id);
-    if (port) port.postMessage(chunk);
-    else {
-      const q = this.queue.get(id) ?? [];
-      q.push(chunk);
-      this.queue.set(id, q);
-    }
-  }
-
-  attach(id: string): void {
-    this.ports.get(id)?.close();
-    const wc = this.win()?.webContents;
-    if (!wc || wc.isDestroyed()) return;
-    const { port1, port2 } = new MessageChannelMain();
-    wc.postMessage('session:port', { id }, [port2]);
-    port1.start();
-    this.ports.set(id, port1);
-    for (const chunk of this.queue.get(id) ?? []) port1.postMessage(chunk);
-    this.queue.delete(id);
-  }
-
-  detach(id: string): void {
-    this.ports.get(id)?.close();
-    this.ports.delete(id);
-    this.queue.delete(id);
-  }
-}
 
 export function registerIpc(s: Services, hub: PortHub): void {
   const r = new Router(s.origins);
@@ -450,6 +419,7 @@ export function registerIpc(s: Services, hub: PortHub): void {
   });
 
   r.handle('app:diagnostics', () => (process.env['ARCTRI_E2E'] ? { ...s.diagnostics(), notifications: notified } : s.diagnostics()));
+  r.handle('app:logTail', () => logTail());
   r.handle('app:openExternal', ({ url }) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url);
     return undefined;
@@ -460,6 +430,12 @@ export function registerIpc(s: Services, hub: PortHub): void {
     if (cwd?.env === 'wsl') return shell.openPath(`\\\\wsl.localhost\\${cwd.distro}${cwd.path.replace(/\//g, '\\')}`);
     return undefined;
   });
+  r.handle('update:getStatus', () => s.update.status());
+  r.handle('update:check', () => s.update.check());
+  r.handle('update:download', () => s.update.download());
+  r.handle('update:install', ({ confirmBusy }) => s.update.install(confirmBusy));
+  // The URL is built here from the version on offer; the renderer never supplies one.
+  r.handle('update:openReleasePage', () => shell.openExternal(s.update.releasePageUrl()));
   r.handle('app:setMenu', ({ menus }) => setAppMenus(menus, (id) => s.getWindow()?.webContents.send('app:menu', { id })));
 }
 

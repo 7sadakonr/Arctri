@@ -4,6 +4,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -21,20 +24,40 @@ jobs:
       - run: npm test
       - run: npm run build
       # Real PTYs: PowerShell 5.1 and 7 are on the runner, WSL distributions are not.
-      # ConPTY sessions closed in bulk sometimes crash a test worker on shared runners (a native access violation that
-      # vitest cannot retry by itself), so the whole suite gets one more try before the job fails.
+      # Each integration file runs in its own process (scripts/run-integration.mjs): a ConPTY native crash costs one named
+      # file, which is run once more. Passing only on that retry is a flake: it is flagged on the run, and on main it fails
+      # the job unless the file is listed in tests/integration/quarantine.json with the reason.
       - name: Integration tests
-        run: |
-          npm run test:integration
-          if ($LASTEXITCODE -ne 0) { Write-Host 'Integration tests failed, trying once more'; npm run test:integration }
-          exit $LASTEXITCODE
+        run: npm run test:integration -- --report test-results/integration-report.json ${{ github.ref == 'refs/heads/main' && '--strict' || '' }}
         shell: pwsh
         env:
           ARCTRI_SKIP_WSL: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-report
+          path: test-results/
+          if-no-files-found: ignore
       - run: npm run dist
       - name: Silent install and smoke test of the installer
         run: node scripts/smoke-installed.mjs --install (Get-ChildItem release/Arctri-Setup-*.exe).FullName
         shell: pwsh
+      # Update path on an installed build: N is offered N+1 from a loopback feed, downloads it and restarts into it; a feed
+      # with nothing in it and a feed with a damaged installer must leave N running with its data.
+      - name: Build the next version (patch + 1) for the update test
+        shell: pwsh
+        run: |
+          $next = node -e "const [v,pre]=require('./package.json').version.split('-');const p=v.split('.');p[2]=+p[2]+1;console.log(p.join('.')+(pre?'-'+pre:''))"
+          npx electron-builder --win --x64 --publish never "-c.extraMetadata.version=$next" "-c.directories.output=release-next"
+          "NEXT_VERSION=$next" >> $env:GITHUB_ENV
+      - name: Update test on the installed build
+        shell: pwsh
+        run: |
+          $old = (Get-ChildItem release/Arctri-Setup-*.exe).FullName
+          foreach ($s in 'ok', 'missing', 'checksum') {
+            node scripts/smoke-update.mjs --old $old --feed release-next --expect $env:NEXT_VERSION --scenario $s
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: installer

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Updates.** Arctri checks GitHub Releases for a newer version (Help > Check for Updates, Settings > Updates, and automatically). On Windows the update is
+  downloaded in the app and installed on **Restart to update**; if tabs are running work you are asked first and nothing is closed unattended. macOS shows the
+  release link (the app is not signed or notarized). Betas and final releases have separate channels. Versions up to 0.3.3-beta have no updater and need one manual install.
+- **Releases.** The workflow now publishes updater metadata and blockmaps, checks that the tag equals the package version and that no release exists for it,
+  verifies metadata against the files, and pins its actions. A pass of the Windows integration suite only on retry is flagged on the CI run.
+- **Tests.** CI installs the build, offers it the next version from a loopback feed and checks the upgrade, a missing feed and a damaged installer (`scripts/smoke-update.mjs`).
+- **Sessions.** A crashed PTY worker now fails the tab with a clear message, finishes its running command, keeps the output already received and ends the
+  shell it had started (before, that shell kept running unseen). Closing everything that runs out of time ends what is left before the app exits. Quitting asks
+  first, before any session is closed, so Cancel really leaves them running. A crashed page is reloaded and the terminals keep running. Memory held for closed
+  tabs and for a window that is gone is bounded. The PTY lifecycle is now in the log.
+- **Environment.** The welcome page shows the shells, WSL state and agent CLIs found, whether each is usable, and how to get what is missing; start-up errors say how to
+  recover. **Settings > Copy recent log** gives a masked log for bug reports; logs mask home paths and token-shaped strings. Issue template and troubleshooting guide added.
+- **Busy tabs.** Command Prompt and other tabs without blocks now count as busy while a program runs in them, so closing or updating asks first.
+- **Signing.** Windows (Azure Artifact Signing) and macOS (Developer ID, notarization) builds and their verification are wired behind `SIGN_WINDOWS` / `SIGN_MACOS`, off until credentials exist. Installers remain unsigned.
+- **CI.** Integration tests run one file per process; a file that passes only on retry is reported as a flake and fails main unless quarantined with a reason.
+- **Docs.** Baseline method and bug inventory, compatibility matrix with untested combinations marked, and a go/no-go checklist under `docs/testing/`.
+- **Data.** Before a newer version migrates an existing database, a copy is kept as `arctri.db.bak-v<n>` (two newest).
+
 ## 0.3.3-beta
 
 - **Terminal.** Fixes garbled text after switching tabs: the terminal is repainted once the layout has settled and after a WebGL context loss.

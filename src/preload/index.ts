@@ -7,6 +7,7 @@ import type { AgentStatus } from '@shared/types/agent-status';
 import type { NativeMenuItem } from '@shared/ipc/contract';
 import type { GitSyncResult, PreWorkCheck, RepoChanged, RepoSyncSnapshot } from '@shared/git/sync';
 import type { ProfilesResult } from '../main/shell/registry';
+import type { UpdateInstallResult, UpdateStatus } from '@shared/types/update';
 
 type GitActionResult = { ok: true; out: string } | { ok: false; error: string };
 type FsOpResult = { ok: true } | { ok: false; error: 'exists' | 'not-found' | 'denied' | 'failed' };
@@ -20,6 +21,13 @@ const ports = new Map<SessionId, MessagePort>();
 const handlers = new Map<SessionId, DataHandler>();
 const backlog = new Map<SessionId, string[]>();
 
+// A closed session's port and any output nobody read are dropped, so they cannot pile up for the life of the window.
+ipcRenderer.on('session:closed', (_e: IpcRendererEvent, id: SessionId) => {
+  ports.get(id)?.close();
+  ports.delete(id);
+  backlog.delete(id);
+});
+
 ipcRenderer.on('session:port', (event: IpcRendererEvent, msg: { id: SessionId }) => {
   const port = event.ports[0];
   if (!port) return;
@@ -28,7 +36,11 @@ ipcRenderer.on('session:port', (event: IpcRendererEvent, msg: { id: SessionId })
   port.onmessage = (e) => {
     const h = handlers.get(msg.id);
     if (h) h(e.data as string);
-    else backlog.set(msg.id, [...(backlog.get(msg.id) ?? []), e.data as string]);
+    else {
+      const held = backlog.get(msg.id) ?? [];
+      held.push(e.data as string);
+      backlog.set(msg.id, held);
+    }
   };
 });
 
@@ -178,8 +190,19 @@ const api = {
     /** `null` status: the tab no longer has one. */
     onChanged: (cb: (v: { id: SessionId; status: AgentStatus | null }) => void): Unsub => subscribe('agentStatus:changed', cb)
   },
+  update: {
+    getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:getStatus'),
+    check: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:check'),
+    download: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:download'),
+    /** Without `confirmBusy` an install is refused while sessions are running work. */
+    install: (confirmBusy: boolean): Promise<UpdateInstallResult> => ipcRenderer.invoke('update:install', { confirmBusy }),
+    openReleasePage: (): Promise<void> => ipcRenderer.invoke('update:openReleasePage'),
+    onStatus: (cb: (s: UpdateStatus) => void): Unsub => subscribe('update:status', cb)
+  },
   app: {
     diagnostics: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('app:diagnostics'),
+    /** The recent log, with paths and secrets masked, to paste into a bug report. */
+    logTail: (): Promise<string> => ipcRenderer.invoke('app:logTail'),
     pickFolder: (): Promise<{ env: 'windows'; path: string } | { env: 'wsl'; distro: string; path: string } | null> =>
       ipcRenderer.invoke('app:pickFolder'),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url }),

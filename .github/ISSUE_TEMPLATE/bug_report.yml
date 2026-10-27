@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Arctri does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting. **Do not paste secrets.** Use *Settings > Copy recent log*: it masks paths and anything shaped like a token,
+        but read it before you post it. Never attach terminal output that contains keys or private code.
+  - type: input
+    id: version
+    attributes:
+      label: Arctri version
+      description: Help > About Arctri, or Settings > Updates
+      placeholder: 0.3.3-beta
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Windows 10 22H2 / Windows 11 (build) / macOS (version, Apple Silicon or Intel)
+    validations:
+      required: true
+  - type: dropdown
+    id: shell
+    attributes:
+      label: Shell or tool involved
+      options: [Windows PowerShell 5.1, PowerShell 7, Command Prompt, WSL bash, WSL zsh, macOS zsh, macOS bash, Claude Code, Codex CLI, Not related to a shell]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a new PowerShell tab
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Screenshots are welcome. For Thai text problems, say which input method you used.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Recent log (Settings > Copy recent log)
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I removed secrets, tokens and private code from everything above
+          required: true
+        - label: I checked that the problem is not already in the known limits (README, docs/TROUBLESHOOTING.md)

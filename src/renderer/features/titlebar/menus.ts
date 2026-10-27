@@ -131,6 +131,7 @@ export function useMenus(): Array<{ id: string; label: string; entries: Entry[] 
       id: 'help', label: t('menu.help'),
       entries: [
         cmd(t, 'help.shortcuts'),
+        cmd(t, 'help.checkUpdates'),
         cmd(t, 'help.about')
       ]
     }

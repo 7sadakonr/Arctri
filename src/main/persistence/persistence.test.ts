@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it } from 'vitest';
 import { openDb } from './db';
 import { HistoryRepo } from './history-repo';
 import { MemoryBackend, PrefsStore } from './prefs';
@@ -67,5 +71,42 @@ describe('layout prefs', () => {
     expect(prefsPatchSchema.safeParse({ uiScale: 3 }).success).toBe(false);
     expect(prefsPatchSchema.safeParse({ filePanelWidth: 100 }).success).toBe(false);
     expect(prefsPatchSchema.safeParse({ filePanelWidth: 400 }).success).toBe(true);
+  });
+});
+
+describe('openDb backup before a migration', () => {
+  const dirs: string[] = [];
+  afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const tmp = () => {
+    const d = mkdtempSync(join(tmpdir(), 'arctri-db-'));
+    dirs.push(d);
+    return d;
+  };
+  const v1 = ['CREATE TABLE t (x TEXT);'];
+  const v2 = [...v1, 'ALTER TABLE t ADD COLUMN y TEXT;'];
+  const v3 = [...v2, 'ALTER TABLE t ADD COLUMN z TEXT;'];
+  const v4 = [...v3, 'ALTER TABLE t ADD COLUMN w TEXT;'];
+
+  it('keeps a copy of the old data when a newer version migrates, and none for a fresh database', () => {
+    const file = join(tmp(), 'arctri.db');
+    const first = openDb(file, v1).db;
+    first.prepare('INSERT INTO t (x) VALUES (?)').run('before');
+    first.close();
+    expect(readdirSync(join(file, '..')).filter((n) => n.includes('.bak-'))).toEqual([]);
+
+    openDb(file, v2).db.close();
+    const backup = join(file, '..', 'arctri.db.bak-v1');
+    expect(existsSync(backup)).toBe(true);
+    const b = new Database(backup, { readonly: true });
+    expect(b.prepare('SELECT x FROM t').all()).toEqual([{ x: 'before' }]);
+    expect(b.pragma('user_version', { simple: true })).toBe(1);
+    b.close();
+  });
+
+  it('keeps only the two newest backups', () => {
+    const file = join(tmp(), 'arctri.db');
+    openDb(file, v1).db.close();
+    for (const m of [v2, v3, v4]) openDb(file, m).db.close();
+    expect(readdirSync(join(file, '..')).filter((n) => n.includes('.bak-')).sort()).toEqual(['arctri.db.bak-v2', 'arctri.db.bak-v3']);
   });
 });

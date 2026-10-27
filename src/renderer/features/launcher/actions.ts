@@ -8,6 +8,7 @@ import { disposeHost } from '../terminal/xterm-host';
 import { useBlocks } from '@/stores/blocks';
 import { pushRecent, toRecent } from '../welcome/recent';
 import { confirmPreWork } from './preWork';
+import { recoverHint } from './recover';
 
 const INITIAL = { cols: 120, rows: 30 };
 
@@ -47,6 +48,12 @@ export async function resolveDefaultProfile(): Promise<ShellProfile | undefined>
   return found;
 }
 
+/** The failure, followed by what can be done about it when that is known. */
+function withHint(text: string, reason: string): string {
+  const hint = recoverHint(reason);
+  return hint ? `${text} ${tNow(hint)}` : text;
+}
+
 function errText(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
   return m.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -71,7 +78,7 @@ export async function openShell(
     if (info.launchNote === 'cwd-unmapped') useUi.getState().toast(tNow('session.cwdFallback'));
     return info;
   } catch (e) {
-    useUi.getState().toast(tNow('session.failed', { reason: errText(e) }), 'error');
+    useUi.getState().toast(withHint(tNow('session.failed', { reason: errText(e) }), errText(e)), 'error');
     return undefined;
   } finally {
     useSessions.getState().addPending(-1);
@@ -112,7 +119,7 @@ export async function openAgent(
     useSessions.getState().upsert(info, true);
     return info;
   } catch (e) {
-    useUi.getState().toast(tNow('agent.launchFailed', { agent: displayName, reason: errText(e) }), 'error');
+    useUi.getState().toast(withHint(tNow('agent.launchFailed', { agent: displayName, reason: errText(e) }), errText(e)), 'error');
     return undefined;
   } finally {
     useSessions.getState().addPending(-1);

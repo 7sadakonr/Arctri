@@ -27,12 +27,6 @@ export class WorkerPtyBackend implements PtyBackend {
       data: [] as Array<(d: string) => void>,
       exit: [] as Array<(e: { exitCode: number; signal?: number }) => void>
     };
-    const finish = (code: number) => {
-      if (done) return;
-      done = true;
-      cb.exit.forEach((f) => f({ exitCode: code }));
-      void worker.terminate();
-    };
     worker.on('message', (m: Out) => {
       switch (m.t) {
         case 'spawned':
@@ -60,7 +54,13 @@ export class WorkerPtyBackend implements PtyBackend {
       if (!done) cb.error.forEach((f) => f(e.message));
       done = true;
     });
-    worker.on('exit', (code) => finish(code));
+    // The worker is gone without having reported an exit (a native crash in the PTY library, for example). That is a
+    // failure of the session, not an exit code of the shell: the worker's own code must not pass for the shell's.
+    worker.on('exit', (code) => {
+      if (done) return;
+      done = true;
+      cb.error.forEach((f) => f(`PTY worker stopped unexpectedly (code ${code})`));
+    });
 
     worker.postMessage({ t: 'spawn', opts: { ...o, useConptyDll: o.useConptyDll ?? this.useConptyDll } });
     const send = (m: object) => {
