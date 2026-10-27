@@ -94,9 +94,26 @@ const launch = async (install, timeoutMs) => {
   return read();
 };
 
+// electron-updater keeps what it downloaded (%LOCALAPPDATA%\<cache>\pending) and reuses it when its checksum matches the
+// manifest. A file left by an earlier scenario would be taken for this scenario's download, so the cache is emptied around each one.
+let cacheDir;
+const clearUpdaterCache = () => {
+  if (!cacheDir) {
+    let name;
+    try {
+      name = /updaterCacheDirName:\s*(\S+)/.exec(readFileSync(join(installDir, 'resources', 'app-update.yml'), 'utf8'))?.[1];
+    } catch {
+      /* fall back to the default name */
+    }
+    cacheDir = join(process.env.LOCALAPPDATA ?? tmpdir(), name ?? 'arctri-updater');
+  }
+  rmSync(cacheDir, { recursive: true, force: true });
+};
+
 try {
   console.log('install N ->', installDir);
   execFileSync(resolve(old), ['/S', `/D=${installDir}`], { stdio: 'inherit' });
+  clearUpdaterCache();
   const exeBefore = statSync(exe).mtimeMs;
   // while the installer replaces the files the exe can be missing for a moment: that is not yet "replaced"
   const replaced = () => {
@@ -142,6 +159,7 @@ try {
 } finally {
   server.close();
   stopInstalled();
+  if (cacheDir) rmSync(cacheDir, { recursive: true, force: true });
   const un = join(installDir, 'Uninstall Arctri.exe');
   if (existsSync(un)) {
     try {

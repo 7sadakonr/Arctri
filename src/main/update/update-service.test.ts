@@ -238,6 +238,8 @@ describe('classifyUpdateError', () => {
     expect(classifyUpdateError(new Error('getaddrinfo ENOTFOUND github.com')).code).toBe('offline');
     expect(classifyUpdateError(new Error('Cannot find latest.yml in the latest release artifacts (404)')).code).toBe('not-found');
     expect(classifyUpdateError(new Error('sha512 checksum mismatch')).code).toBe('checksum');
+    // base64 in the message that happens to contain 404 / not found must not turn it into a missing-file error
+    expect(classifyUpdateError(new Error('sha512 checksum mismatch, expected a+404/xyz==, got Not/Found+b==')).code).toBe('checksum');
     expect(classifyUpdateError(new Error('boom')).code).toBe('unknown');
     expect(classifyUpdateError(new Error('first\nHeaders: {secret}')).message).toBe('first');
   });

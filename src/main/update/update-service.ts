@@ -40,8 +40,10 @@ export function classifyUpdateError(err: unknown): { code: UpdateErrorCode; mess
   const message = err instanceof Error ? err.message : String(err);
   const m = message.toLowerCase();
   let code: UpdateErrorCode = 'unknown';
-  if (/enotfound|econnrefused|econnreset|etimedout|eai_again|err_internet_disconnected|err_network|err_name_not_resolved|net::/.test(m)) code = 'offline';
-  else if (/\b404\b|cannot find latest|no published versions|not found/.test(m)) code = 'not-found';
+  // The checksum message carries two base64 strings, which can contain anything, so it is recognised first.
+  if (/checksum mismatch|err_checksum|sha512 checksum/.test(m)) code = 'checksum';
+  else if (/enotfound|econnrefused|econnreset|etimedout|eai_again|err_internet_disconnected|err_network|err_name_not_resolved|net::/.test(m)) code = 'offline';
+  else if (/\b404\b|cannot find|no published versions|not found/.test(m)) code = 'not-found';
   else if (/sha512|checksum|signature/.test(m)) code = 'checksum';
   else if (m.includes('timed out')) code = 'timeout';
   // Only the first line: electron-updater appends request headers and response bodies.
