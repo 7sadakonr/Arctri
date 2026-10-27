@@ -75,12 +75,16 @@ export async function clipboardAttachments(info: SessionInfo, wsl: WslManager): 
     if (files.length) return attachmentsForPaths(info, wsl, files);
   }
   for (const item of items) {
-    const png = await readType(item, 'image/png');
-    if (!png) continue;
+    // any image format the clipboard offers (a screenshot may come as png or bmp); it is saved as png
+    const type = item.types.find((t) => t.startsWith('image/'));
+    const blob = type ? await readType(item, type) : undefined;
+    if (!blob) continue;
+    const img = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
+    if (img.isEmpty()) continue;
     const dir = pastesDir();
     await mkdir(dir, { recursive: true });
     const file = join(dir, `paste-${Date.now()}.png`);
-    await writeFile(file, Buffer.from(await png.arrayBuffer()));
+    await writeFile(file, img.toPNG());
     return attachmentsForPaths(info, wsl, [file]);
   }
   return [];

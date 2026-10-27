@@ -354,7 +354,12 @@ export class TerminalHost {
     this.watchUntil = Date.now() + 5000;
     void api.files.clipboard(this.info.id).then((atts) => {
       const a = atts.find((x) => x.image && x.thumb);
-      if (a) this.agentPastes.push({ name: a.name, thumb: a.thumb, at: Date.now() });
+      if (!a) return;
+      // the placeholder may already be showing (the agent is quicker): give its chip the preview
+      const store = useAttachments.getState();
+      const bare = (store.bySession[this.info.id] ?? []).find((x) => x.id.startsWith('token-') && !x.thumb);
+      if (bare) store.set(this.info.id, (store.bySession[this.info.id] ?? []).map((x) => (x === bare ? { ...x, thumb: a.thumb } : x)));
+      else this.agentPastes.push({ name: a.name, thumb: a.thumb, at: Date.now() });
       this.trackAttachmentsSoon();
     }, () => undefined);
   }

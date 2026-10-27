@@ -27,10 +27,10 @@ export function AttachmentChips({ sessionId }: { sessionId: string }) {
         >
           <span
             data-testid="attachment-chip"
-            className="inline-flex h-6 max-w-[200px] shrink-0 items-center gap-1.5 rounded-md border border-border pl-1 pr-0.5 text-[11px] text-fg-muted"
+            className={`inline-flex ${a.thumb ? 'h-8' : 'h-6'} max-w-[200px] shrink-0 items-center gap-1.5 rounded-md border border-border pl-1 pr-0.5 text-[11px] text-fg-muted`}
           >
             {a.thumb ? (
-              <img src={a.thumb} alt="" className="h-4 w-4 shrink-0 rounded-sm object-cover" />
+              <img src={a.thumb} alt="" className="h-7 w-7 shrink-0 rounded-sm object-cover" />
             ) : (
               <FileText size={12} className="shrink-0" />
             )}
