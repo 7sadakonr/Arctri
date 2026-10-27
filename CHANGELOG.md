@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.4-beta
 
 - **Updates.** Arctri checks GitHub Releases for a newer version (Help > Check for Updates, Settings > Updates, and automatically). On Windows the update is
   downloaded in the app and installed on **Restart to update**; if tabs are running work you are asked first and nothing is closed unattended. macOS shows the
@@ -17,7 +17,7 @@
 - **Busy tabs.** Command Prompt and other tabs without blocks now count as busy while a program runs in them, so closing or updating asks first.
 - **Signing.** Windows (Azure Artifact Signing) and macOS (Developer ID, notarization) builds and their verification are wired behind `SIGN_WINDOWS` / `SIGN_MACOS`, off until credentials exist. Installers remain unsigned.
 - **CI.** Integration tests run one file per process; a file that passes only on retry is reported as a flake and fails main unless quarantined with a reason.
-- **Docs.** Baseline method and bug inventory, compatibility matrix with untested combinations marked, and a go/no-go checklist under `docs/testing/`.
+- **Docs.** Baseline method and bug inventory, compatibility matrix with untested combinations marked, and a go/no-go checklist (kept in the maintainer's notes; the user-facing parts are in the README).
 - **Data.** Before a newer version migrates an existing database, a copy is kept as `arctri.db.bak-v<n>` (two newest).
 
 ## 0.3.3-beta

@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Troubleshooting guide
-    url: https://github.com/7sadakonr/Arctri/blob/main/docs/TROUBLESHOOTING.md
-    about: Common problems (installing, updating, WSL, agents, Thai input) and where the log is
+    url: https://github.com/7sadakonr/Arctri#troubleshooting-and-reporting-problems
+    about: Common problems (updating, WSL, agents, blank window) and where the log is
