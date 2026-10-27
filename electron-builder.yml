@@ -15,6 +15,13 @@ nodeGypRebuild: false
 buildDependenciesFromSource: false
 asar: true
 afterPack: scripts/after-pack.mjs
+# Updater metadata (latest.yml, latest-mac.yml, blockmaps) is generated next to the installers. With the GitHub provider the file
+# is always latest.yml; beta versus stable is decided by the prerelease flag of the GitHub release (the release workflow sets it
+# for tags with a "-"). The workflow uploads the files with `gh release create`, so builds run with --publish never and hold no token.
+publish:
+  provider: github
+  owner: 7sadakonr
+  repo: Arctri
 asarUnpack:
   # conpty.dll / OpenConsole.exe / pty.node must be real files so they can be loaded and executed
   - node_modules/node-pty/**
@@ -41,7 +48,8 @@ win:
       arch: [x64]
   icon: build/icon.ico
   artifactName: Arctri-Setup-${version}-${arch}.${ext}
-  # Unsigned in MVP 1: Windows SmartScreen will warn on first run.
+  # Unsigned: Windows SmartScreen may warn on first run. No `publisherName` yet, so the updater checks the manifest
+  # checksum only; set it together with a signing certificate.
   signAndEditExecutable: true
 mac:
   target:

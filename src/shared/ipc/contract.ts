@@ -113,13 +113,19 @@ export const requestSchemas = {
   'agentStatus:markRead': z.object({ sessionId: id.or(z.literal('all')) }),
   'app:notify': z.object({ sessionId: id, title: z.string().max(200), body: z.string().max(1000) }),
   'app:diagnostics': z.undefined().or(z.null()),
+  'app:logTail': z.undefined().or(z.null()),
   'app:openExternal': z.object({ url: z.string().max(2000) }),
   'app:openPath': z.object({ sessionId: id }),
+  'update:getStatus': z.undefined().or(z.null()),
+  'update:check': z.undefined().or(z.null()),
+  'update:download': z.undefined().or(z.null()),
+  'update:install': z.object({ confirmBusy: z.boolean() }),
+  'update:openReleasePage': z.undefined().or(z.null()),
   'app:setMenu': z.object({ menus: z.array(z.object({ label: z.string().max(100), items: z.array(nativeMenuItem).max(100) })).max(20) })
 } as const;
 
 export type RequestChannel = keyof typeof requestSchemas;
 export type Req<C extends RequestChannel> = z.infer<(typeof requestSchemas)[C]>;
 
-export const eventChannels = ['session:changed', 'session:closed', 'session:port', 'app:menu', 'app:focus-session', 'agentStatus:changed', 'git:syncChanged', 'git:repoChanged'] as const;
+export const eventChannels = ['session:changed', 'session:closed', 'session:port', 'app:menu', 'app:focus-session', 'agentStatus:changed', 'git:syncChanged', 'git:repoChanged', 'update:status'] as const;
 export type EventChannel = (typeof eventChannels)[number];

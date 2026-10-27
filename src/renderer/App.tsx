@@ -23,6 +23,8 @@ import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
 import { isHomeFolder, pushRecent, toRecent } from '@/features/welcome/recent';
 import { Toasts } from '@/features/toasts/Toasts';
+import { UpdateDialog } from '@/features/update/UpdateDialog';
+import { useUpdate } from '@/stores/update';
 import { commandForKey, runCommand } from '@/commands/registry';
 import { CommandPalette } from '@/features/palette/CommandPalette';
 
@@ -103,6 +105,8 @@ export function App() {
       useAgentStatus.getState().set(id, status);
       if (status) notifyStatus(prev, status);
     });
+    const offUpdate = api.update.onStatus((s) => useUpdate.getState().setStatus(s));
+    void api.update.getStatus().then((s) => useUpdate.getState().setStatus(s), () => undefined);
     const offSync = api.gitSync.onChanged(({ sessionIds, snapshot }) => useGitSyncStore.getState().set(sessionIds, snapshot));
     const offRepo = api.gitSync.onRepoChanged(({ sessionIds, reason }) => {
       useGitSyncStore.getState().bump(sessionIds, reason === 'head' || reason === 'branch');
@@ -120,6 +124,7 @@ export function App() {
     void bootstrap().finally(() => useSessions.getState().setBooted());
     return () => {
       offStatus();
+      offUpdate();
       offSync();
       offRepo();
       window.removeEventListener('focus', reportActive);
@@ -170,6 +175,7 @@ export function App() {
       <PreWorkCheckDialog />
       <CloneDialog />
       <HelpDialogs />
+      <UpdateDialog />
       <CommandPalette />
       <Toasts />
     </TooltipProvider>

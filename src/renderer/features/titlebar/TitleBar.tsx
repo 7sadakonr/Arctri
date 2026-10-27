@@ -10,6 +10,7 @@ import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { MenuBar } from './MenuBar';
 import { NativeMenu } from './NativeMenu';
+import { UpdateButton } from '../update/UpdateButton';
 
 /**
  * The window's top strip: the menus, the folder of the tab in front in the middle (click copies it, double-click opens it
@@ -59,6 +60,7 @@ export function TitleBar() {
           <span>Arctri</span>
         )}
       </div>
+      <UpdateButton />
       {branch && (
         <button
           type="button"

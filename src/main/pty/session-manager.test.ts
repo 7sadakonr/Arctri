@@ -13,7 +13,9 @@ class FakePty implements PtyProcess {
   private data: Array<(d: string) => void> = [];
   private exit: Array<(e: { exitCode: number }) => void> = [];
   onSpawn(cb: (pid: number) => void) { queueMicrotask(() => cb(this.pid)); }
-  onError() {}
+  private err: Array<(m: string) => void> = [];
+  onError(cb: (m: string) => void) { this.err.push(cb); }
+  emitError(m: string) { this.err.forEach((f) => f(m)); }
   onData(cb: (d: string) => void) { this.data.push(cb); }
   onExit(cb: (e: { exitCode: number }) => void) { this.exit.push(cb); }
   write(d: string) { this.written.push(d); }
@@ -37,6 +39,9 @@ function setup(opts: { helloTimeoutMs?: number; profile?: ShellProfile } = {}) {
   const cmds: FinishedCommand[] = [];
   const spawns: PtySpawnOptions[] = [];
   const backend: PtyBackend = { spawn: (o) => (spawns.push(o), pty) };
+  const killed: number[] = [];
+  const killedSync: number[] = [];
+  const logs: Array<{ level: string; msg: string; detail?: Record<string, unknown> | undefined }> = [];
   const p = opts.profile ?? profile;
   const m = new SessionManager({
     backend,
@@ -45,9 +50,14 @@ function setup(opts: { helloTimeoutMs?: number; profile?: ShellProfile } = {}) {
     onData: (_id, c) => out.push(c),
     onInfo: (i) => infos.push(i),
     onCommand: (c) => cmds.push(c),
+    killTree: async (pid) => void killed.push(pid),
+    killTreeSync: (pid) => void killedSync.push(pid),
+    snapshotTrees: async () => new Map(), // the real one asks PowerShell on Windows, seconds per call
+    busyPollMs: 0,
+    log: (level, msg, detail) => logs.push({ level, msg, detail }),
     ...(opts.helloTimeoutMs ? { helloTimeoutMs: opts.helloTimeoutMs } : {})
   });
-  return { m, pty, infos, out, cmds, spawns, last: () => infos.at(-1)! };
+  return { m, pty, infos, out, cmds, spawns, killed, killedSync, logs, last: () => infos.at(-1)! };
 }
 
 const spec = { profileId: profile.id, kind: 'shell' as const, cols: 100, rows: 30 };
@@ -230,6 +240,72 @@ describe('SessionManager', () => {
     const { id } = await m.create(spec);
     await m.close(id);
     expect(infos.some((i) => i.id === id && i.state === 'exited')).toBe(false);
+  });
+
+  it('a crashed PTY worker fails the tab clearly: output is delivered, the running command is finished, the shell tree is ended', async () => {
+    vi.useFakeTimers();
+    try {
+      const { m, pty, last, cmds, out, killed, logs } = setup();
+      const { nonce: n, id } = await m.create(spec);
+      await vi.advanceTimersByTimeAsync(1);
+      pty.emit(hello(n) + mark(n, 'A') + mark(n, 'B') + cmd(n, 1, 'make build') + mark(n, 'C') + 'last words');
+      pty.emitError('PTY worker stopped unexpectedly (code 3221225477)');
+      expect(last()).toMatchObject({ state: 'failed', phase: 'unknown', exit: { code: null, reason: expect.stringContaining('stopped unexpectedly') } });
+      expect(out.join('')).toContain('last words'); // buffered output is not thrown away
+      expect(cmds.map((c) => c.command)).toEqual(['make build']); // the running block is closed and kept in history
+      expect(killed).toEqual([4242]); // nothing is left running that no tab can show
+      expect(logs.some((l) => l.level === 'error' && l.msg === 'pty failed')).toBe(true);
+      // closing the failed tab does not try again and does not wait
+      await m.close(id);
+      expect(killed).toEqual([4242]);
+      expect(pty.killed).toBe(false);
+      expect(m.get(id)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('when closing everything runs out of time, what is still alive is ended before the app exits', async () => {
+    const { m, pty, killedSync } = setup();
+    pty.kill = () => undefined; // a shell that ignores the hang-up
+    await m.create(spec);
+    await Promise.resolve();
+    await m.closeAll(40);
+    expect(killedSync).toEqual([4242]);
+  });
+
+  it('a tab without block integration counts as busy while a program runs below its shell', async () => {
+    vi.useFakeTimers();
+    try {
+      const trees = new Map<number, Array<{ pid: number; startedAt: string }>>();
+      const cmdProfile: ShellProfile = { id: 'cmd', label: 'Command Prompt', env: { kind: 'windows' }, shell: 'cmd', executable: 'cmd.exe', integration: 'none' };
+      const pty = new FakePty();
+      const m = new SessionManager({
+        backend: { spawn: () => pty }, getProfile: () => cmdProfile, toPosix: async () => '/x', onData: () => {}, onInfo: () => {},
+        busyPollMs: 1000, snapshotTrees: async () => trees
+      });
+      const { id } = await m.create({ profileId: 'cmd', kind: 'shell', cols: 80, rows: 24 });
+      await vi.advanceTimersByTimeAsync(1);
+      trees.set(4242, [{ pid: 4242, startedAt: '1' }]);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(m.isBusy(id)).toBe(false); // just the shell
+      trees.set(4242, [{ pid: 4242, startedAt: '1' }, { pid: 5000, startedAt: '2' }]);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(m.isBusy(id)).toBe(true);
+      expect(m.busyCount()).toBe(1);
+      await m.closeAll(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a failure while the tab is being closed is not reported to the window', async () => {
+    const { m, pty, infos } = setup();
+    const { id } = await m.create(spec);
+    const p = m.close(id);
+    pty.emitError('boom');
+    await p;
+    expect(infos.some((i) => i.id === id && i.state === 'failed')).toBe(false);
   });
 
   it('reports a spawn failure as a failed session instead of throwing', async () => {

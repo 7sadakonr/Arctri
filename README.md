@@ -134,6 +134,18 @@ The installer is written to `release/Arctri-Setup-<version>-x64.exe`. A packaged
 > [!NOTE]
 > MVP 1 installers are **not code-signed**. Windows SmartScreen may display a warning on first launch. Download or build only from a source you trust.
 
+### Updating
+
+Arctri checks GitHub Releases for a newer version (shortly after start, every six hours, and from **Help > Check for Updates**). This is
+the only network request the app makes by itself; switch it off in **Settings > Updates**. You choose the **beta** or **stable** channel there.
+
+- **Windows:** the update is downloaded in the app and installed after **Restart to update**. If tabs are running a command or an agent
+  you are asked first, because running processes do not survive the restart. Settings, history and recent projects are kept.
+- **macOS:** the app tells you a new version exists and links to the release; install it by hand (the build is not notarized, so it
+  cannot replace itself).
+- **Versions up to 0.3.3-beta** have no updater: install the first version that has one yourself, from the [Releases page](https://github.com/7sadakonr/Arctri/releases).
+- The installers are not code-signed. The updater verifies the downloaded file against the checksum published with the release.
+
 To build the **macOS** app (`.dmg` and `.zip`, Apple Silicon and Intel) run `npm run dist:mac` **on a Mac** (a `.dmg` cannot be built on Windows or Linux; the GitHub Actions `macos` job does it for every push).
 
 > The macOS build is **not notarized** (it is ad-hoc signed, which Apple Silicon requires to run at all), so Gatekeeper blocks it the first time: drag Arctri to Applications, then **right-click > Open** (or run `xattr -cr /Applications/Arctri.app` once). Download or build only from a source you trust.
@@ -324,9 +336,17 @@ CI performs type checking, linting, unit and integration tests, packaging, and a
 
 Contributions and bug reports can be submitted through [GitHub Issues](https://github.com/7sadakonr/Arctri/issues). Consult [`PLAN.md`](./PLAN.md) and [`CHANGELOG.md`](./CHANGELOG.md) for architectural context and release history.
 
+## Troubleshooting and reporting problems
+
+Where the log, preferences and database are, what each error means and how to recover: [`docs/TROUBLESHOOTING.md`](./docs/TROUBLESHOOTING.md).
+**Settings > Copy recent log** copies the last log lines with paths and secrets masked (read it before posting). Report with the
+[issue template](https://github.com/7sadakonr/Arctri/issues/new/choose): version, OS, shell, steps, expected and actual result.
+How the app was tested and on which systems: [`docs/testing/p0-matrix.md`](./docs/testing/p0-matrix.md) (untested combinations are marked as such).
+
 ## Privacy and security
 
-- **Local-first:** Arctri itself does not require an account or include its own telemetry service.
+- **Logs:** a local rotating log (`arctri.log`) records lifecycle events and errors, never terminal contents; home-folder paths and token-shaped strings are masked when written, and nothing is sent anywhere. You decide what to paste into a report.
+- **Local-first:** Arctri itself does not require an account or include its own telemetry service. The only request it makes on its own is the update check against GitHub Releases (no account, no identifiers sent beyond what an HTTPS request to GitHub carries); turn it off in Settings > Updates.
 - **Data on your PC:** Preferences are stored with `electron-store`; command history and saved session information use a local SQLite database in Electron's user-data folder.
 - **OS access stays outside the UI:** Terminal processes and filesystem operations are controlled by the main process. Electron uses `contextIsolation`, sandboxing, disabled renderer Node integration, a restricted preload API, and a Content Security Policy.
 - **Agent permissions remain native:** Claude Code/Codex authentication and permission decisions belong to those applications. Arctri does not grant them additional permissions automatically.

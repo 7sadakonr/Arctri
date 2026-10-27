@@ -1,6 +1,7 @@
 import { app } from 'electron';
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { redact } from './redact';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const KEEP = 5;
@@ -29,9 +30,20 @@ function write(level: string, msg: string, extra?: unknown): void {
     const f = logFile();
     rotate(f);
     const detail = extra instanceof Error ? { error: extra.message, stack: extra.stack } : extra;
-    appendFileSync(f, JSON.stringify({ t: new Date().toISOString(), level, msg, ...(detail ? { detail } : {}) }) + '\n');
+    // Paths and anything shaped like a secret are masked before they reach the disk.
+    appendFileSync(f, redact(JSON.stringify({ t: new Date().toISOString(), level, msg, ...(detail ? { detail } : {}) })) + '\n');
   } catch {
     /* ignore */
+  }
+}
+
+/** The last lines of the log, for the user to copy into a bug report. Already masked when written. */
+export function logTail(lines = 200): string {
+  try {
+    const all = readFileSync(logFile(), 'utf8').split('\n').filter(Boolean);
+    return redact(all.slice(-lines).join('\n'));
+  } catch {
+    return '';
   }
 }
 

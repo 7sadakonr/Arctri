@@ -6,6 +6,7 @@ import { isMac, kbd } from '@/lib/platform';
 import { stepZoom } from '@/lib/zoom';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
+import { useUpdate } from '@/stores/update';
 import { useUi } from '@/stores/ui';
 import { TOGGLE_RICH_EVENT } from '../features/agents/AgentBar';
 import { closeSession, openSimilarTab, pickAndOpenProject, restartSession } from '../features/launcher/actions';
@@ -137,6 +138,13 @@ export const COMMANDS: Command[] = [
     run: () => window.dispatchEvent(new Event(TOGGLE_RICH_EVENT))
   },
   { id: 'help.shortcuts', title: 'menu.shortcuts', run: () => useUi.getState().setHelpDialog('shortcuts') },
+  {
+    id: 'help.checkUpdates', title: 'menu.checkUpdates',
+    run: () => {
+      useUpdate.getState().openDialog(true);
+      void api.update.check();
+    }
+  },
   { id: 'help.about', title: 'menu.about', run: () => useUi.getState().setHelpDialog('about') },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(gotoTab)
 ];

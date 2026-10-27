@@ -2,6 +2,7 @@ node_modules/
 out/
 dist/
 release/
+release-next/
 *.log
 .DS_Store
 .vscode/
@@ -17,3 +18,4 @@ resources/shell-integration/zsh/.zcompdump*
 docs/
 .claude/
 CLAUDE.md
+test-results/

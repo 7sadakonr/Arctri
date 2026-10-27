@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Store from 'electron-store';
 import { envKeyOf } from '@shared/types/env';
-import { appOrigins, createMainWindow } from './window';
+import { appOrigins, approveQuit, confirmEndRunning, createMainWindow } from './window';
 import { PortHub, registerIpc, sendInfo } from './ipc/register';
 import { FileWatcher } from './files/watcher';
 import { GitSyncService } from './git/sync-service';
@@ -25,6 +25,8 @@ import { EnvironmentQueryService } from './env-query/service';
 import { installAppMenu } from './app-menu';
 import { hookScript, setResourcesDir } from './paths';
 import { logger } from './logger';
+import { createUpdateService } from './update/create';
+import { runUpdateSmoke } from './update/smoke';
 import { mark, timing } from './timing';
 
 // Tests run with an isolated profile so they never touch (or lock) the real one. So does a development run (`npm run dev`):
@@ -90,6 +92,10 @@ async function runSmoke(sessions: SessionManager, registry: ProfileRegistry, out
   app.quit();
 }
 
+// A bug in one corner must not take the sessions down with it; the log keeps what happened.
+process.on('uncaughtException', (err) => logger.error('uncaught exception', err));
+process.on('unhandledRejection', (reason) => logger.error('unhandled rejection', reason instanceof Error ? reason : { reason: String(reason) }));
+
 async function start(): Promise<void> {
   if (app.isPackaged) setResourcesDir(process.resourcesPath);
   app.setAppUserModelId('dev.arctri.app');
@@ -153,6 +159,7 @@ async function start(): Promise<void> {
   const warmed = new Set<string>();
   const attachedAt = new Map<string, string>();
   const sessions = new SessionManager({
+    log: (level, msg, detail) => logger[level](msg, detail),
     agentLaunch: async (spec, ctx) => {
       const eventsDir = agentStatus.watch(ctx.id, ctx.nonce);
       try {
@@ -249,14 +256,38 @@ async function start(): Promise<void> {
   });
 
   gitSyncRef.current = gitSync;
+  // Running work: agent tabs, and shells with a command executing. Closing the window and installing an update both ask first.
+  const busyCount = () => sessions.busyCount();
+  // Saving the tabs and ending every session: once, whichever comes first (quitting, or an update about to install).
+  let ended: Promise<void> | undefined;
+  const endSessions = (): Promise<void> =>
+    (ended ??= (async () => {
+      try {
+        sessionRepo.saveAll(sessions.list());
+      } catch (err) {
+        logger.error('saving sessions failed', err);
+      }
+      await sessions.closeAll(5000);
+    })());
+  // An update the user confirmed ends the sessions before the installer starts, so the installer never finds the app still closing them.
+  const update = createUpdateService({
+    busyCount,
+    emit: send,
+    onInstall: () => {
+      approveQuit();
+      return endSessions();
+    }
+  });
+  update.configure(prefs.get().updates);
   const completion = new CompletionEngine({ sessions, history, env: envQuery });
 
   registerIpc(
     {
-      sessions, registry, prefs, history, completion, envQuery, fileWatcher, gitSync, wsl, agentStatus,
+      sessions, registry, prefs, history, completion, envQuery, fileWatcher, gitSync, wsl, agentStatus, update,
       agents: { detect: (refresh) => agents.detect(refresh) },
       savedSessions: () => startupSaved,
       onPrefsChanged: (p) => {
+        update.configure(p.updates);
         const dark = p.theme === 'dark';
         if (process.platform !== 'darwin') win?.setTitleBarOverlay({ color: dark ? '#15171d' : '#f1f2f6', symbolColor: dark ? '#c9ccd6' : '#23252e' });
       },
@@ -276,7 +307,7 @@ async function start(): Promise<void> {
 
   const create = () => {
     win = createMainWindow(prefs, {
-      busyCount: () => sessions.list().filter((s) => s.state === 'running' && (s.kind === 'agent' || s.phase === 'executing')).length
+      busyCount
     });
     win.on('closed', () => (win = undefined));
     win.on('focus', () => gitSync.setFocused(true));
@@ -287,6 +318,9 @@ async function start(): Promise<void> {
 
   // Used by scripts/smoke-installed.mjs to check a built or installed app without a debugger.
   if (process.env['ARCTRI_SMOKE_OUT']) void runSmoke(sessions, registry, process.env['ARCTRI_SMOKE_OUT']);
+  // Used by scripts/smoke-update.mjs: the update path of an installed build, against a loopback feed.
+  const updateSmokeOut = process.env['ARCTRI_SMOKE_UPDATE_OUT'];
+  if (updateSmokeOut && app.isPackaged) void runUpdateSmoke(update, updateSmokeOut, process.env['ARCTRI_SMOKE_UPDATE_INSTALL'] === '1');
 
   app.on('second-instance', () => {
     if (win) {
@@ -299,14 +333,15 @@ async function start(): Promise<void> {
   let quitting = false;
   app.on('before-quit', (e) => {
     if (quitting) return;
+    // Ask first: by the time the window's own close prompt would run, the sessions would already be closed.
+    if (!confirmEndRunning(win, busyCount())) {
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     quitting = true;
-    try {
-      sessionRepo.saveAll(sessions.list());
-    } catch (err) {
-      logger.error('saving sessions failed', err);
-    }
-    void sessions.closeAll(5000).finally(() => {
+    void endSessions().finally(() => {
+      update.dispose();
       fileWatcher.dispose();
       gitSync.dispose();
       envQuery.dispose();

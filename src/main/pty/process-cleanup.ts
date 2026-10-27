@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 
 /** A process as it was when its tree was recorded. Start time guards against a reused PID. */
 export interface ProcRef {
@@ -104,6 +104,23 @@ export async function killRecorded(procs: ProcRef[]): Promise<void> {
       `if ($p -and $p.StartTime.ToFileTimeUtc() -eq $x[1]) { Stop-Process -Id $x[0] -Force -ErrorAction SilentlyContinue } }`,
     8000
   );
+}
+
+/**
+ * Ends a process tree and returns only when that is done. For the last moments of the app, when nothing asynchronous
+ * is going to get a chance to finish. Safe to call on a dead pid.
+ */
+export function killTreeSync(pid: number): void {
+  if (!pid) return;
+  try {
+    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 3000, stdio: 'ignore' });
+    else {
+      const rows = parsePs(execFileSync('ps', ['-A', '-o', 'pid=,ppid=,lstart='], { timeout: 3000, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } }));
+      for (const r of descendants(pid, rows).reverse()) signal(r.pid);
+    }
+  } catch {
+    /* already gone, or taskkill found nothing to end */
+  }
 }
 
 /** Kills a process and everything it spawned. Safe to call on a dead pid. */

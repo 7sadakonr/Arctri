@@ -12,7 +12,7 @@ import { submitSteps } from '../shell/submit';
 import { gitBranchOf } from '../shell/git';
 import { mark } from '../timing';
 import { DataPump } from './data-pump';
-import { killRecorded, killTree, snapshotTrees, type ProcRef } from './process-cleanup';
+import { killRecorded, killTree, killTreeSync, snapshotTrees, type ProcRef } from './process-cleanup';
 import type { PtyBackend, PtyProcess } from './pty-backend';
 
 export interface FinishedCommand {
@@ -53,6 +53,15 @@ export interface SessionManagerDeps {
   onClosed?: (id: SessionId) => void;
   onCommand?: (c: FinishedCommand) => void;
   helloTimeoutMs?: number;
+  /** Lifecycle and failures only; terminal data is never passed here. */
+  log?: (level: 'info' | 'warn' | 'error', msg: string, detail?: Record<string, unknown>) => void;
+  /** Ends a process tree; replaceable so tests never signal a real pid. */
+  killTree?: (pid: number) => Promise<void>;
+  /** The last resort when closing everything ran out of time. */
+  killTreeSync?: (pid: number) => void;
+  /** How often tabs without shell integration are looked at for running child programs (ms); 0 turns it off. */
+  busyPollMs?: number;
+  snapshotTrees?: (roots: number[]) => Promise<Map<number, ProcRef[]>>;
 }
 
 interface Session {
@@ -69,6 +78,8 @@ interface Session {
   markExited: () => void;
   exitedFlag: boolean;
   closing: boolean;
+  /** A tab without block integration cannot say when a command runs; a program running below its shell is the sign. */
+  hasChildren?: boolean;
   /** A pending return to the session's name once a tool call is over (see `setActivity`). */
   activityTimer?: ReturnType<typeof setTimeout>;
 }
@@ -82,6 +93,36 @@ export class SessionManager {
 
   list(): SessionInfo[] {
     return [...this.sessions.values()].map((s) => ({ ...s.info }));
+  }
+
+  /** Work is running in the tab: an agent, a command in a tab with blocks, or a program below the shell of a tab without them. */
+  isBusy(id: SessionId): boolean {
+    const s = this.sessions.get(id);
+    if (!s || s.info.state !== 'running') return false;
+    if (s.info.kind === 'agent') return true;
+    return s.info.integration === 'active' ? s.info.phase === 'executing' : !!s.hasChildren;
+  }
+
+  busyCount(): number {
+    return [...this.sessions.keys()].filter((id) => this.isBusy(id)).length;
+  }
+
+  private busyTimer: ReturnType<typeof setInterval> | undefined;
+  private watchBusy(): void {
+    const every = this.deps.busyPollMs ?? 10_000;
+    if (this.busyTimer || every <= 0) return;
+    this.busyTimer = setInterval(() => void this.pollChildren(), every);
+    this.busyTimer.unref?.();
+  }
+
+  private async pollChildren(): Promise<void> {
+    const watched = [...this.sessions.values()].filter(
+      (s) => s.info.kind === 'shell' && s.info.state === 'running' && s.info.integration !== 'active' && s.pty?.pid && !s.exitedFlag
+    );
+    if (watched.length === 0) return;
+    const roots = watched.map((s) => s.pty!.pid);
+    const trees = await (this.deps.snapshotTrees ?? snapshotTrees)(roots).catch(() => new Map<number, ProcRef[]>());
+    for (const s of watched) s.hasChildren = (trees.get(s.pty!.pid)?.length ?? 0) > 1;
   }
 
   /** Reads the branch of the tab's folder again (after a commit or a branch switch made outside the shell). */
@@ -177,6 +218,7 @@ export class SessionManager {
       exited, markExited, exitedFlag: false, closing: false
     };
     this.sessions.set(id, s);
+    this.watchBusy();
 
     let pty: PtyProcess;
     try {
@@ -184,6 +226,7 @@ export class SessionManager {
         file: plan.file, args: plan.args, cwd: plan.cwd, env: plan.env, cols: spec.cols, rows: spec.rows
       });
     } catch (e) {
+      this.deps.log?.('error', 'pty spawn failed', { session: id, shell: info.shell, message: e instanceof Error ? e.message : String(e) });
       info.state = 'failed';
       info.exit = { code: null, reason: e instanceof Error ? e.message : String(e) };
       s.exitedFlag = true;
@@ -210,14 +253,7 @@ export class SessionManager {
         }, this.deps.helloTimeoutMs ?? 30000);
       }
     });
-    pty.onError((message) => {
-      info.state = 'failed';
-      info.exit = { code: null, reason: message };
-      s.exitedFlag = true;
-      s.pump?.dispose();
-      this.emit(s);
-      s.markExited();
-    });
+    pty.onError((message) => this.handleFailure(s, message));
     pty.onData((d) => this.handleData(s, d));
     pty.onExit((e) => this.handleExit(s, e.exitCode));
 
@@ -352,8 +388,8 @@ export class SessionManager {
     this.emit(s);
   }
 
-  private handleExit(s: Session, code: number): void {
-    if (s.exitedFlag) return;
+  /** The end of a session, however it came about: output already received is delivered, timers stop, a running block is finished. */
+  private finish(s: Session): void {
     s.exitedFlag = true;
     s.pump?.flush();
     s.pump?.dispose();
@@ -370,10 +406,32 @@ export class SessionManager {
     delete s.activityTimer;
     delete s.info.agentActivity;
     if (s.info.kind === 'shell') delete s.info.agentTopic; // an agent tab keeps the subject of its last work
-    s.info.state = 'exited';
     s.info.phase = 'unknown';
+  }
+
+  private handleExit(s: Session, code: number): void {
+    if (s.exitedFlag) return;
+    this.finish(s);
+    s.info.state = 'exited';
     s.info.exit = { code };
+    this.deps.log?.('info', 'pty exited', { session: s.info.id, shell: s.info.shell, code });
     // A tab the user is closing is already gone from the window; telling it about the exit would bring it back for a moment.
+    if (!s.closing) this.emit(s);
+    s.markExited();
+  }
+
+  /**
+   * The PTY machinery failed (the worker crashed, ConPTY broke). The tab shows why, and the shell it started is not left
+   * running unseen: its process tree is ended, because nothing can talk to it any more.
+   */
+  private handleFailure(s: Session, message: string): void {
+    if (s.exitedFlag) return;
+    const pid = s.info.pid;
+    this.finish(s);
+    s.info.state = 'failed';
+    s.info.exit = { code: null, reason: message };
+    this.deps.log?.('error', 'pty failed', { session: s.info.id, shell: s.info.shell, pid, message });
+    if (pid) void (this.deps.killTree ?? killTree)(pid).catch(() => undefined);
     if (!s.closing) this.emit(s);
     s.markExited();
   }
@@ -427,7 +485,7 @@ export class SessionManager {
     if (!s.exitedFlag && s.pty) {
       const pid = s.pty.pid;
       // Children can only be found while the root is alive, so record them first.
-      const tree = recorded ?? (pid ? ((await snapshotTrees([pid])).get(pid) ?? []) : []);
+      const tree = recorded ?? (pid ? ((await (this.deps.snapshotTrees ?? snapshotTrees)([pid])).get(pid) ?? []) : []);
       try {
         s.pty.kill();
       } catch {
@@ -435,7 +493,8 @@ export class SessionManager {
       }
       const done = await Promise.race([s.exited.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 3000))]);
       if (!done) {
-        await killTree(pid);
+        this.deps.log?.('warn', 'pty did not exit after kill; ending its process tree', { session: id, pid });
+        await (this.deps.killTree ?? killTree)(pid);
         await Promise.race([s.exited, new Promise((r) => setTimeout(r, 1000))]);
       }
       // Whatever survived the console closing (a shell that ignores the hang-up) is ended explicitly.
@@ -448,6 +507,8 @@ export class SessionManager {
   }
 
   async closeAll(maxMs = 5000): Promise<void> {
+    if (this.busyTimer) clearInterval(this.busyTimer);
+    this.busyTimer = undefined;
     const ids = [...this.sessions.keys()];
     await Promise.race([
       (async () => {
@@ -455,7 +516,7 @@ export class SessionManager {
           const pty = this.sessions.get(id)?.pty;
           return pty && pty.pid && !this.sessions.get(id)!.exitedFlag ? [pty.pid] : [];
         });
-        const trees = await snapshotTrees(roots); // one look at the process table for all sessions
+        const trees = await (this.deps.snapshotTrees ?? snapshotTrees)(roots); // one look at the process table for all sessions
         await Promise.all(
           ids.map((id) => {
             const pid = this.sessions.get(id)?.pty?.pid;
@@ -465,6 +526,13 @@ export class SessionManager {
       })(),
       new Promise((r) => setTimeout(r, maxMs))
     ]);
+    // Closing everything took longer than the app can wait. Whatever is still alive is ended now, in one go, rather than
+    // being left behind when the process exits.
+    for (const [id, s] of this.sessions) {
+      if (s.exitedFlag || !s.pty?.pid) continue;
+      this.deps.log?.('warn', 'closing did not finish in time; ending the process tree', { session: id, pid: s.pty.pid });
+      (this.deps.killTreeSync ?? killTreeSync)(s.pty.pid);
+    }
   }
 }
 

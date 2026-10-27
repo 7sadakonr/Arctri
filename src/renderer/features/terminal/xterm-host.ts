@@ -139,6 +139,12 @@ export class TerminalHost {
     });
 
     this.unsubData = api.sessions.onData(info.id, (chunk) => {
+      // Output that arrives after the terminal is gone is dropped; its acknowledgement still goes out, or the main process
+      // would wait for it and keep the PTY paused.
+      if (this.disposed) {
+        api.sessions.ack(info.id, chunk.length);
+        return;
+      }
       this.term.write(chunk, () => api.sessions.ack(info.id, chunk.length));
     });
 
