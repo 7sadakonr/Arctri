@@ -293,6 +293,8 @@ export class TerminalHost {
       }
     }
     const k = e.key.toLowerCase();
+    // The agent pastes an image from the clipboard with its own key. It is let through; the preview is taken from the same clipboard.
+    if (this.isAgent() && k === 'v' && ((e.altKey && !e.ctrlKey) || (isMac && e.ctrlKey))) this.snapshotAgentPaste();
     if (isMac) {
       // Cmd+C copies the selection and Cmd+V pastes; Ctrl+C is always the shell's interrupt
       if (e.metaKey && k === 'c') {
@@ -344,21 +346,34 @@ export class TerminalHost {
   }
 
   private attachTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Previews of images the agent pasted itself, waiting for their placeholder to show up in the message box. */
+  private agentPastes: Array<{ name: string; thumb?: string; at: number }> = [];
+  private watchUntil = 0;
+
+  private snapshotAgentPaste(): void {
+    this.watchUntil = Date.now() + 5000;
+    void api.files.clipboard(this.info.id).then((atts) => {
+      const a = atts.find((x) => x.image && x.thumb);
+      if (a) this.agentPastes.push({ name: a.name, thumb: a.thumb, at: Date.now() });
+      this.trackAttachmentsSoon();
+    }, () => undefined);
+  }
 
   /** The preview in the agent bar keeps only what the message box still holds (it is looked at once the output has settled). */
   private trackAttachmentsSoon(): void {
     const store = useAttachments.getState();
-    if (!store.bySession[this.info.id]?.length || this.attachTimer) return;
+    if ((!store.bySession[this.info.id]?.length && Date.now() > this.watchUntil) || this.attachTimer) return;
     this.attachTimer = setTimeout(() => {
       this.attachTimer = undefined;
       const info = useSessions.getState().infos[this.info.id] ?? this.info;
-      const list = useAttachments.getState().bySession[this.info.id];
-      if (!list?.length) return;
+      const list = useAttachments.getState().bySession[this.info.id] ?? [];
+      if (!list.length && Date.now() > this.watchUntil) return;
       const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
       const input = agentId ? AGENT_META[agentId]?.input : undefined;
       if (!input || info.state !== 'running') return void useAttachments.getState().clear(this.info.id);
-      const next = reconcile(this.screenLines(), list, input, Date.now());
-      if (next !== list) useAttachments.getState().set(this.info.id, next);
+      this.agentPastes = this.agentPastes.filter((p) => Date.now() - p.at < 15000);
+      const next = reconcile(this.screenLines(), list, input, Date.now(), () => this.agentPastes.shift());
+      if (next !== list && (next.length || list.length)) useAttachments.getState().set(this.info.id, next);
     }, 120);
   }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GRACE_MS, inputRegion, reconcile, type InputPatterns, type TrackedAttachment } from './attachment-tracker';
 
-const claude: InputPatterns = { prompt: /^\s*[│|]?\s*>/, placeholder: /\[Image #\d+\]/g };
+const claude: InputPatterns = { prompt: /^\s*[│|]?\s*[>❯]/, placeholder: /\[Image #\d+\]/g };
 
 const att = (over: Partial<TrackedAttachment> = {}): TrackedAttachment => ({
   id: '1', ref: '@docs/a.png', name: 'a.png', image: true, addedAt: 0, tokensBefore: [], seen: false, ...over
@@ -17,6 +17,23 @@ describe('inputRegion', () => {
 });
 
 describe('reconcile', () => {
+  it('finds the prompt drawn as ❯', () => {
+    expect(reconcile(['❯ @docs/a.png'], [att()], claude, 10)).toHaveLength(1);
+  });
+  it('shows an image pasted with the agent\'s own key, with the preview taken at that moment', () => {
+    const out = reconcile(['❯ [Image #3]'], [], claude, 10, () => ({ thumb: 'data:x' }));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.name).toBe('Image #3');
+    expect(out[0]!.thumb).toBe('data:x');
+  });
+  it('does not show the same placeholder twice, nor one already bound to an attachment', () => {
+    const bound = att({ seen: true, token: '[Image #1]' });
+    expect(reconcile(['❯ [Image #1] [Image #2]'], [bound], claude, 10)).toHaveLength(2);
+  });
+  it('a file that is not an image never takes a placeholder', () => {
+    const out = reconcile(['❯ [Image #1]'], [att({ image: false })], claude, 10);
+    expect(out.find((a) => a.id === '1')?.token).toBeUndefined();
+  });
   it('keeps an attachment whose ref is in the message, even when the path wraps', () => {
     const out = reconcile(['│ > look at @docs/', '│   a.png │'], [att()], claude, 10);
     expect(out).toHaveLength(1);

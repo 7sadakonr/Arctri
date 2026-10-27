@@ -34,7 +34,14 @@ export function inputRegion(lines: string[], prompt: RegExp): string | undefined
  * An attachment is in the message when its `@ref` or the placeholder the agent made of it is there. If the
  * prompt cannot be found (an approval is showing, say) nothing changes.
  */
-export function reconcile(lines: string[], list: TrackedAttachment[], patterns: InputPatterns, now: number): TrackedAttachment[] {
+export function reconcile(
+  lines: string[],
+  list: TrackedAttachment[],
+  patterns: InputPatterns,
+  now: number,
+  /** Preview for a placeholder nobody here made (an image the user pasted with the agent's own key, like Alt+V). */
+  onOrphan?: (token: string) => { name?: string; thumb?: string } | undefined
+): TrackedAttachment[] {
   const region = inputRegion(lines, patterns.prompt);
   if (region === undefined) return list;
   const flat = squash(region);
@@ -44,13 +51,22 @@ export function reconcile(lines: string[], list: TrackedAttachment[], patterns: 
   for (const a of list) {
     let token = a.token;
     const byRef = flat.includes(squash(a.ref));
-    if (!byRef && !token) {
+    if (!byRef && !token && a.image) {
       token = tokens.find((t) => !claimed.has(t) && !a.tokensBefore.includes(t));
       if (token) claimed.add(token);
     }
     const present = byRef || (!!token && tokens.includes(token));
     if (present) out.push({ ...a, token, seen: true });
     else if (!a.seen && now - a.addedAt < GRACE_MS) out.push(a);
+  }
+  // placeholders nobody here made: the agent's own paste (Alt+V). They stay while the placeholder is in the message
+  for (const token of new Set(tokens)) {
+    if (claimed.has(token)) continue;
+    const extra = onOrphan?.(token);
+    out.push({
+      id: `token-${token}`, ref: token, name: extra?.name ?? token.replace(/^\[|\]$/g, ''), image: true, thumb: extra?.thumb,
+      addedAt: now, tokensBefore: [], token, seen: true
+    });
   }
   return out;
 }

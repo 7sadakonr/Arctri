@@ -24,7 +24,7 @@ export const AGENT_META: Record<AgentId, AgentMeta> = {
       { label: '/help', text: '/help', hint: HINT }
     ],
     remoteControl: { text: '/remote-control', hint: 'Starts a Remote Control session. ' + HINT },
-    input: { prompt: /^\s*[│|]?\s*>/, placeholder: /\[Image #\d+\]/g }
+    input: { prompt: /^\s*[│|]?\s*[>❯]/, placeholder: /\[Image #\d+\]/g }
   },
   codex: {
     id: 'codex',
