@@ -258,7 +258,26 @@ async function start(): Promise<void> {
   gitSyncRef.current = gitSync;
   // Running work: agent tabs, and shells with a command executing. Closing the window and installing an update both ask first.
   const busyCount = () => sessions.busyCount();
-  const update = createUpdateService({ busyCount, emit: send, onInstall: approveQuit });
+  // Saving the tabs and ending every session: once, whichever comes first (quitting, or an update about to install).
+  let ended: Promise<void> | undefined;
+  const endSessions = (): Promise<void> =>
+    (ended ??= (async () => {
+      try {
+        sessionRepo.saveAll(sessions.list());
+      } catch (err) {
+        logger.error('saving sessions failed', err);
+      }
+      await sessions.closeAll(5000);
+    })());
+  // An update the user confirmed ends the sessions before the installer starts, so the installer never finds the app still closing them.
+  const update = createUpdateService({
+    busyCount,
+    emit: send,
+    onInstall: () => {
+      approveQuit();
+      return endSessions();
+    }
+  });
   update.configure(prefs.get().updates);
   const completion = new CompletionEngine({ sessions, history, env: envQuery });
 
@@ -321,12 +340,7 @@ async function start(): Promise<void> {
     }
     e.preventDefault();
     quitting = true;
-    try {
-      sessionRepo.saveAll(sessions.list());
-    } catch (err) {
-      logger.error('saving sessions failed', err);
-    }
-    void sessions.closeAll(5000).finally(() => {
+    void endSessions().finally(() => {
       update.dispose();
       fileWatcher.dispose();
       gitSync.dispose();

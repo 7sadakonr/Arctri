@@ -27,8 +27,10 @@ class FakeUpdater implements UpdaterLike {
     this.downloads++;
     return this.downloadImpl();
   }
-  quitAndInstall() {
+  quitArgs: Array<[boolean | undefined, boolean | undefined]> = [];
+  quitAndInstall(silent?: boolean, forceRun?: boolean) {
     this.installs++;
+    this.quitArgs.push([silent, forceRun]);
   }
 }
 
@@ -143,7 +145,7 @@ describe('UpdateService', () => {
     const { svc, updater } = setup();
     updater.checkImpl = available();
     await svc.check();
-    expect(svc.install(true)).toEqual({ started: false, blocked: 'not-ready' });
+    expect(await svc.install(true)).toEqual({ started: false, blocked: 'not-ready' });
     expect(updater.installs).toBe(0);
   });
 
@@ -152,9 +154,9 @@ describe('UpdateService', () => {
     updater.checkImpl = available();
     await svc.check();
     await svc.download();
-    expect(svc.install(false)).toEqual({ started: false, blocked: 'busy', busy: 2 });
+    expect(await svc.install(false)).toEqual({ started: false, blocked: 'busy', busy: 2 });
     expect(updater.installs).toBe(0);
-    expect(svc.install(true)).toEqual({ started: true });
+    expect(await svc.install(true)).toEqual({ started: true });
     expect(updater.installs).toBe(1);
     busy.n = 0;
   });
@@ -164,10 +166,27 @@ describe('UpdateService', () => {
     updater.checkImpl = available();
     await svc.check();
     await svc.download();
-    svc.install(false);
+    await svc.install(false);
     expect(approved).toEqual([]);
-    svc.install(true);
+    await svc.install(true);
     expect(approved).toEqual([1]);
+  });
+
+  it('installs silently and starts the app again, after the app has ended its sessions', async () => {
+    const order: string[] = [];
+    const updater = new FakeUpdater();
+    updater.checkImpl = available();
+    const svc = new UpdateService({
+      updater, currentVersion: '0.3.3-beta', canAutoInstall: true, busyCount: () => 0, emit: () => undefined,
+      onInstall: async () => { await Promise.resolve(); order.push('sessions closed'); }
+    });
+    const quit = updater.quitAndInstall.bind(updater);
+    updater.quitAndInstall = (a, b) => { order.push('installer'); quit(a, b); };
+    await svc.check();
+    await svc.download();
+    await svc.install(false);
+    expect(order).toEqual(['sessions closed', 'installer']);
+    expect(updater.quitArgs).toEqual([[true, true]]);
   });
 
   it('installs without confirmation when nothing is running', async () => {
@@ -175,7 +194,7 @@ describe('UpdateService', () => {
     updater.checkImpl = available();
     await svc.check();
     await svc.download();
-    expect(svc.install(false)).toEqual({ started: true });
+    expect(await svc.install(false)).toEqual({ started: true });
   });
 
   it('only points at the release page where the app cannot replace itself', async () => {
@@ -185,7 +204,7 @@ describe('UpdateService', () => {
     expect(svc.status().canAutoInstall).toBe(false);
     expect((await svc.download()).phase.kind).toBe('available');
     expect(updater.downloads).toBe(0);
-    expect(svc.install(true)).toEqual({ started: false, blocked: 'not-ready' });
+    expect(await svc.install(true)).toEqual({ started: false, blocked: 'not-ready' });
     expect(svc.releasePageUrl()).toBe('https://github.com/7sadakonr/Arctri/releases/tag/v0.4.0-beta.1');
   });
 

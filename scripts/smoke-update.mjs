@@ -4,7 +4,7 @@
 // missing  the feed has nothing (404): an error is reported and N keeps running, untouched.
 // checksum the installer in the feed is damaged: the download is rejected and N keeps running, untouched.
 import { execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
@@ -61,40 +61,73 @@ const fail = [];
 const read = () => (existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : undefined);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-try {
-  console.log('install N ->', installDir);
-  execFileSync(resolve(old), ['/S', `/D=${installDir}`], { stdio: 'inherit' });
+const powershell = (script) => {
+  try {
+    return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 30_000 }).trim();
+  } catch {
+    return '';
+  }
+};
+// Processes of the installed app (and only those: matched by path) and any installer still at work.
+const running = () =>
+  powershell(`Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '${installDir.replace(/'/g, "''")}*' -or $_.ProcessName -like 'Arctri-Setup*' } | ForEach-Object { "$($_.Id) $($_.ProcessName)" }`)
+    .split(/\r?\n/).filter(Boolean);
+const stopInstalled = () =>
+  powershell(`Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '${installDir.replace(/'/g, "''")}*' } | Stop-Process -Force`);
+
+/** Starts the installed app with the test environment and waits for it to write its report and exit. */
+const launch = async (install, timeoutMs) => {
+  rmSync(out, { force: true });
   const child = spawn(exe, [], {
     env: {
       ...process.env,
       ARCTRI_USER_DATA: data,
       ARCTRI_UPDATE_TEST_FEED: feed,
       ARCTRI_SMOKE_UPDATE_OUT: out,
-      ARCTRI_SMOKE_UPDATE_INSTALL: scenario === 'ok' ? '1' : '0'
+      ARCTRI_SMOKE_UPDATE_INSTALL: install ? '1' : '0'
     },
     stdio: 'ignore'
   });
-  await new Promise((r) => {
-    child.on('exit', r);
-    setTimeout(() => (child.kill(), r()), 180_000);
-  });
+  const timer = setTimeout(() => child.kill(), timeoutMs);
+  await new Promise((r) => child.on('exit', r));
+  clearTimeout(timer);
+  return read();
+};
 
-  const first = read();
+try {
+  console.log('install N ->', installDir);
+  execFileSync(resolve(old), ['/S', `/D=${installDir}`], { stdio: 'inherit' });
+  const exeBefore = statSync(exe).mtimeMs;
+  // while the installer replaces the files the exe can be missing for a moment: that is not yet "replaced"
+  const replaced = () => {
+    try {
+      return statSync(exe).mtimeMs !== exeBefore;
+    } catch {
+      return false;
+    }
+  };
+
+  const first = await launch(scenario === 'ok', 120_000);
   console.log('first run:', JSON.stringify(first));
   if (!first) fail.push('the installed build wrote no report');
   else if (scenario === 'ok') {
-    if (!first.installing && first.current !== expect) fail.push(`N did not start the update: ${JSON.stringify(first.phase)}`);
-    // the installer replaces the app and starts it again with the same environment; it reports as the new version
-    const deadline = Date.now() + 300_000;
-    let after = read();
-    while (Date.now() < deadline && !(after?.current === expect && after?.phase?.kind)) {
+    if (!first.installing) fail.push(`N did not start the update: ${JSON.stringify(first.phase)}`);
+    else {
+      // The silent installer replaces the files and may start the app again; that copy has not got this script's environment
+      // (Windows starts it through the shell), so it is only waited for and stopped, and the new version is read by starting it here.
+      const deadline = Date.now() + 150_000;
+      while (Date.now() < deadline && !replaced()) await sleep(2000);
+      if (!replaced()) fail.push('the installer did not replace the app within 150 s');
+      while (Date.now() < deadline && running().some((l) => /Arctri-Setup/.test(l))) await sleep(2000);
+      await sleep(5000);
+      console.log('still running after the install:', JSON.stringify(running()));
+      stopInstalled();
       await sleep(2000);
-      after = read();
+      const after = await launch(false, 120_000);
+      console.log('after update:', JSON.stringify(after));
+      if (after?.current !== expect) fail.push(`expected version ${expect} after the update, got ${after?.current}`);
+      else if (after.phase?.kind !== 'up-to-date') fail.push(`N+1 should be up to date, is ${JSON.stringify(after.phase)}`);
     }
-    console.log('after update:', JSON.stringify(after));
-    if (after?.current !== expect) fail.push(`expected version ${expect} after the update, got ${after?.current}`);
-    else if (after.phase.kind !== 'up-to-date') fail.push(`N+1 should be up to date, is ${JSON.stringify(after.phase)}`);
-    await sleep(3000);
   } else {
     if (first.phase?.kind !== 'error') fail.push(`expected an error, got ${JSON.stringify(first.phase)}`);
     else if (scenario === 'checksum' && first.phase.code !== 'checksum') fail.push(`expected a checksum error, got ${first.phase.code}`);
@@ -108,6 +141,7 @@ try {
   if (scenario === 'ok' && !existsSync(join(data, 'arctri.db'))) fail.push('arctri.db is missing after the update');
 } finally {
   server.close();
+  stopInstalled();
   const un = join(installDir, 'Uninstall Arctri.exe');
   if (existsSync(un)) {
     try {

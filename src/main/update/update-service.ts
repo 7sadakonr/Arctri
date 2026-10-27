@@ -22,8 +22,8 @@ export interface UpdateServiceOptions {
   /** Sessions with running work; an install that would end them needs the user's explicit confirmation. */
   busyCount: () => number;
   emit: (status: UpdateStatus) => void;
-  /** Called once the user's go-ahead for an install is certain, right before the app restarts. */
-  onInstall?: () => void;
+  /** Called once the user's go-ahead for an install is certain, before the installer starts: the app ends its sessions here, so the installer never has to. */
+  onInstall?: () => void | Promise<void>;
   log?: (msg: string, detail?: Record<string, unknown>) => void;
   now?: () => number;
   checkTimeoutMs?: number;
@@ -140,13 +140,15 @@ export class UpdateService {
   }
 
   /** Restarts into the downloaded update. Running work is never ended without `confirmBusy`. */
-  install(confirmBusy: boolean): UpdateInstallResult {
+  async install(confirmBusy: boolean): Promise<UpdateInstallResult> {
     if (this.phase.kind !== 'downloaded' || !this.o.canAutoInstall) return { started: false, blocked: 'not-ready' };
     const busy = this.o.busyCount();
     if (busy > 0 && !confirmBusy) return { started: false, blocked: 'busy', busy };
     this.o.log?.('installing update', { version: this.phase.version });
-    this.o.onInstall?.();
-    this.o.updater.quitAndInstall(false, true);
+    await this.o.onInstall?.();
+    // Silent: the installer is a wizard (oneClick is off), and an update the user asked for must not stop at its first page.
+    // The same folder is kept and the app starts again afterwards.
+    this.o.updater.quitAndInstall(true, true);
     return { started: true };
   }
 
