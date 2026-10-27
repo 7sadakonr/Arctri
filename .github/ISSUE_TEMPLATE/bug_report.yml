@@ -63,4 +63,4 @@ body:
       options:
         - label: I removed secrets, tokens and private code from everything above
           required: true
-        - label: I checked that the problem is not already in the known limits (README, docs/TROUBLESHOOTING.md)
+        - label: I checked that the problem is not already in the known limits (README: Troubleshooting)

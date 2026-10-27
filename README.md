@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml"><img src="https://github.com/7sadakonr/Arctri/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-  <img src="https://img.shields.io/badge/version-0.3.3--beta-blue" alt="Version 0.3.3-beta" />
+  <img src="https://img.shields.io/badge/version-0.3.4--beta-blue" alt="Version 0.3.4-beta" />
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4" alt="Windows 10 and 11" />
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B-000000" alt="macOS 12 and later" />
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
@@ -19,7 +19,7 @@
 
 Arctri is a desktop terminal for Windows and macOS built around the way developers use **Claude Code**, **OpenAI Codex CLI**, and traditional shells. It combines real PTY-backed execution with command blocks, context-aware autocomplete, project navigation, file editing, Git changes, and a contextual toolbar that appears when an AI agent is running.
 
-**Current release:** `v0.3.3-beta` · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
+**Current release:** [`v0.3.4-beta`](https://github.com/7sadakonr/Arctri/releases/latest) · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
 
 > [!IMPORTANT]
 > Arctri does **not** include its own AI model, API keys, or cloud inference service. It runs external AI coding CLIs installed and authenticated by the user. Their subscriptions, accounts, permissions, network requests, and usage limits are managed by their respective providers.
@@ -28,6 +28,8 @@ Arctri is a desktop terminal for Windows and macOS built around the way develope
 
 - [What you can do](#what-you-can-do)
 - [Quick start](#quick-start)
+- [Updating](#updating)
+- [Troubleshooting](#troubleshooting-and-reporting-problems)
 - [How to use Arctri](#how-to-use-arctri)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [How it works](#how-it-works)
@@ -105,6 +107,11 @@ The editor supports syntax highlighting, search, and **Ctrl+S** to save. The Git
 | Git | Recommended; required for cloning repositories and Git-aware features |
 | AI agents | Optional; install Claude Code and/or Codex CLI separately to use their integrations |
 
+### Download
+
+Get the installer from the [Releases page](https://github.com/7sadakonr/Arctri/releases): `Arctri-Setup-<version>-x64.exe` for Windows, or the `.dmg` (zip also provided) for macOS, Apple Silicon (`arm64`) or Intel (`x64`).
+Builds are betas and **not code-signed** yet: Windows SmartScreen may warn (More info > Run anyway), and macOS needs right-click > Open the first time. Download only from this repository's Releases page.
+
 ### Install from source
 
 You can run the app locally or build the Windows installer:
@@ -143,7 +150,7 @@ the only network request the app makes by itself; switch it off in **Settings > 
   you are asked first, because running processes do not survive the restart. Settings, history and recent projects are kept.
 - **macOS:** the app tells you a new version exists and links to the release; install it by hand (the build is not notarized, so it
   cannot replace itself).
-- **Versions up to 0.3.3-beta** have no updater: install the first version that has one yourself, from the [Releases page](https://github.com/7sadakonr/Arctri/releases).
+- **Versions up to 0.3.3-beta** have no updater: install 0.3.4-beta (the first with one) yourself, from the [Releases page](https://github.com/7sadakonr/Arctri/releases).
 - The installers are not code-signed. The updater verifies the downloaded file against the checksum published with the release.
 
 To build the **macOS** app (`.dmg` and `.zip`, Apple Silicon and Intel) run `npm run dist:mac` **on a Mac** (a `.dmg` cannot be built on Windows or Linux; the GitHub Actions `macos` job does it for every push).
@@ -338,10 +345,23 @@ Contributions and bug reports can be submitted through [GitHub Issues](https://g
 
 ## Troubleshooting and reporting problems
 
-Where the log, preferences and database are, what each error means and how to recover: [`docs/TROUBLESHOOTING.md`](./docs/TROUBLESHOOTING.md).
-**Settings > Copy recent log** copies the last log lines with paths and secrets masked (read it before posting). Report with the
-[issue template](https://github.com/7sadakonr/Arctri/issues/new/choose): version, OS, shell, steps, expected and actual result.
-How the app was tested and on which systems: [`docs/testing/p0-matrix.md`](./docs/testing/p0-matrix.md) (untested combinations are marked as such).
+**Where things are.** Log: `arctri.log` in the `logs` folder of the user-data folder (Windows `%APPDATA%\Arctri`, macOS `~/Library/Application Support/Arctri`; 5 files of up to 5 MB). It holds lifecycle events and errors, never terminal contents, and home-folder paths and token-shaped strings are masked when written. Preferences: `preferences.json`. History and saved tabs: `arctri.db` (a copy `arctri.db.bak-v<n>` is kept before a newer version changes it).
+
+**Reporting.** **Settings > Copy recent log** copies the last 200 lines, masked again; read it before posting. Open an issue with the [template](https://github.com/7sadakonr/Arctri/issues/new/choose): version, OS, shell, steps, expected and actual result. For Thai text problems name the input method and the program (shell, Claude Code, Codex). Never post terminal output that holds secrets.
+
+| Problem | What to do |
+| --- | --- |
+| A tab says "The session could not start" | The message names the reason and what to try. A normal shell never needs an AI agent or WSL. |
+| An AI agent is "not installed" | Arctri does not install agents. Install Claude Code or Codex CLI from their guides (linked on the welcome page under *Your environment*), or set the executable path in Settings > AI agents. Agents in WSL are looked for in each running distribution. |
+| WSL tabs are missing | The welcome page says why (not installed, turned off, no distribution, error). Run `wsl --status` in PowerShell. A stopped distribution is not started just to look for agents; open a tab in it first. |
+| Garbled text after switching tabs | Fixed in 0.3.3-beta (repaint once the layout settles). If it still happens, report it with the GPU/driver. |
+| An update fails | The dialog says why (offline, files missing, checksum mismatch) and the installed version keeps working. Retry later, turn automatic checks off in Settings > Updates, or install from the Releases page. |
+| The app does not start after an update | Install the previous version from its release page; your data is kept. If the database was changed, copy `arctri.db.bak-v<n>` over `arctri.db` while Arctri is closed. |
+| The window went blank | A crashed page is reloaded and the terminals keep running; after repeated crashes it stays blank. Restart Arctri and report with the log. |
+
+Signing improves trust but does not by itself remove SmartScreen warnings, which also depend on reputation.
+
+**How well is it tested?** Automated checks run on every change: type checking, linting, unit tests, integration tests with real PowerShell sessions, a silent install of the Windows installer, and an upgrade from one installed version to the next (plus a missing update feed and a damaged installer). Checks on real machines are partial: Thai input with a real IME, sleep/resume, 8-hour sessions, Windows 11 and macOS on Intel have not been run systematically yet, so they are not claimed as supported results.
 
 ## Privacy and security
 
