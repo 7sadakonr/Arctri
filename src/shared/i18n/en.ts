@@ -302,6 +302,8 @@ export const en = {
   'settings.diagnostics': 'Copy diagnostics',
   'settings.diagnosticsCopied': 'Diagnostics copied',
   'agent.attach': 'Attach files',
+  'agent.attachmentRemove': 'Remove {label} from the message',
+  'agent.attachmentRemovedMore': 'The agent removed more than the image you chose: {lost} are gone too',
   'agent.files': 'Files',
   'agent.filesHint': 'Sidebar (Ctrl+Shift+E)',
   'agent.richInput': 'Rich Input',

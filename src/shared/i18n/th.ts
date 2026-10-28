@@ -304,6 +304,8 @@ export const th: Record<MessageKey, string> = {
   'settings.diagnostics': 'คัดลอกข้อมูลวินิจฉัย',
   'settings.diagnosticsCopied': 'คัดลอกข้อมูลวินิจฉัยแล้ว',
   'agent.attach': 'แนบไฟล์',
+  'agent.attachmentRemove': 'ลบ {label} ออกจากข้อความ',
+  'agent.attachmentRemovedMore': 'agent ลบมากกว่ารูปที่เลือก: {lost} หายไปด้วย',
   'agent.files': 'ไฟล์',
   'agent.filesHint': 'แถบด้านข้าง (Ctrl+Shift+E)',
   'agent.richInput': 'Rich Input',

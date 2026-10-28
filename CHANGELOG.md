@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Attachments.** Ctrl+V or Alt+V of an image (the agent pastes it itself), files copied in the file manager, dropped files and the paperclip now show a preview chip
+  (thumbnail for images) in the agent bar. The chips follow the agent's message box: delete the attachment there, or send the message, and the chip goes.
+
 ## 0.3.4-beta
 
 - **Updates.** Arctri checks GitHub Releases for a newer version (Help > Check for Updates, Settings > Updates, and automatically). On Windows the update is

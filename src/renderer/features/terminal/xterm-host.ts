@@ -5,20 +5,34 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandBlock } from '@shared/types/block';
+import { AGENT_META } from '@shared/agents/meta';
 import type { SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
-import { copyText, readClipboard } from '@/lib/clipboard';
+import { clipboardImageThumb, copyText, readClipboard } from '@/lib/clipboard';
 import { tNow } from '@/lib/i18n';
 import { commandForKey } from '../../commands/registry';
 import { useAgentStatus } from '@/stores/agent-status';
+import { useAttachments } from '@/stores/attachments';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
+import { planRemoval, type RemovalPlan, type RowCell } from '../agents/attachment-remove';
+import { inputRegion, numberOf, placeholdersIn, reconcile, type TrackedAttachment } from '../agents/attachment-tracker';
+import { insertAttachments } from '../agents/insert';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
 import { ThaiInputTracker } from './thai-input';
 import { TERMINAL_FONT, TERMINAL_LETTER_SPACING, terminalFontsReady, terminalTheme } from './theme';
+
+/** `localStorage.arctriTraceAttach = '1'` in the DevTools console logs how an attachment is removed from the agent's message box. */
+function traceAttach(...args: unknown[]): void {
+  try {
+    if (localStorage.getItem('arctriTraceAttach')) console.info('[attach-remove]', ...args);
+  } catch {
+    /* no storage */
+  }
+}
 
 /** Key chords handled by the app; xterm must not forward them to the shell. */
 function isAppChord(e: KeyboardEvent): boolean {
@@ -109,6 +123,16 @@ export class TerminalHost {
     // The shell draws its prompt after it has said where the prompt is, so it is read once the drawing has been parsed.
     this.term.onWriteParsed(() => {
       if (this.tracker.sm.phase === 'editing') this.capturePromptSoon();
+      this.trackAttachmentsSoon();
+    });
+    this.element.addEventListener('dragover', (e) => {
+      if (this.isAgent() && e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    });
+    this.element.addEventListener('drop', (e) => {
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (!this.isAgent() || !files.length) return;
+      e.preventDefault();
+      void api.files.fromDrop(info.id, files).then((atts) => insertAttachments(info.id, atts));
     });
 
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
@@ -279,6 +303,8 @@ export class TerminalHost {
       }
     }
     const k = e.key.toLowerCase();
+    // The agent pastes an image from the clipboard with its own key. It is let through; the preview is taken from the same clipboard.
+    if (this.isAgent() && k === 'v' && ((e.altKey && !e.ctrlKey) || (isMac && e.ctrlKey))) this.snapshotAgentPaste();
     if (isMac) {
       // Cmd+C copies the selection and Cmd+V pastes; Ctrl+C is always the shell's interrupt
       if (e.metaKey && k === 'c') {
@@ -286,6 +312,7 @@ export class TerminalHost {
         return false;
       }
       if (e.metaKey && k === 'v') {
+        e.preventDefault(); // the browser's own paste event must not add a second paste
         void this.pasteFromClipboard();
         return false;
       }
@@ -300,6 +327,7 @@ export class TerminalHost {
       return !e.shiftKey;
     }
     if (e.ctrlKey && k === 'v') {
+      e.preventDefault();
       void this.pasteFromClipboard();
       return false;
     }
@@ -316,7 +344,211 @@ export class TerminalHost {
     this.term.selectAll();
   }
 
+  private isAgent(): boolean {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    return info.kind === 'agent' || !!info.runningAgent;
+  }
+
+  /** The rows of the live screen as text. */
+  screenLines(): string[] {
+    const b = this.term.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < this.term.rows; i++) lines.push(b.getLine(b.baseY + i)?.translateToString(true) ?? '');
+    return lines;
+  }
+
+  /** The characters of one row of the live screen, with where the caret may be drawn. */
+  private rowCells(y: number): RowCell[] {
+    const line = this.term.buffer.active.getLine(this.term.buffer.active.baseY + y);
+    const cells: RowCell[] = [];
+    for (let x = 0; line && x < line.length; x++) {
+      const c = line.getCell(x);
+      if (!c || c.getWidth() === 0) continue;
+      cells.push({ x, ch: c.getChars() || ' ', inverse: !!c.isInverse() });
+    }
+    return cells;
+  }
+
+  /** Where the caret stands relative to `needle` in the message box right now (see `planRemoval`); undefined when that is unclear. */
+  private locate(needle: string): RemovalPlan | undefined {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    if (!input) return undefined;
+    const lines = this.screenLines();
+    const region = inputRegion(lines, input.prompt);
+    if (region === undefined) return undefined;
+    const buf = this.term.buffer.active;
+    for (let y = lines.length - region.split('\n').length; y < lines.length; y++) {
+      if (lines[y]!.includes(needle)) return planRemoval(this.rowCells(y), needle, y === buf.cursorY ? buf.cursorX : undefined);
+    }
+    return undefined;
+  }
+
+  private async until(cond: () => boolean, ms: number): Promise<boolean> {
+    const end = Date.now() + ms;
+    while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 30));
+    return cond();
+  }
+
+  /**
+   * Takes an attachment out of the agent's message box. The caret is moved one key at a time and looked at after each key, and
+   * Backspace is pressed only once the caret is seen right behind the text. If anything is unclear (the caret does not move,
+   * the text is on another row, the screen does not answer) nothing is deleted and false is returned; the chip is dropped anyway.
+   */
+  async removeAttachment(att: TrackedAttachment): Promise<boolean> {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    if (info.state !== 'running') return false;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    const tokens = () => (input ? placeholdersIn(this.screenLines(), input) : []);
+    const write = (d: string) => {
+      traceAttach('key', JSON.stringify(d), 'rows', this.messageRows());
+      api.sessions.write(this.info.id, d);
+    };
+    // a placeholder from the agent can be both the token and the ref of a chip: it is a token first
+    for (const needle of new Set([att.token, att.ref].filter((n): n is string => !!n))) {
+      let plan = this.locate(needle);
+      traceAttach('start', needle, plan, 'cursor', this.term.buffer.active.cursorX, this.term.buffer.active.cursorY, 'rows', this.messageRows());
+      if (!plan) continue;
+      for (let i = 0; i < 40 && plan.moves !== 0; i++) {
+        const before = plan.moves;
+        write(before > 0 ? '\x1b[C' : '\x1b[D');
+        // an agent may jump over a whole placeholder with one key: only the screen tells where the caret is
+        await this.until(() => this.locate(needle)?.moves !== before, 400);
+        plan = this.locate(needle);
+        if (!plan || plan.moves === before) return false;
+      }
+      if (plan.moves !== 0) return false;
+      if (needle !== att.token) {
+        write('\x7f'.repeat(plan.width));
+        return true;
+      }
+      // a placeholder is one unit for the agent: a single Backspace, never a second one (it would eat the text before it)
+      const others = tokens().filter((t) => t !== needle);
+      write('\x7f');
+      const gone = await this.until(() => !this.screenLines().some((l) => l.includes(needle)), 1000);
+      await new Promise((r) => setTimeout(r, 300));
+      const now = tokens();
+      const lost = others.filter((t) => !now.includes(t));
+      traceAttach('after', { gone, lost }, 'rows', this.messageRows());
+      if (lost.length) useUi.getState().toast(tNow('agent.attachmentRemovedMore', { lost: lost.join(' ') }));
+      return gone;
+    }
+    return false;
+  }
+
+  /** The rows of the message box (for the trace). */
+  private messageRows(): string[] {
+    const lines = this.screenLines();
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    const region = input ? inputRegion(lines, input.prompt) : undefined;
+    return region === undefined ? lines.slice(-4) : region.split('\n');
+  }
+
+  private thumbTries = new Map<string, { tries: number; at: number; done: boolean }>();
+
+  /**
+   * Claude Code saves a pasted image as a file the moment it is pasted. Its preview is taken from there, which is exact for
+   * `[Image #N]` and needs no clipboard. The file may not be there yet, so it is asked for again (a few times, every 300ms or so).
+   */
+  private loadThumbs(list: TrackedAttachment[]): void {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const live = new Set(list.map((a) => a.token).filter((t): t is string => !!t));
+    for (const t of this.thumbTries.keys()) if (!live.has(t)) this.thumbTries.delete(t);
+    if (agentId !== 'claude-code') return;
+    for (const a of list) {
+      const n = numberOf(a);
+      if (!a.token || !a.image || !n) continue;
+      const st = this.thumbTries.get(a.token) ?? { tries: 0, at: 0, done: false };
+      if (st.done || st.tries >= 17 || Date.now() - st.at < 300) continue;
+      this.thumbTries.set(a.token, { ...st, tries: st.tries + 1, at: Date.now() });
+      const token = a.token;
+      const agentSessionId = useAgentStatus.getState().byId[this.info.id]?.agentSessionId;
+      void api.files.pastedImage(this.info.id, n, agentSessionId).then(
+        (thumb) => {
+          if (!thumb) return;
+          this.thumbTries.set(token, { tries: 17, at: Date.now(), done: true });
+          const cur = useAttachments.getState().bySession[this.info.id] ?? [];
+          useAttachments.getState().set(this.info.id, cur.map((x) => (x.token === token ? { ...x, thumb } : x)));
+        },
+        () => undefined
+      );
+    }
+  }
+
+  private attachTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Previews of images the agent pasted itself, waiting for their placeholder to show up in the message box. */
+  private agentPastes: Array<{ name: string; thumb?: string; at: number }> = [];
+  private watchUntil = 0;
+
+  private snapshotAgentPaste(): void {
+    this.watchUntil = Date.now() + 5000;
+    void clipboardImageThumb().then((img) => img && this.rememberPreview(img));
+  }
+
+  /** Keeps the preview of an image the agent pastes itself until its placeholder shows in the message box. */
+  private rememberPreview(img: { name: string; thumb: string }): void {
+    // the placeholder may already be showing (the agent is quicker): give its chip the preview
+    const store = useAttachments.getState();
+    const bare = (store.bySession[this.info.id] ?? []).find((x) => x.id.startsWith('token-') && !x.thumb);
+    if (bare) store.set(this.info.id, (store.bySession[this.info.id] ?? []).map((x) => (x === bare ? { ...x, thumb: img.thumb } : x)));
+    else this.agentPastes.push({ ...img, at: Date.now() });
+    this.trackAttachmentsSoon();
+  }
+
+  /** Ctrl+V with an image on the clipboard: the agent's own paste key is sent, as if it had been pressed in the agent. */
+  private pasteImageIntoAgent(img: { name: string; thumb: string }): void {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const key = agentId ? AGENT_META[agentId]?.pasteImageKey(info.env.kind) : undefined;
+    if (!key) return;
+    this.watchUntil = Date.now() + 5000;
+    this.rememberPreview(img);
+    api.sessions.write(this.info.id, key);
+  }
+
+  /** The preview in the agent bar keeps only what the message box still holds (it is looked at once the output has settled). */
+  private trackAttachmentsSoon(): void {
+    const store = useAttachments.getState();
+    if ((!store.bySession[this.info.id]?.length && Date.now() > this.watchUntil) || this.attachTimer) return;
+    this.attachTimer = setTimeout(() => {
+      this.attachTimer = undefined;
+      const info = useSessions.getState().infos[this.info.id] ?? this.info;
+      const list = useAttachments.getState().bySession[this.info.id] ?? [];
+      if (!list.length && Date.now() > this.watchUntil) return;
+      const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+      const input = agentId ? AGENT_META[agentId]?.input : undefined;
+      if (!input || info.state !== 'running') return void useAttachments.getState().clear(this.info.id);
+      this.agentPastes = this.agentPastes.filter((p) => Date.now() - p.at < 15000);
+      const next = reconcile(this.screenLines(), list, input, Date.now(), () => this.agentPastes.shift());
+      if (next !== list && (next.length || list.length)) useAttachments.getState().set(this.info.id, next);
+      this.loadThumbs(next);
+    }, 120);
+  }
+
+  private pasting = false;
+
   async pasteFromClipboard(): Promise<void> {
+    if (this.pasting) return; // one paste at a time: a second one while the clipboard is being read would paste the image twice
+    this.pasting = true;
+    try {
+      await this.pasteNow();
+    } finally {
+      this.pasting = false;
+    }
+  }
+
+  private async pasteNow(): Promise<void> {
+    if (this.isAgent()) {
+      const files = await api.files.clipboard(this.info.id).catch(() => []);
+      if (files.length) return insertAttachments(this.info.id, files);
+      const img = await clipboardImageThumb();
+      if (img) return this.pasteImageIntoAgent(img);
+    }
     const text = await readClipboard();
     if (!text) return;
     const lines = text.split(/\r\n|\r|\n/).length;
