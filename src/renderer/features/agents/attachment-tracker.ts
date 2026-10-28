@@ -16,6 +16,12 @@ export interface InputPatterns {
   placeholder: RegExp;
 }
 
+/** The number in `[Image #N]` that the agent made of this attachment. */
+export const numberOf = (a: Pick<TrackedAttachment, 'token'>): number | undefined => {
+  const m = /#(\d+)/.exec(a.token ?? '');
+  return m ? Number(m[1]) : undefined;
+};
+
 /** How long an attachment may stay unseen before it counts as gone (the agent has to draw it first). */
 export const GRACE_MS = 3000;
 

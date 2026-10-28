@@ -114,6 +114,9 @@ const api = {
       ipcRenderer.invoke('fs:list', { sessionId, rel }),
     pick: (sessionId: SessionId): Promise<Attachment[]> => ipcRenderer.invoke('app:pickFiles', { sessionId }),
     clipboard: (sessionId: SessionId): Promise<Attachment[]> => ipcRenderer.invoke('app:clipboardAttachments', { sessionId }),
+    /** The preview of `[Image #n]` from the file the agent saved when it was pasted. */
+    pastedImage: (sessionId: SessionId, n: number, agentSessionId?: string): Promise<string | null> =>
+      ipcRenderer.invoke('agent:pastedImage', { sessionId, n, ...(agentSessionId ? { agentSessionId } : {}) }),
     /** Files dropped from the OS: the dropped `File`s are turned into paths here, where that is allowed. */
     fromDrop: (sessionId: SessionId, files: File[]): Promise<Attachment[]> => {
       const paths = files.map((f) => webUtils.getPathForFile(f)).filter(Boolean);

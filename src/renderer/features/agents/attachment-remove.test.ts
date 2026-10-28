@@ -24,4 +24,12 @@ describe('planRemoval', () => {
     expect(planRemoval(row('❯ [Image #3] ', 12), '[Image #3]', undefined)).toEqual({ moves: 0, width: 10 });
     expect(planRemoval(row('❯ [Image #3]'), '[Image #3]', undefined)).toBeUndefined();
   });
+  it('picks the right one of two placeholders in a row, caret behind the last', () => {
+    const r = row('❯ [Image #1] [Image #2] ');
+    expect(planRemoval(r, '[Image #2]', 24)).toEqual({ moves: -1, width: 10 });
+    expect(planRemoval(r, '[Image #1]', 24)).toEqual({ moves: -12, width: 10 });
+  });
+  it('after one Left jumped the whole last placeholder, the caret is before it and one Right brings it back', () => {
+    expect(planRemoval(row('❯ [Image #1] [Image #2] '), '[Image #2]', 13)).toEqual({ moves: 10, width: 10 });
+  });
 });

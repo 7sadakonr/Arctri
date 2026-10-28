@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GRACE_MS, inputRegion, reconcile, type InputPatterns, type TrackedAttachment } from './attachment-tracker';
+import { GRACE_MS, inputRegion, numberOf, reconcile, type InputPatterns, type TrackedAttachment } from './attachment-tracker';
 
 const claude: InputPatterns = { prompt: /^\s*[│|]?\s*[>❯]/, placeholder: /\[Image #\d+\]/g };
 
@@ -63,5 +63,12 @@ describe('reconcile', () => {
   it('changes nothing when no prompt is showing', () => {
     const list = [att({ seen: true })];
     expect(reconcile(['Allow this command?'], list, claude, 10)).toBe(list);
+  });
+});
+
+describe('numberOf', () => {
+  it('reads N from the placeholder', () => {
+    expect(numberOf({ token: '[Image #12]' })).toBe(12);
+    expect(numberOf({})).toBeUndefined();
   });
 });

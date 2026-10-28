@@ -18,12 +18,21 @@ import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
 import { planRemoval, type RemovalPlan, type RowCell } from '../agents/attachment-remove';
-import { inputRegion, reconcile, type TrackedAttachment } from '../agents/attachment-tracker';
+import { inputRegion, numberOf, placeholdersIn, reconcile, type TrackedAttachment } from '../agents/attachment-tracker';
 import { insertAttachments } from '../agents/insert';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
 import { ThaiInputTracker } from './thai-input';
 import { TERMINAL_FONT, TERMINAL_LETTER_SPACING, terminalFontsReady, terminalTheme } from './theme';
+
+/** `localStorage.arctriTraceAttach = '1'` in the DevTools console logs how an attachment is removed from the agent's message box. */
+function traceAttach(...args: unknown[]): void {
+  try {
+    if (localStorage.getItem('arctriTraceAttach')) console.info('[attach-remove]', ...args);
+  } catch {
+    /* no storage */
+  }
+}
 
 /** Key chords handled by the app; xterm must not forward them to the shell. */
 function isAppChord(e: KeyboardEvent): boolean {
@@ -390,9 +399,16 @@ export class TerminalHost {
   async removeAttachment(att: TrackedAttachment): Promise<boolean> {
     const info = useSessions.getState().infos[this.info.id] ?? this.info;
     if (info.state !== 'running') return false;
-    const write = (d: string) => api.sessions.write(this.info.id, d);
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    const tokens = () => (input ? placeholdersIn(this.screenLines(), input) : []);
+    const write = (d: string) => {
+      traceAttach('key', JSON.stringify(d), 'rows', this.messageRows());
+      api.sessions.write(this.info.id, d);
+    };
     for (const needle of [att.token, att.ref].filter((n): n is string => !!n)) {
       let plan = this.locate(needle);
+      traceAttach('start', needle, plan, 'cursor', this.term.buffer.active.cursorX, this.term.buffer.active.cursorY, 'rows', this.messageRows());
       if (!plan) continue;
       for (let i = 0; i < 40 && plan.moves !== 0; i++) {
         const before = plan.moves;
@@ -408,10 +424,59 @@ export class TerminalHost {
         return true;
       }
       // a placeholder is one unit for the agent: a single Backspace, never a second one (it would eat the text before it)
+      const others = tokens().filter((t) => t !== needle);
       write('\x7f');
-      return this.until(() => !this.screenLines().some((l) => l.includes(needle)), 1000);
+      const gone = await this.until(() => !this.screenLines().some((l) => l.includes(needle)), 1000);
+      await new Promise((r) => setTimeout(r, 300));
+      const now = tokens();
+      const lost = others.filter((t) => !now.includes(t));
+      traceAttach('after', { gone, lost }, 'rows', this.messageRows());
+      if (lost.length) useUi.getState().toast(tNow('agent.attachmentRemovedMore', { lost: lost.join(' ') }));
+      return gone;
     }
     return false;
+  }
+
+  /** The rows of the message box (for the trace). */
+  private messageRows(): string[] {
+    const lines = this.screenLines();
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    const region = input ? inputRegion(lines, input.prompt) : undefined;
+    return region === undefined ? lines.slice(-4) : region.split('\n');
+  }
+
+  private thumbTries = new Map<string, { tries: number; at: number; done: boolean }>();
+
+  /**
+   * Claude Code saves a pasted image as a file the moment it is pasted. Its preview is taken from there, which is exact for
+   * `[Image #N]` and needs no clipboard. The file may not be there yet, so it is asked for again (a few times, every 300ms or so).
+   */
+  private loadThumbs(list: TrackedAttachment[]): void {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const live = new Set(list.map((a) => a.token).filter((t): t is string => !!t));
+    for (const t of this.thumbTries.keys()) if (!live.has(t)) this.thumbTries.delete(t);
+    if (agentId !== 'claude-code') return;
+    for (const a of list) {
+      const n = numberOf(a);
+      if (!a.token || !a.image || !n) continue;
+      const st = this.thumbTries.get(a.token) ?? { tries: 0, at: 0, done: false };
+      if (st.done || st.tries >= 17 || Date.now() - st.at < 300) continue;
+      this.thumbTries.set(a.token, { ...st, tries: st.tries + 1, at: Date.now() });
+      const token = a.token;
+      const agentSessionId = useAgentStatus.getState().byId[this.info.id]?.agentSessionId;
+      void api.files.pastedImage(this.info.id, n, agentSessionId).then(
+        (thumb) => {
+          if (!thumb) return;
+          this.thumbTries.set(token, { tries: 17, at: Date.now(), done: true });
+          const cur = useAttachments.getState().bySession[this.info.id] ?? [];
+          useAttachments.getState().set(this.info.id, cur.map((x) => (x.token === token ? { ...x, thumb } : x)));
+        },
+        () => undefined
+      );
+    }
   }
 
   private attachTimer: ReturnType<typeof setTimeout> | undefined;
@@ -460,6 +525,7 @@ export class TerminalHost {
       this.agentPastes = this.agentPastes.filter((p) => Date.now() - p.at < 15000);
       const next = reconcile(this.screenLines(), list, input, Date.now(), () => this.agentPastes.shift());
       if (next !== list && (next.length || list.length)) useAttachments.getState().set(this.info.id, next);
+      this.loadThumbs(next);
     }, 120);
   }
 

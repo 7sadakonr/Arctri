@@ -13,7 +13,7 @@ import { Router } from './router';
 import type { EnvironmentQuery, GitHistoryQuery } from '../env-query/service';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
 import { resolveWithin } from '../files/refs';
-import { attachmentsForPaths, clipboardAttachments } from '../files/attachments';
+import { attachmentsForPaths, clipboardAttachments, pastedImageThumb } from '../files/attachments';
 import { copyMany, moveMany, type TransferResult } from '../files/transfer';
 import type { FileWatcher } from '../files/watcher';
 import { posix, win32 } from 'node:path';
@@ -241,6 +241,12 @@ export function registerIpc(s: Services, hub: PortHub): void {
   r.handle('app:clipboardAttachments', async ({ sessionId }) => {
     const info = s.sessions.get(sessionId);
     return info?.cwd ? clipboardAttachments(info, s.wsl) : [];
+  });
+
+  // The preview of image #n as the agent saved it when it was pasted
+  r.handle('agent:pastedImage', async ({ sessionId, n, agentSessionId }) => {
+    const info = s.sessions.get(sessionId);
+    return (info && (await pastedImageThumb(info, agentSessionId, n))) || null;
   });
 
   // Files dropped on the terminal (absolute paths from the OS).

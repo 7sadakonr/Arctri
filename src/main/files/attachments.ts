@@ -1,9 +1,11 @@
 import { clipboard, nativeImage } from 'electron';
+import { readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Attachment } from '@shared/types/attachment';
 import type { SessionInfo } from '@shared/types/session';
 import type { WslManager } from '../wsl/wsl-manager';
+import { findPastedImage, tempRoots } from '../agents/claude-images';
 import { formatRef, uncToPosix } from './refs';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
@@ -72,4 +74,16 @@ export async function clipboardAttachments(info: SessionInfo, wsl: WslManager): 
     if (files.length) return attachmentsForPaths(info, wsl, files);
   }
   return [];
+}
+
+const MAX_PASTED_BYTES = 25 * 1024 * 1024;
+
+/** Preview of `[Image #n]` from the file the agent saved when the image was pasted; undefined when there is none (yet). */
+export async function pastedImageThumb(info: SessionInfo, agentSessionId: string | undefined, n: number): Promise<string | undefined> {
+  if (!info.cwd) return undefined;
+  const file = await findPastedImage(tempRoots(info.env), info.cwd.path, agentSessionId, n);
+  if (!file) return undefined;
+  const st = await stat(file).catch(() => null);
+  if (!st || st.size > MAX_PASTED_BYTES) return undefined;
+  return thumbOf(nativeImage.createFromBuffer(await readFile(file)));
 }
