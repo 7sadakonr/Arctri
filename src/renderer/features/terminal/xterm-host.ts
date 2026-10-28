@@ -303,6 +303,7 @@ export class TerminalHost {
         return false;
       }
       if (e.metaKey && k === 'v') {
+        e.preventDefault(); // the browser's own paste event must not add a second paste
         void this.pasteFromClipboard();
         return false;
       }
@@ -317,6 +318,7 @@ export class TerminalHost {
       return !e.shiftKey;
     }
     if (e.ctrlKey && k === 'v') {
+      e.preventDefault();
       void this.pasteFromClipboard();
       return false;
     }
@@ -444,7 +446,19 @@ export class TerminalHost {
     }, 120);
   }
 
+  private pasting = false;
+
   async pasteFromClipboard(): Promise<void> {
+    if (this.pasting) return; // one paste at a time: a second one while the clipboard is being read would paste the image twice
+    this.pasting = true;
+    try {
+      await this.pasteNow();
+    } finally {
+      this.pasting = false;
+    }
+  }
+
+  private async pasteNow(): Promise<void> {
     if (this.isAgent()) {
       const files = await api.files.clipboard(this.info.id).catch(() => []);
       if (files.length) return insertAttachments(this.info.id, files);
