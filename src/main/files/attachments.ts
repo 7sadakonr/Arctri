@@ -1,6 +1,6 @@
 import { clipboard, nativeImage } from 'electron';
 import { readFile, stat } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Attachment } from '@shared/types/attachment';
 import type { SessionInfo } from '@shared/types/session';
