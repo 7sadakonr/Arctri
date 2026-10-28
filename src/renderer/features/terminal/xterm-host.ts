@@ -17,7 +17,7 @@ import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
-import { planRemoval, type RowCell } from '../agents/attachment-remove';
+import { planRemoval, type RemovalPlan, type RowCell } from '../agents/attachment-remove';
 import { inputRegion, reconcile, type TrackedAttachment } from '../agents/attachment-tracker';
 import { insertAttachments } from '../agents/insert';
 import { refreshChanges } from '../agents/useChanges';
@@ -360,39 +360,56 @@ export class TerminalHost {
     return cells;
   }
 
-  /**
-   * Takes an attachment out of the agent's message box: the caret is moved behind it and Backspace is pressed. Done only when the
-   * text and the caret are on one row; otherwise nothing is typed and false is returned (the caller still drops the chip).
-   */
-  async removeAttachment(att: TrackedAttachment): Promise<boolean> {
+  /** Where the caret stands relative to `needle` in the message box right now (see `planRemoval`); undefined when that is unclear. */
+  private locate(needle: string): RemovalPlan | undefined {
     const info = useSessions.getState().infos[this.info.id] ?? this.info;
     const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
     const input = agentId ? AGENT_META[agentId]?.input : undefined;
-    if (!input || info.state !== 'running') return false;
-    const first = inputRegion(this.screenLines(), input.prompt);
-    if (first === undefined) return false;
+    if (!input) return undefined;
     const lines = this.screenLines();
-    const startRow = lines.length - first.split('\n').length;
+    const region = inputRegion(lines, input.prompt);
+    if (region === undefined) return undefined;
     const buf = this.term.buffer.active;
+    for (let y = lines.length - region.split('\n').length; y < lines.length; y++) {
+      if (lines[y]!.includes(needle)) return planRemoval(this.rowCells(y), needle, y === buf.cursorY ? buf.cursorX : undefined);
+    }
+    return undefined;
+  }
+
+  private async until(cond: () => boolean, ms: number): Promise<boolean> {
+    const end = Date.now() + ms;
+    while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 30));
+    return cond();
+  }
+
+  /**
+   * Takes an attachment out of the agent's message box. The caret is moved one key at a time and looked at after each key, and
+   * Backspace is pressed only once the caret is seen right behind the text. If anything is unclear (the caret does not move,
+   * the text is on another row, the screen does not answer) nothing is deleted and false is returned; the chip is dropped anyway.
+   */
+  async removeAttachment(att: TrackedAttachment): Promise<boolean> {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    if (info.state !== 'running') return false;
+    const write = (d: string) => api.sessions.write(this.info.id, d);
     for (const needle of [att.token, att.ref].filter((n): n is string => !!n)) {
-      for (let y = startRow; y < lines.length; y++) {
-        if (!lines[y]!.includes(needle)) continue;
-        const plan = planRemoval(this.rowCells(y), needle, y === buf.cursorY ? buf.cursorX : undefined);
-        if (!plan) return false;
-        const key = (code: string, n: number) => code.repeat(Math.abs(n));
-        api.sessions.write(this.info.id, key(plan.moves > 0 ? '\x1b[C' : '\x1b[D', plan.moves));
-        if (needle === att.ref) {
-          api.sessions.write(this.info.id, key('\x7f', plan.width));
-          return true;
-        }
-        // a placeholder is one unit for the agent: Backspace until it is gone (at most one press per character)
-        for (let i = 0; i < plan.width; i++) {
-          api.sessions.write(this.info.id, '\x7f');
-          await new Promise((r) => setTimeout(r, 70));
-          if (!this.screenLines().some((l) => l.includes(needle))) break;
-        }
+      let plan = this.locate(needle);
+      if (!plan) continue;
+      for (let i = 0; i < 40 && plan.moves !== 0; i++) {
+        const before = plan.moves;
+        write(before > 0 ? '\x1b[C' : '\x1b[D');
+        // an agent may jump over a whole placeholder with one key: only the screen tells where the caret is
+        await this.until(() => this.locate(needle)?.moves !== before, 400);
+        plan = this.locate(needle);
+        if (!plan || plan.moves === before) return false;
+      }
+      if (plan.moves !== 0) return false;
+      if (needle === att.ref) {
+        write('\x7f'.repeat(plan.width));
         return true;
       }
+      // a placeholder is one unit for the agent: a single Backspace, never a second one (it would eat the text before it)
+      write('\x7f');
+      return this.until(() => !this.screenLines().some((l) => l.includes(needle)), 1000);
     }
     return false;
   }
