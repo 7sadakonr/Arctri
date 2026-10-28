@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-beta.1
 
 - **Attachments.** Ctrl+V or Alt+V of an image (the agent pastes it itself), files copied in the file manager, dropped files and the paperclip now show a preview chip
   (thumbnail for images) in the agent bar. The chips follow the agent's message box: delete the attachment there, or send the message, and the chip goes.
