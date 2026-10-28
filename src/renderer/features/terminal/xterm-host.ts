@@ -406,7 +406,8 @@ export class TerminalHost {
       traceAttach('key', JSON.stringify(d), 'rows', this.messageRows());
       api.sessions.write(this.info.id, d);
     };
-    for (const needle of [att.token, att.ref].filter((n): n is string => !!n)) {
+    // a placeholder from the agent can be both the token and the ref of a chip: it is a token first
+    for (const needle of new Set([att.token, att.ref].filter((n): n is string => !!n))) {
       let plan = this.locate(needle);
       traceAttach('start', needle, plan, 'cursor', this.term.buffer.active.cursorX, this.term.buffer.active.cursorY, 'rows', this.messageRows());
       if (!plan) continue;
@@ -419,7 +420,7 @@ export class TerminalHost {
         if (!plan || plan.moves === before) return false;
       }
       if (plan.moves !== 0) return false;
-      if (needle === att.ref) {
+      if (needle !== att.token) {
         write('\x7f'.repeat(plan.width));
         return true;
       }
