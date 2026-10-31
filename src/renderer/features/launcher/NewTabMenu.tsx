@@ -1,5 +1,5 @@
 import { isWindows, kbd } from '@/lib/platform';
-import { SquareTerminal } from 'lucide-react';
+import { TerminalIcon } from '@/components/TerminalIcon';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import {
@@ -35,7 +35,7 @@ export function NewTabMenu({
 
   const row = (p: ShellProfile) => (
     <DropdownMenuItem key={p.id} onSelect={() => void openShell(p)} className={/^wsl:.+:(zsh|bash)$/.test(p.id) ? 'pl-7' : undefined}>
-      <SquareTerminal size={13} className="opacity-70" />
+      <TerminalIcon size={16} />
       <span className="flex-1 truncate">{p.label}</span>
     </DropdownMenuItem>
   );
@@ -64,7 +64,7 @@ export function NewTabMenu({
         }}
       >
         <DropdownMenuItem onSelect={() => void resolveDefaultProfile().then(openShell)}>
-          <SquareTerminal size={13} className="opacity-70" />
+          <TerminalIcon size={16} />
           <span className="flex-1 truncate">{t('launcher.terminal')}</span>
           <span className="text-[10px] text-fg-muted">{kbd("Ctrl+Shift+T")}</span>
         </DropdownMenuItem>

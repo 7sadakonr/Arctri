@@ -86,7 +86,7 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
     minWidth: 640,
     minHeight: 400,
     show: false,
-    backgroundColor: prefs.get().theme === 'light' ? '#f6f7f9' : '#0e0f13',
+    backgroundColor: prefs.get().theme === 'light' ? '#ededed' : '#0a0a0a',
     title: 'Arctri',
     // the packaged exe embeds its icon; this only gives development runs the same one
     ...(isDev() ? { icon: join(import.meta.dirname, '../../build/icon.png') } : {}),
@@ -96,8 +96,8 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
       ? { trafficLightPosition: { x: 14, y: Math.round((TITLE_BAR_HEIGHT * prefs.get().uiScale - 12) / 2) } }
       : {
           titleBarOverlay: prefs.get().theme === 'light'
-            ? { color: '#f1f2f6', symbolColor: '#23252e', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
-            : { color: '#15171d', symbolColor: '#c9ccd6', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
+            ? { color: '#ffffff', symbolColor: '#111111', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
+            : { color: '#121212', symbolColor: '#8e8e8e', height: Math.round(OVERLAY_HEIGHT * prefs.get().uiScale) }
         }),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),

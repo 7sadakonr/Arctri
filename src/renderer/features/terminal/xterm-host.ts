@@ -588,7 +588,8 @@ export class TerminalHost {
     if (this.info.presentation !== 'classic') return;
     const marker = this.term.registerMarker(-1);
     if (!marker) return;
-    const color = b.status === 'success' ? '#3fa24c' : b.status === 'unknown' ? '#6b7080' : '#e0554c';
+    const dark = useUi.getState().prefs.theme === 'dark';
+    const color = b.status === 'success' ? (dark ? '#7bc68f' : '#2e8b57') : b.status === 'unknown' ? (dark ? '#5a5a5a' : '#a6a6a6') : (dark ? '#e5736b' : '#d64545');
     const deco = this.term.registerDecoration({ marker, x: 0, width: 1, height: 1, backgroundColor: color, layer: 'top' });
     deco?.onRender((el) => {
       el.style.width = '3px';
