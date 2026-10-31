@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { clipboardImageThumb, copyText, readClipboard } from '@/lib/clipboard';
 import { tNow } from '@/lib/i18n';
 import { commandForKey } from '../../commands/registry';
+import { chordLetter } from '../../commands/keys';
 import { useAgentStatus } from '@/stores/agent-status';
 import { useAttachments } from '@/stores/attachments';
 import { useBlocks } from '@/stores/blocks';
@@ -38,7 +39,7 @@ function traceAttach(...args: unknown[]): void {
 function isAppChord(e: KeyboardEvent): boolean {
   if (e.type !== 'keydown') return false;
   if (commandForKey(e)) return true; // every shortcut of the app comes from the command registry
-  const k = e.key.toLowerCase();
+  const k = chordLetter(e);
   if ((isMac ? !e.shiftKey : e.shiftKey) && modKey(e) && k === 'n') return true;
   if (modKey(e) && !e.shiftKey && (k === 'arrowup' || k === 'arrowdown')) return true; // block navigation
   return false;
@@ -302,7 +303,7 @@ export class TerminalHost {
         return false;
       }
     }
-    const k = e.key.toLowerCase();
+    const k = chordLetter(e);
     // The agent pastes an image from the clipboard with its own key. It is let through; the preview is taken from the same clipboard.
     if (this.isAgent() && k === 'v' && ((e.altKey && !e.ctrlKey) || (isMac && e.ctrlKey))) this.snapshotAgentPaste();
     if (isMac) {
