@@ -31,11 +31,11 @@ const theme = EditorView.theme({
   '.cm-activeLineGutter': { backgroundColor: 'var(--ad-hover)' },
   '&.cm-focused': { outline: 'none' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--ad-accent) 28%, transparent)' },
-  '.cm-changedLine': { backgroundColor: 'rgba(63,162,76,0.14)' },
-  '.cm-deletedChunk': { backgroundColor: 'rgba(224,85,76,0.12)' },
+  '.cm-changedLine': { backgroundColor: 'rgba(123,198,143,0.14)' },
+  '.cm-deletedChunk': { backgroundColor: 'rgba(229,115,107,0.12)' },
   '.cm-insertedLine, .cm-deletedLine': { textDecoration: 'none' },
-  '.cm-changedText': { backgroundColor: 'rgba(63,162,76,0.3)' },
-  '.cm-deletedChunk .cm-deletedText': { backgroundColor: 'rgba(224,85,76,0.32)' },
+  '.cm-changedText': { backgroundColor: 'rgba(123,198,143,0.3)' },
+  '.cm-deletedChunk .cm-deletedText': { backgroundColor: 'rgba(229,115,107,0.32)' },
   '.cm-panels': { backgroundColor: 'var(--ad-panel)', color: 'var(--ad-fg)' },
   // "12 unchanged lines": a quiet bar in the panel colour instead of the library's white strip (made for light themes;
   // its rules are more specific than ours, hence !important)

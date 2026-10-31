@@ -1,4 +1,5 @@
-import { Folder, GitBranch, TerminalSquare } from 'lucide-react';
+import { Folder, GitBranch } from 'lucide-react';
+import { ArctriMark } from '@/components/ArctriMark';
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
@@ -38,7 +39,7 @@ export function TitleBar() {
         height: 'env(titlebar-area-height, 35px)'
       }}
     >
-      {!isMac && <TerminalSquare size={14} className="mr-1 shrink-0 text-accent" />}
+      {!isMac && <ArctriMark size={14} className="mr-1 text-accent" />}
       {isMac ? <NativeMenu /> : <MenuBar />}
       <div className="flex min-w-0 flex-1 justify-center px-3 text-[11px] text-fg-muted">
         {id && cwd ? (

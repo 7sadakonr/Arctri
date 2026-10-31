@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronsRight, PanelRight, Pin, Plus, SquareTerminal, X } from 'lucide-react';
+import { ChevronDown, ChevronsRight, PanelRight, Pin, Plus, X } from 'lucide-react';
+import { TerminalIcon } from '@/components/TerminalIcon';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,7 +35,7 @@ function TabIcon({ id }: { id: string }) {
   const info = useSessions((s) => s.infos[id]);
   if (!info) return null;
   const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
-  return agentId ? <AgentLogo agent={agentId} /> : <SquareTerminal size={13} className="shrink-0 opacity-70" />;
+  return agentId ? <AgentLogo agent={agentId} /> : <TerminalIcon size={16} />;
 }
 
 /** The status of a tab, after its name (a fixed 14 px box, so it never moves the name). */
