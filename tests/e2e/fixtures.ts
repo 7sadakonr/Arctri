@@ -78,8 +78,8 @@ export async function waitForEditor(page: Page, timeout = 40_000): Promise<void>
 
 /** After opening a tab: exactly `count` tabs exist and the newest one is the selected one. */
 export async function expectNewTabSelected(page: Page, count: number): Promise<void> {
-  await expect(page.getByRole('tab')).toHaveCount(count);
-  await expect(page.getByRole('tab').nth(count - 1)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(count);
+  await expect(page.locator('[role="tab"][data-tab-kind="session"]').nth(count - 1)).toHaveAttribute('aria-selected', 'true');
 }
 
 export async function runCommand(page: Page, command: string): Promise<void> {

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Split panes.** The window is a grid. Drag any tab (terminal, file or diff) onto the left, right, top or bottom edge of a pane to split there,
+  or into another pane's tab strip to move it, or onto a strip along the edge of the whole window to get a pane across the full width or height (for instance under two side-by-side panes); dividers resize panes (double-click to even them out) and a pane can be zoomed. View > Split Right / Split Down /
+  Focus Next Pane / Zoom Pane do the same from the keyboard or the palette. Several terminals can be on screen and running at once. Files and diffs open in a pane
+  beside the terminal as before, and unsaved edits survive moving a file between panes.
+  While dragging, one highlight shows the area the tab would get and says what dropping does (split, insert, or join as a tab); dropping on the edge of the window splits across the whole window, and dropping on the line between two panes inserts a full-height pane there. New panes get an equal share (halves, thirds, quarters), and the drop zones that would give the same layout are one zone. While dragging, a small compass of round buttons appears in the pane under the pointer (sides split, the middle joins as a tab), and lines on the window's edges split across the whole window; point at one, or just drag into the left, right, top or bottom half of a pane (a pane too small to split joins the tabs instead).
+
 ## 0.4.0
 
 - **Attachments.** Ctrl+V or Alt+V of an image (the agent pastes it itself), files copied in the file manager, dropped files and the paperclip now show a preview chip

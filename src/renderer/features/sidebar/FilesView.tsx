@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/file-icon';
 import { useT } from '@/lib/i18n';
 import { isMac } from '@/lib/platform';
-import { useSessions } from '@/stores/sessions';
+import { useLayout, type FileTab } from '@/stores/layout';
 import { useFileClip } from './fileClipboard';
 import { insertText, refOf } from '../agents/insert';
 import { useChanges } from '../agents/useChanges';
@@ -394,19 +394,20 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
     stopEdit();
     await load(parent);
     only(rel);
-    if (kind === 'file') useSessions.getState().openViewer(info.id, rel, 'file');
+    if (kind === 'file') useLayout.getState().openFile({ sessionId: info.id, rel: rel, mode: 'file' });
   };
 
   /** Viewer tabs that show something under `base`, so a rename, a move or a delete can follow them. */
-  const viewerTabsUnder = (base: string) => (useSessions.getState().viewer[info.id]?.tabs ?? []).filter((x) => under(x.rel, base));
+  const viewerTabsUnder = (base: string) =>
+    Object.values(useLayout.getState().tabs).filter((x): x is FileTab => x.kind === 'file' && x.sessionId === info.id && under(x.rel, base));
 
   /** Everything the panel remembers about `old` follows it to `next`; the folders to look at again are returned. */
   const followMove = (old: string, next: string): string[] => {
     const moved = (p: string) => next + p.slice(old.length);
-    const store = useSessions.getState();
+    const store = useLayout.getState();
     for (const tab of viewerTabsUnder(old)) {
-      if (tab.mode === 'file') store.openViewer(info.id, moved(tab.rel), 'file');
-      store.closeViewer(info.id, tab.rel);
+      if (tab.mode === 'file') store.openFile({ sessionId: info.id, rel: moved(tab.rel), mode: 'file' });
+      store.close(tab.key);
     }
     const reopen = [...expanded].filter((x) => under(x, old)).map(moved);
     setExpanded((cur) => new Set([...cur].map((x) => (under(x, old) ? moved(x) : x))));
@@ -438,8 +439,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
       if (res.ok) gone.push(path);
       else failed++;
     }
-    const store = useSessions.getState();
-    for (const path of gone) for (const tab of viewerTabsUnder(path)) store.closeViewer(info.id, tab.rel);
+    for (const path of gone) for (const tab of viewerTabsUnder(path)) useLayout.getState().close(tab.key);
     const goneUnder = (p: string) => gone.some((g) => under(p, g));
     setExpanded((cur) => new Set([...cur].filter((x) => !goneUnder(x))));
     setTree((tr) => Object.fromEntries(Object.entries(tr).filter(([k]) => !goneUnder(k))));
@@ -513,7 +513,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
     if (edit || pendingDelete || ev.target !== ev.currentTarget) return;
     const at = selected === undefined ? -1 : rows.findIndex((r) => r.path === selected);
     const row = at < 0 ? undefined : rows[at];
-    const open = (r: Row) => (r.isDir ? toggle(r.path) : useSessions.getState().openViewer(info.id, r.path, 'file'));
+    const open = (r: Row) => (r.isDir ? toggle(r.path) : useLayout.getState().openFile({ sessionId: info.id, rel: r.path, mode: 'file' }));
     const mod = modKey(ev);
     if (ev.key === 'ArrowDown') select(rows[Math.min(rows.length - 1, at + 1)]?.path, ev.shiftKey);
     else if (ev.key === 'ArrowUp') select(rows[Math.max(0, at - 1)]?.path, ev.shiftKey);
@@ -586,7 +586,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
     const mod = isMac ? '⌘' : 'Ctrl+';
     return (
       <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-        {row && one && !row.isDir && <ContextMenuItem onSelect={() => useSessions.getState().openViewer(info.id, row.path, 'file')}>{t('files.open')}</ContextMenuItem>}
+        {row && one && !row.isDir && <ContextMenuItem onSelect={() => useLayout.getState().openFile({ sessionId: info.id, rel: row.path, mode: 'file' })}>{t('files.open')}</ContextMenuItem>}
         {row && (
           <ContextMenuItem onSelect={() => insertText(info.id, targets.map((p) => refOf(p.replace(/\\/g, '/'))).join(' '))}>
             {t('files.insertPath')}
@@ -745,7 +745,7 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
                       only(e.path);
                       if (e.isDir) toggle(e.path);
                       else if (ev.altKey) insertText(info.id, refOf(e.path.replace(/\\/g, '/')));
-                      else useSessions.getState().openViewer(info.id, e.path, 'file');
+                      else useLayout.getState().openFile({ sessionId: info.id, rel: e.path, mode: 'file' });
                     }}
                     onMouseEnter={() => {
                       // have the folder ready before the click

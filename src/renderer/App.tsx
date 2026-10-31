@@ -13,12 +13,14 @@ import { forgetNotified, notifyStatus } from '@/features/attention/notify';
 import { defaultProfile, openShell, wasClosedHere } from '@/features/launcher/actions';
 import { refreshAgents } from '@/features/launcher/NewTabMenu';
 import { SettingsDialog } from '@/features/settings/SettingsDialog';
-import { TabBar } from '@/features/tabs/TabBar';
 import { TitleBar } from '@/features/titlebar/TitleBar';
 import { HelpDialogs } from '@/features/titlebar/HelpDialogs';
 import { CloneDialog } from '@/features/launcher/CloneDialog';
 import { SessionSkeleton } from '@/features/terminal/SessionSkeleton';
-import { SessionView } from '@/features/terminal/SessionView';
+import { Workspace } from '@/features/layout/Workspace';
+import { SidebarDock } from '@/features/sidebar/SidebarDock';
+import { useReportUnsaved } from '@/features/layout/useReportUnsaved';
+import { useLayout } from '@/stores/layout';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
 import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
 import { isHomeFolder, pushRecent, toRecent } from '@/features/welcome/recent';
@@ -40,7 +42,8 @@ async function bootstrap(): Promise<void> {
     (window as unknown as Record<string, unknown>)['__arctriTest'] = {
       screen: (id?: string) => screenText(id ?? useSessions.getState().activeId ?? ''),
       activeId: () => useSessions.getState().activeId,
-      sessions: () => Object.values(useSessions.getState().infos)
+      sessions: () => Object.values(useSessions.getState().infos),
+      layout: () => JSON.parse(JSON.stringify({ root: useLayout.getState().root, groups: useLayout.getState().groups, tabs: useLayout.getState().tabs, focused: useLayout.getState().focused, zoomed: useLayout.getState().zoomed }))
     };
   }
 
@@ -75,7 +78,6 @@ async function bootstrap(): Promise<void> {
 
 export function App() {
   const order = useSessions((s) => s.order);
-  const infos = useSessions((s) => s.infos);
   const activeId = useSessions((s) => s.activeId);
   const booting = useSessions((s) => !s.booted || s.pendingOpen > 0);
   const prefs = useUi((s) => s.prefs);
@@ -134,6 +136,8 @@ export function App() {
     };
   }, []);
 
+  useReportUnsaved();
+
   useEffect(() => {
     void api.agentStatus.active(activeId ?? null);
   }, [activeId]);
@@ -162,13 +166,19 @@ export function App() {
     <TooltipProvider>
       <div className="flex h-full flex-col bg-bg pt-9 text-fg">
         <TitleBar />
-        <TabBar />
         <main className="relative min-h-0 flex-1">
-          {order.map((id) => {
-            const info = infos[id];
-            return info ? <SessionView key={id} info={info} active={id === activeId} /> : null;
-          })}
-          {order.length === 0 && (booting ? <SessionSkeleton /> : <WelcomeScreen />)}
+          {order.length > 0 ? (
+            <div className="flex h-full min-h-0">
+              <div className="min-w-0 flex-1">
+                <Workspace />
+              </div>
+              <SidebarDock />
+            </div>
+          ) : booting ? (
+            <SessionSkeleton />
+          ) : (
+            <WelcomeScreen />
+          )}
         </main>
       </div>
       <SettingsDialog />

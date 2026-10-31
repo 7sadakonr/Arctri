@@ -9,11 +9,8 @@ import { FOCUS_SESSION_EVENT } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
-import { useUi } from '@/stores/ui';
 import { AgentLogo } from '../agents/AgentLogo';
 import { AGENT_META } from '@shared/agents/meta';
-import { Sidebar } from '../sidebar/Sidebar';
-import { FileViewer } from '../viewer/FileViewer';
 import { BlockList } from '../blocks/BlockList';
 import { CommandEditor } from '../editor/CommandEditor';
 import { closeSession, restartSession } from '../launcher/actions';
@@ -30,14 +27,12 @@ function Elapsed({ since }: { since: number }) {
   return <>{formatDuration(now - since)}</>;
 }
 
-export function SessionView({ info, active }: { info: SessionInfo; active: boolean }) {
+/** `active`: this session is the one shown in its group. `focused`: and that group is where the keyboard is. */
+export function SessionView({ info, active, focused }: { info: SessionInfo; active: boolean; focused: boolean }) {
   const t = useT();
   const mountRef = useRef<HTMLDivElement>(null);
   const host = getHost(info);
   const uiPhase = useSessions((s) => s.uiPhase[info.id] ?? 'unknown');
-  const sidebarOpen = useUi((s) => s.prefs.sidebarOpen);
-  const viewerOpen = useSessions((s) => !!s.viewer[info.id]);
-  const viewerMax = useSessions((s) => !!s.viewer[info.id]?.maximized);
   const running = useBlocks((s) => s.blocks[info.id]?.findLast((b) => b.status === 'running'));
 
   const blockMode = info.kind === 'shell' && info.presentation === 'blocks' && info.integration === 'active';
@@ -51,16 +46,19 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
 
   useEffect(() => {
     host.setActive(active);
-    if (active && liveVisible) host.focus();
-  }, [active, liveVisible, host]);
+  }, [active, host]);
+
+  useEffect(() => {
+    if (active && focused && liveVisible) host.focus();
+  }, [active, focused, liveVisible, host]);
 
   // A menu or dialog that just closed hands keyboard focus back to the session.
   useEffect(() => {
-    if (!active || !liveVisible) return;
+    if (!active || !focused || !liveVisible) return;
     const h = () => host.focus();
     window.addEventListener(FOCUS_SESSION_EVENT, h);
     return () => window.removeEventListener(FOCUS_SESSION_EVENT, h);
-  }, [active, liveVisible, host]);
+  }, [active, focused, liveVisible, host]);
 
   return (
     <div
@@ -69,7 +67,7 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
       aria-hidden={!active}
       className={cn('absolute inset-0 flex', !active && 'pointer-events-none invisible')}
     >
-      <div className={cn('flex flex-col overflow-hidden', viewerOpen && viewerMax ? 'w-0 min-w-0 flex-none' : 'min-w-[320px] flex-1')}>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 min-w-0 flex-1">
         {blockMode && <BlockList sessionId={info.id} active={active} />}
@@ -151,11 +149,9 @@ export function SessionView({ info, active }: { info: SessionInfo; active: boole
         )}
       </div>
       </div>
-      {canType && <CommandEditor sessionId={info.id} focused={active} />}
+      {canType && <CommandEditor sessionId={info.id} focused={active && focused} />}
       {(info.kind === 'agent' || info.runningAgent) && <AgentBar info={info} active={active} />}
       </div>
-      {viewerOpen && info.cwd && <FileViewer info={info} active={active} />}
-      {sidebarOpen && info.cwd && <Sidebar info={info} active={active} />}
     </div>
   );
 }

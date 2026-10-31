@@ -27,17 +27,17 @@ test('several tabs: processes keep running in the background, rename, close ends
 
   // rename with F2
   await page.keyboard.press('F2');
-  await page.getByRole('tab').first().locator('input').fill('ทดสอบ rename');
+  await page.locator('[role="tab"][data-tab-kind="session"]').first().locator('input').fill('ทดสอบ rename');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('tab').first()).toContainText('ทดสอบ rename');
+  await expect(page.locator('[role="tab"][data-tab-kind="session"]').first()).toContainText('ทดสอบ rename');
 
   // closing a tab ends its process
   const pids = await page.evaluate(() =>
     (window as unknown as { __arctriTest: { sessions(): Array<{ pid: number }> } }).__arctriTest.sessions().map((s) => s.pid)
   );
   expect(pids).toHaveLength(2);
-  await page.getByRole('tab').nth(1).getByRole('button', { name: /close tab/i }).click();
-  await expect(page.getByRole('tab')).toHaveCount(1);
+  await page.locator('[role="tab"][data-tab-kind="session"]').nth(1).getByRole('button', { name: /close tab/i }).click();
+  await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(1);
   await expect
     .poll(() => {
       try {
@@ -72,15 +72,15 @@ test('the tab context menu duplicates and closes other tabs, and tabs have no pi
   const { page } = ad;
   {
     await waitForEditor(page);
-    await expect(page.getByRole('tab')).toHaveCount(1);
-    const first = page.getByRole('tab').first();
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(1);
+    const first = page.locator('[role="tab"][data-tab-kind="session"]').first();
     await first.hover();
     await expect(first.getByRole('button', { name: /pin tab/i })).toHaveCount(0);
     await first.click({ button: 'right' });
     await page.getByRole('menuitem', { name: /duplicate tab/i }).click();
-    await expect(page.getByRole('tab')).toHaveCount(2);
-    await page.getByRole('tab').first().click({ button: 'right' });
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(2);
+    await page.locator('[role="tab"][data-tab-kind="session"]').first().click({ button: 'right' });
     await page.getByRole('menuitem', { name: /close other tabs/i }).click();
-    await expect(page.getByRole('tab')).toHaveCount(1);
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(1);
   }
 });

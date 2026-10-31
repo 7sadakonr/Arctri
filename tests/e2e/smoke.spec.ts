@@ -6,7 +6,7 @@ test('starts, opens a shell tab and runs a command as a block', async ({ ad }) =
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 
-  await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[role="tab"][data-tab-kind="session"]').first()).toBeVisible({ timeout: 30_000 });
   await waitForEditor(page);
   const editor = activeEditor(page);
   await editor.fill('echo hello-from-e2e');

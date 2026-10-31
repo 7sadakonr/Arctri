@@ -205,7 +205,10 @@ export class TerminalHost {
   }
 
   mount(parent: HTMLElement): void {
+    const moved = !!this.element.parentElement && this.element.parentElement !== parent;
     if (this.element.parentElement !== parent) parent.appendChild(this.element);
+    // a terminal moved to another group of the grid is drawn again at its new size
+    if (moved) requestAnimationFrame(() => requestAnimationFrame(() => { this.fitNow(); this.repaint(); }));
     if (!this.term.element) {
       this.term.open(this.element);
       this.enableWebgl();

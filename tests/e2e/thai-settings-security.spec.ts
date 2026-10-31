@@ -50,7 +50,7 @@ test('settings: Thai UI, light theme and persistence across restarts', async () 
     await expect(again.page.locator('html')).toHaveAttribute('data-theme', 'light');
     await expect(activeEditor(again.page)).toHaveAttribute('aria-label', 'คำสั่ง');
     // tab layout is restored (as a new shell; processes do not survive a restart)
-    await expect(again.page.getByRole('tab')).toHaveCount(1);
+    await expect(again.page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(1);
   } finally {
     await again.app.close();
   }

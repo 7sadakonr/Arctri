@@ -94,15 +94,15 @@ test('typing codex in a shell tab switches to the Codex bar, with working contro
     await panel.getByRole('treeitem', { name: /main\.ts/ }).click({ modifiers: ['Alt'] });
     await waitScreen(page, /paste: @src\/main\.ts/);
     await panel.getByRole('treeitem', { name: /main\.ts/ }).click();
-    await expect(active(page).getByTestId('file-viewer')).toBeVisible();
+    await expect(page.getByTestId('file-viewer')).toBeVisible();
     // a second file opens as a second tab; closing tabs one by one ends with the panel closing
     await panel.getByRole('treeitem', { name: /a\.txt/ }).first().click();
-    const viewer = active(page).getByTestId('file-viewer');
-    await expect(viewer.getByRole('tab')).toHaveCount(2);
-    await viewer.getByRole('button', { name: /close tab/i }).first().click();
-    await expect(viewer.getByRole('tab')).toHaveCount(1);
-    await viewer.getByRole('button', { name: /close tab/i }).click();
-    await expect(active(page).getByTestId('file-viewer')).toHaveCount(0);
+    const fileTabs = page.locator('[role="tab"][data-tab-kind="file"]');
+    await expect(fileTabs).toHaveCount(2);
+    await fileTabs.first().getByRole('button', { name: /close tab/i }).click();
+    await expect(fileTabs).toHaveCount(1);
+    await fileTabs.getByRole('button', { name: /close tab/i }).click();
+    await expect(page.getByTestId('file-viewer')).toHaveCount(0);
     await panel.getByLabel(/filter/i).fill('a.t');
     await expect(panel.getByRole('treeitem', { name: /a\.txt/ })).toBeVisible();
     await expect(panel.getByRole('treeitem', { name: /main\.ts/ })).toHaveCount(0);
@@ -170,13 +170,13 @@ test('an agent in a background tab marks the tab and raises a notification', asy
   try {
     await runAgent(page, w, 'codex --notify-after 3');
     await page.keyboard.press('Control+Shift+T');
-    await expect(page.getByRole('tab')).toHaveCount(2);
-    await expect(page.getByRole('tab').first().locator('[data-status]')).toHaveAttribute('data-unread', 'true', { timeout: 15_000 });
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(2);
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]').first().locator('[data-status]')).toHaveAttribute('data-unread', 'true', { timeout: 15_000 });
     const diag = await page.evaluate(() => (window as unknown as { arctri: { app: { diagnostics(): Promise<{ notifications?: unknown[] }> } } }).arctri.app.diagnostics());
     expect(diag.notifications?.length).toBeGreaterThanOrEqual(1);
     // opening the tab clears the mark
-    await page.getByRole('tab').first().click();
-    await expect(page.getByRole('tab').first().locator('[data-status]')).not.toHaveAttribute('data-unread', 'true');
+    await page.locator('[role="tab"][data-tab-kind="session"]').first().click();
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]').first().locator('[data-status]')).not.toHaveAttribute('data-unread', 'true');
   } finally {
     await app.close();
   }
@@ -193,7 +193,7 @@ test('tab status marks: always present, never an error while a new tab starts, o
       w.__missing = 0;
       w.__badMotion = 0;
       setInterval(() => {
-        for (const t of document.querySelectorAll('[role=tab]')) {
+        for (const t of document.querySelectorAll('[role=tab][data-tab-kind=session]')) {
           const d = t.querySelector('[data-status]');
           if (!d) w.__missing++;
           else {
@@ -208,7 +208,7 @@ test('tab status marks: always present, never an error while a new tab starts, o
     });
     for (let i = 0; i < 3; i++) {
       await page.keyboard.press('Control+Shift+T');
-      await expect(page.getByRole('tab')).toHaveCount(i + 2);
+      await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(i + 2);
       await page.waitForTimeout(6000);
     }
     const r = await page.evaluate(() => ({

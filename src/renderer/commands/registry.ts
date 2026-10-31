@@ -5,11 +5,13 @@ import { BRANCH_QUICK_SWITCH_EVENT } from '@/lib/branch-events';
 import { isMac, kbd } from '@/lib/platform';
 import { stepZoom } from '@/lib/zoom';
 import { useBlocks } from '@/stores/blocks';
+import { useLayout } from '@/stores/layout';
 import { useSessions } from '@/stores/sessions';
 import { useUpdate } from '@/stores/update';
 import { useUi } from '@/stores/ui';
 import { TOGGLE_RICH_EVENT } from '../features/agents/AgentBar';
-import { closeSession, openSimilarTab, pickAndOpenProject, restartSession } from '../features/launcher/actions';
+import { closeActiveTab, splitActive } from '../features/layout/actions';
+import { openSimilarTab, pickAndOpenProject, restartSession } from '../features/launcher/actions';
 import { toggleSidebar } from '../features/sidebar/toggle';
 import { matchKey, type PlatformKeys } from './keys';
 
@@ -58,10 +60,9 @@ export interface Command {
 
 const NEEDS_TAB = (c: CommandCtx) => c.hasTab;
 
+/** The next tab in the focused group (Ctrl+Tab), files and sidebars included. */
 function step(dir: 1 | -1): void {
-  const s = useSessions.getState();
-  if (s.order.length < 2 || !s.activeId) return;
-  s.setActive(s.order[(s.order.indexOf(s.activeId) + dir + s.order.length) % s.order.length]!);
+  useLayout.getState().stepTab(dir);
 }
 
 function showSidebar(view: 'changes' | 'branches'): void {
@@ -93,7 +94,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'tab.close', title: 'menu.closeTab', shortcut: 'Ctrl+Shift+W', when: NEEDS_TAB,
     keys: { mac: { key: 'w', mod: true }, other: { key: 'w', mod: true, shift: true } },
-    run: (c) => c.activeId && void closeSession(c.activeId)
+    run: () => closeActiveTab()
   },
   { id: 'tab.next', title: 'menu.nextTab', shortcut: 'Ctrl+Tab', keys: { key: 'tab', ctrl: true }, when: NEEDS_TAB, run: () => step(1) },
   { id: 'tab.prev', title: 'menu.prevTab', shortcut: 'Ctrl+Shift+Tab', keys: { key: 'tab', ctrl: true, shift: true }, when: NEEDS_TAB, run: () => step(-1) },
@@ -106,6 +107,11 @@ export const COMMANDS: Command[] = [
     run: (c) => c.activeId && useSessions.getState().togglePin(c.activeId)
   },
   { id: 'tab.find', title: 'cmd.findSession', keywords: 'switch tab search session agent', run: () => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT, { detail: 'tabs' })) },
+  { id: 'pane.splitRight', title: 'cmd.splitRight', keywords: 'pane group split side', when: NEEDS_TAB, run: () => void splitActive('right') },
+  { id: 'pane.splitDown', title: 'cmd.splitDown', keywords: 'pane group split below', when: NEEDS_TAB, run: () => void splitActive('bottom') },
+  { id: 'pane.focusNext', title: 'cmd.focusNextPane', keywords: 'pane group', when: () => Object.keys(useLayout.getState().groups).length > 1, run: () => useLayout.getState().stepFocus(1) },
+  { id: 'pane.focusPrev', title: 'cmd.focusPrevPane', keywords: 'pane group', when: () => Object.keys(useLayout.getState().groups).length > 1, run: () => useLayout.getState().stepFocus(-1) },
+  { id: 'pane.zoom', title: 'cmd.zoomPane', keywords: 'pane group maximize fullscreen', when: NEEDS_TAB, run: () => useLayout.getState().zoom() },
   { id: 'app.openFolder', title: 'menu.openFolder', shortcut: 'Ctrl+K Ctrl+O', keywords: 'project', run: () => void pickAndOpenProject() },
   { id: 'app.clone', title: 'menu.clone', keywords: 'git repository', run: () => useUi.getState().setCloneOpen(true) },
   { id: 'app.settings', title: 'menu.settings', keywords: 'preferences options', shortcut: 'Ctrl+,', keys: { key: ',', mod: true }, run: () => useUi.getState().openSettings(true) },

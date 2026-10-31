@@ -71,6 +71,12 @@
   --ad-ok: #7bc68f;
   --ad-danger: #e5736b;
   --ad-warn: #d9b36a;
+  --ad-radius-sm: 6px;
+  --ad-radius: 8px;
+  --ad-radius-lg: 12px;
+  --ad-drop-fill: color-mix(in srgb, var(--ad-accent) 12%, transparent);
+  --ad-drop-ring: color-mix(in srgb, var(--ad-accent) 55%, transparent);
+  --ad-shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   color-scheme: dark;
 }
 [data-theme='light'] {
@@ -88,6 +94,8 @@
   --ad-ok: #2e8b57;
   --ad-danger: #d64545;
   --ad-warn: #b7791f;
+  --ad-drop-fill: color-mix(in srgb, var(--ad-accent) 9%, transparent);
+  --ad-shadow-float: 0 8px 28px rgba(0, 0, 0, 0.16), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
   color-scheme: light;
 }
 
@@ -192,6 +200,46 @@ button {
     }
     to {
       opacity: 1;
+    }
+  }
+  /* the drop preview flows from one target to the next, and a pane that was just split off settles in */
+  .ad-drop-preview {
+    transition:
+      left 180ms cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      top 180ms cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      width 180ms cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      height 180ms cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      opacity 120ms ease-out;
+  }
+  .ad-compass-button {
+    transition:
+      transform 130ms cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      background-color 120ms ease-out,
+      border-color 120ms ease-out,
+      color 120ms ease-out;
+  }
+  .ad-compass-bar {
+    transition:
+      transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      width 160ms ease-out,
+      height 160ms ease-out,
+      opacity 120ms ease-out,
+      box-shadow 160ms ease-out;
+  }
+  .ad-pane-in {
+    animation: ad-pane-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .ad-tab-shift {
+    transition: transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  @keyframes ad-pane-in {
+    from {
+      opacity: 0.55;
+      transform: scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
     }
   }
   @keyframes ad-enter-pop {

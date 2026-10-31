@@ -1,4 +1,4 @@
-import { Folder, GitBranch } from 'lucide-react';
+import { Folder, GitBranch, PanelRight } from 'lucide-react';
 import { ArctriMark } from '@/components/ArctriMark';
 import { Tip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
@@ -9,6 +9,10 @@ import { isMac } from '@/lib/platform';
 import { tNow, useT } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { Button } from '@/components/ui/button';
+import { focusActiveSession } from '@/lib/focus';
+import { AttentionCenter } from '../attention/AttentionCenter';
+import { toggleSidebar } from '../sidebar/toggle';
 import { MenuBar } from './MenuBar';
 import { NativeMenu } from './NativeMenu';
 import { UpdateButton } from '../update/UpdateButton';
@@ -22,6 +26,8 @@ export function TitleBar() {
   const id = useSessions((s) => s.activeId);
   const cwd = useSessions((s) => (s.activeId ? s.infos[s.activeId]?.cwd : undefined));
   const branch = useSessions((s) => (s.activeId ? s.infos[s.activeId]?.gitBranch : undefined));
+  const hasTabs = useSessions((s) => s.order.length > 0);
+  const filesOpen = useUi((s) => s.prefs.sidebarOpen);
 
   return (
     <>
@@ -61,6 +67,27 @@ export function TitleBar() {
           <span>Arctri</span>
         )}
       </div>
+      {hasTabs && (
+        <div className="no-drag flex shrink-0 items-center gap-0.5">
+          <AttentionCenter />
+          {id && cwd && (
+            <Tip label={t('agent.filesHint')} side="bottom">
+              <Button
+                variant={filesOpen ? 'outline' : 'ghost'}
+                size="icon"
+                aria-label={t('agent.files')}
+                aria-pressed={filesOpen}
+                onClick={() => {
+                  toggleSidebar();
+                  focusActiveSession();
+                }}
+              >
+                <PanelRight size={14} />
+              </Button>
+            </Tip>
+          )}
+        </div>
+      )}
       <UpdateButton />
       {branch && (
         <button
