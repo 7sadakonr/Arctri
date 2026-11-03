@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0-beta.1
+## 0.4.0-beta
 
 - **Split panes.** The window is a grid. Drag any tab (terminal, file or diff) onto the left, right, top or bottom edge of a pane to split there,
   or into another pane's tab strip to move it, or onto a strip along the edge of the whole window to get a pane across the full width or height (for instance under two side-by-side panes); dividers resize panes (double-click to even them out) and a pane can be zoomed. View > Split Right / Split Down /
