@@ -19,7 +19,8 @@ import { agentLaunchOf, closeSession, openAgent, openShellHere, restartSession }
 import { sendCommand } from './commands';
 import { ChangesChip } from './ChangesChip';
 import { Chip } from './Chip';
-import { attachFiles, insertText } from './insert';
+import { AttachmentChips } from './AttachmentChips';
+import { attachFiles, insertAttachments } from './insert';
 import { RichInput } from './RichInput';
 import { useChanges } from './useChanges';
 
@@ -86,8 +87,7 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
             <Chip
               aria-label={t('agent.attach')}
               onClick={async () => {
-                const refs = await attachFiles(info.id);
-                if (refs.length) insertText(info.id, refs.join(' '));
+                insertAttachments(info.id, await attachFiles(info.id));
                 focusActiveSession();
               }}
               className="w-6 justify-center px-0"
@@ -96,6 +96,8 @@ export function AgentBar({ info, active }: { info: SessionInfo; active: boolean 
             </Chip>
           </Tip>
         )}
+
+        <AttachmentChips sessionId={info.id} />
 
         <ChangesChip sessionId={info.id} data={changes} />
 

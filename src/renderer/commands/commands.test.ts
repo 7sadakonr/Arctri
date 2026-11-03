@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { filterRanked } from './filter';
-import { matchKey, toAccelerator } from './keys';
+import { chordLetter, matchKey, toAccelerator } from './keys';
 
 const ev = (key: string, o: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }> = {}) =>
   ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...o });
@@ -45,5 +45,19 @@ describe('toAccelerator', () => {
     expect(toAccelerator({ key: 'tab', ctrl: true, shift: true })).toBe('Ctrl+Shift+Tab');
     expect(toAccelerator([{ key: '=', mod: true, anyShift: true }])).toBe('Cmd+Plus');
     expect(toAccelerator(undefined)).toBeUndefined();
+  });
+});
+
+describe('chordLetter', () => {
+  const k = (key: string, code: string, o: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) =>
+    ({ key, code, ctrlKey: false, metaKey: false, altKey: false, ...o });
+  it('names a letter chord by its physical key, whatever the layout', () => {
+    expect(chordLetter(k('อ', 'KeyV', { ctrlKey: true }))).toBe('v');
+    expect(chordLetter(k('อ', 'KeyV', { altKey: true }))).toBe('v');
+    expect(chordLetter(k('v', 'KeyV', { metaKey: true }))).toBe('v');
+  });
+  it('keeps the key itself without a modifier or for other keys', () => {
+    expect(chordLetter(k('อ', 'KeyV'))).toBe('อ');
+    expect(chordLetter(k('ArrowUp', 'ArrowUp', { ctrlKey: true }))).toBe('arrowup');
   });
 });

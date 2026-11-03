@@ -47,8 +47,8 @@ test('sidebar: open from the start, with Files, Changes, Branches and History', 
     await panel.getByRole('button', { name: 'Changes' }).click();
     const changed = panel.locator('[data-path="a.txt"]');
     await expect(changed).toBeVisible({ timeout: 20_000 });
-    await changed.click();
-    await expect(active(page).getByTestId('file-viewer')).toBeVisible();
+    await changed.getByRole('button', { name: 'a.txt' }).click();
+    await expect(page.getByTestId('file-viewer')).toBeVisible();
 
     // Branches: switching with uncommitted edits requires confirmation and leaves the terminal alone.
     await panel.getByRole('button', { name: 'Branches' }).click();
@@ -66,8 +66,7 @@ test('sidebar: open from the start, with Files, Changes, Branches and History', 
     await expect(commit).toBeVisible({ timeout: 20_000 });
     await commit.getByRole('button').first().click();
     await commit.getByRole('button', { name: /b\.txt/ }).click();
-    const viewer = active(page).getByTestId('file-viewer');
-    await expect(viewer.getByRole('tab', { name: /b\.txt @/ })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[role="tab"][data-tab-kind="file"]', { hasText: /b\.txt @/ })).toBeVisible({ timeout: 20_000 });
 
     // Ctrl+Shift+E hides it and brings it back
     await page.keyboard.press('Control+Shift+E');

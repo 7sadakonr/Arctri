@@ -65,8 +65,8 @@ for (const agent of ['claude', 'codex']) {
       const item = page.getByRole('menuitem', { name: /Ubuntu · zsh/ });
       await item.waitFor({ state: 'visible', timeout: 60_000 });
       await item.first().click();
-      await expect(page.getByRole('tab')).toHaveCount(2);
-      await expect(page.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(2);
+      await expect(page.locator('[role="tab"][data-tab-kind="session"]').nth(1)).toHaveAttribute('aria-selected', 'true');
       await waitForEditor(page, 60_000);
       const editor = page.locator('[data-active="true"]').getByTestId('command-editor');
       await editor.fill(agent);

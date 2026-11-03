@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/file-icon';
 import { tNow, useT } from '@/lib/i18n';
-import { useSessions } from '@/stores/sessions';
+import { useLayout } from '@/stores/layout';
 import { useUi } from '@/stores/ui';
 import { refreshChanges, refreshChangesNow, useChanges, type ChangesData } from '../agents/useChanges';
 import { useGitEpoch, useGitSync } from '@/stores/git-sync';
@@ -83,10 +83,10 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
   const [busy, setBusy] = useState<'commit' | 'push' | 'fetch' | 'pull' | 'stage' | undefined>(undefined);
   const [expanded, setExpanded] = useState(false);
   // the file whose diff is open in the viewer is the selected row
-  const selected = useSessions((s) => {
-    const v = s.viewer[info.id];
-    const tab = v?.tabs.find((x) => x.rel === v.active);
-    return tab && tab.mode === 'diff' && !tab.rev ? (tab.path ?? tab.rel).replace(/\\/g, '/') : undefined;
+  const selected = useLayout((s) => {
+    const g = s.focused ? s.groups[s.focused] : undefined;
+    const tab = g ? s.tabs[g.active] : undefined;
+    return tab && tab.kind === 'file' && tab.sessionId === info.id && tab.mode === 'diff' && !tab.rev ? (tab.path ?? tab.rel).replace(/\\/g, '/') : undefined;
   });
   // what the user just ticked, shown at once while git catches up; dropped when the fresh status arrives
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
@@ -265,7 +265,7 @@ export function ChangesView({ info, active }: { info: SessionInfo; active: boole
         <button
           type="button"
           title={f.path}
-          onClick={() => useSessions.getState().openViewer(info.id, f.path, f.status.includes('D') ? 'file' : 'diff', { preview: true })}
+          onClick={() => useLayout.getState().openFile({ sessionId: info.id, rel: f.path, mode: f.status.includes('D') ? 'file' : 'diff', preview: true })}
           className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
         >
           <img src={iconUrl(baseName(f.path), false)} alt="" width={16} height={16} draggable={false} className="shrink-0" />

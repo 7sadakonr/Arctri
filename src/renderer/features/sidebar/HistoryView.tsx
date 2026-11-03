@@ -7,7 +7,7 @@ import { iconUrl } from '@/lib/file-icon';
 import { useLang, useT } from '@/lib/i18n';
 import type { MessageKey } from '@shared/i18n';
 import { relativeTime } from '@/lib/relative-time';
-import { useSessions } from '@/stores/sessions';
+import { useLayout } from '@/stores/layout';
 import { useGitEpoch } from '@/stores/git-sync';
 import { useChanges } from '../agents/useChanges';
 import { baseName, dirName } from './ChangesView';
@@ -98,7 +98,7 @@ export function HistoryView({ info, active }: { info: SessionInfo; active: boole
                     key={f.path}
                     type="button"
                     title={f.path}
-                    onClick={() => useSessions.getState().openViewer(info.id, `${c.hash}:${f.path}`, 'diff', { path: f.path, rev: c.hash })}
+                    onClick={() => useLayout.getState().openFile({ sessionId: info.id, rel: `${c.hash}:${f.path}`, mode: 'diff', path: f.path, rev: c.hash })}
                     className="flex w-full items-center gap-2 py-1 pl-8 pr-3 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
                   >
                     <img src={iconUrl(baseName(f.path), false)} alt="" width={14} height={14} draggable={false} className="shrink-0" />

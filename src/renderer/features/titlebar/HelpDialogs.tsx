@@ -1,4 +1,4 @@
-import { TerminalSquare } from 'lucide-react';
+import { ArctriMark } from '@/components/ArctriMark';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
@@ -77,7 +77,7 @@ export function HelpDialogs() {
         {which === 'about' && (
           <div className="text-[13px]" data-testid="about">
             <div className="flex items-center gap-3">
-              <TerminalSquare size={32} className="shrink-0 text-accent" />
+              <ArctriMark size={32} className="text-accent" />
               <div className="min-w-0">
                 <div className="text-base font-semibold">Arctri</div>
               </div>

@@ -1,5 +1,6 @@
 import { kbd, modKey } from '@/lib/platform';
-import { FolderOpen, GitFork, Plus, TerminalSquare, X } from 'lucide-react';
+import { FolderOpen, GitFork, Plus, X } from 'lucide-react';
+import { TerminalIcon } from '@/components/TerminalIcon';
 import { useEffect, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
@@ -98,7 +99,7 @@ export function WelcomeScreen() {
           {shown.map((r, i) => (
             <Row
               key={`${r.env}:${r.distro ?? ''}:${r.path}`}
-              icon={<TerminalSquare size={14} />}
+              icon={<TerminalIcon size={16} className="text-fg" />}
               label={projectName(r.path)}
               detail={r.env === 'wsl' ? `${r.distro}: ${r.path}` : r.path}
               hint={kbd(`Ctrl+${i + 1}`)}

@@ -5,7 +5,7 @@ import {
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { Chip } from './Chip';
-import { useSessions } from '@/stores/sessions';
+import { useLayout } from '@/stores/layout';
 import type { ChangesData } from './useChanges';
 
 const statusColor = (s: string) => (s === '??' ? 'text-ok' : s.includes('D') ? 'text-danger' : 'text-warn');
@@ -40,7 +40,7 @@ export function ChangesChip({ sessionId, data }: { sessionId: string; data: Chan
       >
         <DropdownMenuLabel>{data.files.length ? t('agent.changes', { n: data.files.length }) : t('agent.changesNone')}</DropdownMenuLabel>
         {data.files.map((f) => (
-          <DropdownMenuItem key={f.path} onSelect={() => useSessions.getState().openViewer(sessionId, f.path, f.status.includes('D') ? 'file' : 'diff', { preview: true })}>
+          <DropdownMenuItem key={f.path} onSelect={() => useLayout.getState().openFile({ sessionId, rel: f.path, mode: f.status.includes('D') ? 'file' : 'diff', preview: true })}>
             <span className={`w-5 shrink-0 font-mono text-[10px] ${statusColor(f.status)}`}>{f.status.trim() || 'M'}</span>
             <span className="min-w-0 flex-1 truncate font-mono" title={f.path}>
               {f.path}

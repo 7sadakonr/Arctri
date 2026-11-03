@@ -9,6 +9,7 @@ import { useBlocks } from '@/stores/blocks';
 import { pushRecent, toRecent } from '../welcome/recent';
 import { confirmPreWork } from './preWork';
 import { recoverHint } from './recover';
+import { confirmDiscard, dirtyTabsOf } from '../layout/actions';
 
 const INITIAL = { cols: 120, rows: 30 };
 
@@ -135,6 +136,9 @@ export const wasClosedHere = (id: string): boolean => closedHere.has(id);
  * background in the main process.
  */
 export async function closeSession(id: string): Promise<void> {
+  // files of this tab with unsaved edits would be lost with it
+  const unsaved = dirtyTabsOf(id);
+  if (unsaved.length > 0 && !confirmDiscard(unsaved)) return;
   closedHere.add(id);
   agentLaunches.delete(id);
   disposeHost(id);

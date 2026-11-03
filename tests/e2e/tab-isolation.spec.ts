@@ -11,12 +11,12 @@ test.skip('a hidden tab never paints over the active one (agent running in tab 1
     await waitForEditor(page);
     await page.getByRole('button', { name: /new tab/i }).nth(1).click();
     await page.getByRole('menuitem', { name: /Codex in Windows/ }).click();
-    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(2);
     await waitScreen(page, 'FAKE-AGENT ready', 30_000);
 
     await page.keyboard.press('Control+Shift+T');
-    await expect(page.getByRole('tab')).toHaveCount(3);
-    await expect(page.getByRole('tab').nth(2)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(3);
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]').nth(2)).toHaveAttribute('aria-selected', 'true');
 
     const owner = () =>
       page.evaluate(() => {

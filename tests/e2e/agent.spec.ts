@@ -9,7 +9,7 @@ const test = base;
 async function openFakeAgent(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: /new tab/i }).nth(1).click();
   await page.getByRole('menuitem', { name: /Codex in Windows/ }).click();
-  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(2);
   await waitScreen(page, 'FAKE-AGENT ready', 30_000);
 }
 
@@ -21,7 +21,7 @@ test.skip('agent session: native TUI, input, paste, composer, commands, approval
 
     // identity is shown, and only controls that can work are offered
     const bar = active(page);
-    await expect(page.getByRole('tab').nth(1)).toContainText('Codex · Windows');
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]').nth(1)).toContainText('Codex · Windows');
     await expect(bar.getByTestId('agent-bar')).toHaveAttribute('data-agent', 'codex');
     await expect(bar.getByText(/running/i)).toBeVisible();
 
@@ -63,7 +63,7 @@ test.skip('agent session: native TUI, input, paste, composer, commands, approval
     await expect(page.getByText(/The process ended/)).toBeVisible();
     await bar.getByRole('button', { name: /restart/i }).first().click();
     await waitScreen(page, 'FAKE-AGENT ready', 30_000);
-    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(2);
   } finally {
     await app.close();
   }
@@ -89,7 +89,7 @@ test.skip('resume opens the agent with its resume subcommand (agent installed as
     await waitForEditor(page);
     await openFakeAgent(page);
     await active(page).getByRole('button', { name: /resume last/i }).click();
-    await expect(page.getByRole('tab')).toHaveCount(3);
+    await expect(page.locator('[role="tab"][data-tab-kind="session"]')).toHaveCount(3);
     await waitScreen(page, 'args=[resume --last]', 30_000);
   } finally {
     await app.close();

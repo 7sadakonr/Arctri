@@ -36,11 +36,11 @@ export const ansiPalette = (dark: boolean): string[] => (dark ? ANSI_DARK : ANSI
 export function terminalTheme(dark: boolean): ITheme {
   const p = ansiPalette(dark);
   return {
-    background: dark ? '#0e0f13' : '#fbfbfd',
-    foreground: dark ? '#d7dae3' : '#23252e',
-    cursor: dark ? '#7aa2ff' : '#2358c4',
-    cursorAccent: dark ? '#0e0f13' : '#fbfbfd',
-    selectionBackground: dark ? '#2d3a5e' : '#bcd0ff',
+    background: dark ? '#0a0a0a' : '#ededed',
+    foreground: dark ? '#ededed' : '#111111',
+    cursor: dark ? '#f2f2f2' : '#111111',
+    cursorAccent: dark ? '#0a0a0a' : '#ededed',
+    selectionBackground: dark ? '#383838' : '#cfcfcf',
     black: p[0]!, red: p[1]!, green: p[2]!, yellow: p[3]!, blue: p[4]!, magenta: p[5]!, cyan: p[6]!, white: p[7]!,
     brightBlack: p[8]!, brightRed: p[9]!, brightGreen: p[10]!, brightYellow: p[11]!,
     brightBlue: p[12]!, brightMagenta: p[13]!, brightCyan: p[14]!, brightWhite: p[15]!

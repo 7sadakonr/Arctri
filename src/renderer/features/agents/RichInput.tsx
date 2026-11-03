@@ -22,7 +22,7 @@ export function RichInput({ sessionId, onClose }: { sessionId: string; onClose: 
   };
 
   const attach = async () => {
-    const refs = await attachFiles(sessionId);
+    const refs = (await attachFiles(sessionId)).map((a) => a.ref);
     if (refs.length) setText((v) => `${v}${v && !v.endsWith(' ') && !v.endsWith('\n') ? ' ' : ''}${refs.join(' ')} `);
     area.current?.focus();
   };

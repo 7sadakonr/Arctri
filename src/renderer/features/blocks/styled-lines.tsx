@@ -5,7 +5,7 @@ import { resolveColor } from '../terminal/theme';
 function styleCss(s: CellStyle, dark: boolean): React.CSSProperties {
   let fg = resolveColor(s.fg, dark);
   let bg = resolveColor(s.bg, dark);
-  if (s.inverse) [fg, bg] = [bg ?? (dark ? '#0e0f13' : '#fbfbfd'), fg ?? (dark ? '#d7dae3' : '#23252e')];
+  if (s.inverse) [fg, bg] = [bg ?? (dark ? '#0a0a0a' : '#ededed'), fg ?? (dark ? '#ededed' : '#111111')];
   const css: React.CSSProperties = {};
   if (fg) css.color = fg;
   if (bg) css.backgroundColor = bg;

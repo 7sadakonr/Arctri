@@ -12,6 +12,15 @@ export type PlatformKeys = KeySpec | { mac: KeySpec; other: KeySpec };
 
 type KeyEventLike = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>;
 
+/**
+ * The key of a chord as a lower-case name that does not depend on the keyboard layout: with a modifier held, a letter key is named
+ * by its physical position (Ctrl+V on a Thai layout reports `อ` as the key, but `KeyV` as the code).
+ */
+export function chordLetter(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'metaKey' | 'altKey'>): string {
+  const m = /^Key([A-Z])$/.exec(e.code ?? '');
+  return m && (e.ctrlKey || e.metaKey || e.altKey) ? m[1]!.toLowerCase() : e.key.toLowerCase();
+}
+
 const pick = (k: PlatformKeys, mac: boolean): KeySpec => ('mac' in k ? (mac ? k.mac : k.other) : k);
 
 export function matchKey(e: KeyEventLike, keys: PlatformKeys | PlatformKeys[], mac: boolean): boolean {

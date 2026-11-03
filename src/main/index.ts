@@ -289,7 +289,7 @@ async function start(): Promise<void> {
       onPrefsChanged: (p) => {
         update.configure(p.updates);
         const dark = p.theme === 'dark';
-        if (process.platform !== 'darwin') win?.setTitleBarOverlay({ color: dark ? '#15171d' : '#f1f2f6', symbolColor: dark ? '#c9ccd6' : '#23252e' });
+        if (process.platform !== 'darwin') win?.setTitleBarOverlay({ color: dark ? '#121212' : '#ffffff', symbolColor: dark ? '#8e8e8e' : '#111111' });
       },
       diagnostics: () => ({
         app: app.getVersion(), electron: process.versions.electron, node: process.versions.node,

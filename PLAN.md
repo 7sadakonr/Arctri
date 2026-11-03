@@ -878,7 +878,7 @@ Phase 5: T1–T3 เริ่มได้หลัง Phase 4 ; T4 packaging pip
 ---
 
 ## 17. Deferred to MVP 2
-- Split panes
+- ~~Split panes~~ (done after MVP 1: docs/decisions/ADR-011-split-panes.md)
 - Programmable shell completion (bash-completion, PowerShell argument completers ผ่าน sidecar)
 - AI command prediction/suggestion
 - Command palette และค้นหาใน block (search addon)
