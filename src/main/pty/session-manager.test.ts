@@ -1,7 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { encodeB64 } from '@shared/osc/protocol';
 import type { ShellProfile } from '@shared/types/env';
-import type { SessionInfo } from '@shared/types/session';
+import { FOLDER_MISSING, type SessionInfo, type SessionSpec } from '@shared/types/session';
 import type { PtyBackend, PtyProcess, PtySpawnOptions } from './pty-backend';
 import { SessionManager, type FinishedCommand } from './session-manager';
 
@@ -331,5 +334,64 @@ describe('SessionManager', () => {
     expect(last()).toMatchObject({ title: 'build server', titleSource: 'user' });
     m.rename(id, '   ');
     expect(last().titleSource).toBe('auto');
+  });
+});
+
+describe('SessionManager: the folder a session starts in', () => {
+  const local = { ...profile, id: 'local:bash', env: { kind: 'local' as const }, executable: '/bin/bash', integration: 'cwd-only' as const };
+  const inTemp = (name: string) => ({ env: 'local' as const, path: join(tmpdir(), name) as never });
+  const start = (cwd: SessionSpec['cwd']) => ({ profileId: local.id, kind: 'shell' as const, cols: 80, rows: 24, ...(cwd ? { cwd } : {}) });
+
+  it('does not start a shell in a folder that is gone, and says why in the log', async () => {
+    const { m, spawns, logs } = setup({ profile: local });
+    const gone = inTemp(`arctri-gone-${process.pid}-${Date.now()}`);
+    await expect(m.create(start(gone))).rejects.toThrow(FOLDER_MISSING);
+    expect(spawns).toHaveLength(0);
+    expect(m.list()).toHaveLength(0);
+    expect(logs).toContainEqual(expect.objectContaining({ level: 'warn', msg: 'folder missing', detail: expect.objectContaining({ code: 'ENOENT' }) }));
+  });
+
+  it('treats a file in place of the folder as gone too', async () => {
+    const { m, spawns } = setup({ profile: local });
+    const dir = mkdtempSync(join(tmpdir(), 'arctri-file-'));
+    const file = join(dir, 'not-a-folder');
+    writeFileSync(file, '');
+    try {
+      await expect(m.create(start({ env: 'local', path: file as never }))).rejects.toThrow(FOLDER_MISSING);
+      expect(spawns).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts as usual in a folder that exists, and when no folder is asked for', async () => {
+    const { m, spawns } = setup({ profile: local });
+    const dir = mkdtempSync(join(tmpdir(), 'arctri-dir-'));
+    try {
+      await m.create(start({ env: 'local', path: dir as never }));
+      await m.create(start(undefined));
+      expect(spawns).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves a WSL folder to the distribution', async () => {
+    const { m, spawns } = setup();
+    await m.create({ ...spec, cwd: { env: 'wsl', distro: 'Ubuntu', path: '/home/nobody/gone' as never } });
+    expect(spawns).toHaveLength(1);
+  });
+
+  it('logs how long a shell lived and where it was asked to start when it exits', async () => {
+    const { m, pty, logs } = setup({ profile: local });
+    const dir = mkdtempSync(join(tmpdir(), 'arctri-exit-'));
+    try {
+      await m.create(start({ env: 'local', path: dir as never }));
+      pty.emitExit(1);
+      const exited = logs.find((l) => l.msg === 'pty exited');
+      expect(exited?.detail).toMatchObject({ code: 1, cwd: dir, closing: false, lifetimeMs: expect.any(Number) });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

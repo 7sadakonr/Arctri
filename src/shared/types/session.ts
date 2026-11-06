@@ -6,6 +6,9 @@ export type ShellPhase = 'unknown' | 'prompt' | 'editing' | 'executing';
 export type IntegrationStatus = 'pending' | 'active' | 'unavailable' | 'degraded';
 export type AgentId = 'claude-code' | 'codex';
 
+/** Start of the error `create` throws for a folder that is gone; the page recognises it by this text. */
+export const FOLDER_MISSING = 'The folder no longer exists';
+
 export interface SessionSpec {
   profileId: string;
   kind: 'shell' | 'agent';
