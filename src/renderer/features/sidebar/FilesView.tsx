@@ -747,6 +747,15 @@ export function FilesView({ info, active }: { info: SessionInfo; active: boolean
                       else if (ev.altKey) insertText(info.id, refOf(e.path.replace(/\\/g, '/')));
                       else useLayout.getState().openFile({ sessionId: info.id, rel: e.path, mode: 'file' });
                     }}
+                    onMouseDown={(ev) => {
+                      if (ev.button === 1) ev.preventDefault(); // no autoscroll
+                    }}
+                    onAuxClick={(ev) => {
+                      if (ev.button !== 1 || naming || e.isDir || e.draft) return;
+                      ev.preventDefault();
+                      only(e.path);
+                      useLayout.getState().openFile({ sessionId: info.id, rel: e.path, mode: 'file' });
+                    }}
                     onMouseEnter={() => {
                       // have the folder ready before the click
                       if (e.isDir && !e.draft && !known.current[e.path]) void load(e.path);

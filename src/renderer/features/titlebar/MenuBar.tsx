@@ -4,7 +4,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut,
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { editCopy, editPaste, editSelectAll } from '@/lib/edit-actions';
+import { editCopy, isEditable, editPaste, editSelectAll } from '@/lib/edit-actions';
 import { focusActiveSession } from '@/lib/focus';
 import { useT } from '@/lib/i18n';
 import { useMenus, type Entry } from './menus';
@@ -48,7 +48,7 @@ export function MenuBar() {
   const before = useRef<Element | null>(null);
   const remember = () => {
     const el = document.activeElement;
-    before.current = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? el : null;
+    before.current = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement || isEditable(el) ? el : null;
   };
 
   const edit: Entry[] = [

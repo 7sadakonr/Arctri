@@ -4,6 +4,9 @@ import { useSessions } from '@/stores/sessions';
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 const isField = (el: Element | null): el is Field => el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement;
+/** A contenteditable surface such as the CodeMirror file editor. */
+export const isEditable = (el: Element | null): el is HTMLElement =>
+  el instanceof HTMLElement && (el.isContentEditable || !!el.closest('.cm-editor'));
 const host = () => {
   const id = useSessions.getState().activeId;
   return id ? peekHost(id) : undefined;
@@ -13,6 +16,11 @@ const host = () => {
 export function editCopy(target: Element | null): void {
   if (isField(target)) {
     const text = target.value.slice(target.selectionStart ?? 0, target.selectionEnd ?? 0);
+    if (text) void copyText(text);
+    return;
+  }
+  if (isEditable(target)) {
+    const text = window.getSelection()?.toString();
     if (text) void copyText(text);
     return;
   }
@@ -27,10 +35,20 @@ export async function editPaste(target: Element | null): Promise<void> {
     document.execCommand('insertText', false, text);
     return;
   }
+  if (isEditable(target)) {
+    const text = await readClipboard();
+    if (!text) return;
+    target.focus();
+    document.execCommand('insertText', false, text);
+    return;
+  }
   await host()?.pasteFromClipboard();
 }
 
 export function editSelectAll(target: Element | null): void {
   if (isField(target)) target.select();
-  else host()?.selectAll();
+  else if (isEditable(target)) {
+    target.focus();
+    document.execCommand('selectAll');
+  } else host()?.selectAll();
 }
