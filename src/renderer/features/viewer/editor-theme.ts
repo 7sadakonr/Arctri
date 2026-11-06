@@ -6,6 +6,7 @@ export const editorTheme = EditorView.theme({
   '&': { height: '100%', backgroundColor: 'var(--ad-bg)', color: 'var(--ad-fg)', fontSize: '12.5px' },
   '.cm-scroller': { fontFamily: 'var(--font-mono, "Roboto Mono", monospace)', lineHeight: '1.55' },
   '.cm-content': { caretColor: 'var(--ad-accent)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ad-fg)', borderLeftWidth: '2px' },
   '.cm-gutters': { backgroundColor: 'var(--ad-panel)', color: 'var(--ad-fg-muted)', border: 'none' },
   '.cm-activeLine': { backgroundColor: 'var(--ad-hover)' },
   '.cm-activeLineGutter': { backgroundColor: 'var(--ad-hover)' },

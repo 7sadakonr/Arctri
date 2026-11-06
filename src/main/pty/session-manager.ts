@@ -1,10 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { parseOsc } from '@shared/osc/protocol';
 import { OscTokenizer } from '@shared/osc/tokenizer';
 import { ShellStateMachine, type Transition } from '@shared/shell/state-machine';
 import type { EnvPath, ShellProfile } from '@shared/types/env';
-import type { SessionId, SessionInfo, SessionSpec } from '@shared/types/session';
+import { FOLDER_MISSING, type SessionId, type SessionInfo, type SessionSpec } from '@shared/types/session';
 import { detectAgentCommand } from '@shared/agents/detect-command';
 import { cleanAgentTopic } from '@shared/agents/topic';
 import { buildShellLaunch, type LaunchPlan } from '../shell/launch';
@@ -82,6 +83,8 @@ interface Session {
   hasChildren?: boolean;
   /** A pending return to the session's name once a tool call is over (see `setActivity`). */
   activityTimer?: ReturnType<typeof setTimeout>;
+  /** The folder the session was asked to start in (only for the log). */
+  startCwd?: string;
 }
 
 /** How long the tab keeps a tool's label after the tool call ends. */
@@ -164,7 +167,27 @@ export class SessionManager {
     return s ? { ...s.info } : undefined;
   }
 
+  /**
+   * A folder that is gone makes node-pty start the shell anyway, and the shell dies at once with code 1 and no reason. So the
+   * folder is looked at first. Only "not there" (or "not a folder") counts as gone: a folder that cannot be read for lack of
+   * permission is left to the shell, but logged, so the two causes can be told apart afterwards.
+   */
+  private async checkFolder(cwd: EnvPath | undefined): Promise<void> {
+    if (!cwd || cwd.env === 'wsl') return; // a WSL folder is read through a share that cannot be trusted to answer
+    try {
+      if (!(await stat(cwd.path)).isDirectory()) throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' });
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        this.deps.log?.('warn', 'folder missing', { path: cwd.path, code });
+        throw new Error(`${FOLDER_MISSING}: ${cwd.path}`);
+      }
+      this.deps.log?.('warn', 'folder not accessible', { path: cwd.path, code });
+    }
+  }
+
   async create(spec: SessionSpec): Promise<SessionInfo> {
+    await this.checkFolder(spec.cwd);
     mark('createStart');
     const id = randomUUID();
     const nonce = randomBytes(12).toString('hex');
@@ -215,7 +238,8 @@ export class SessionManager {
     const exited = new Promise<void>((r) => (markExited = r));
     const s: Session = {
       info, tokenizer: new OscTokenizer(), sm: new ShellStateMachine(), anomalies: 0, expectsHello: integrationWanted,
-      exited, markExited, exitedFlag: false, closing: false
+      exited, markExited, exitedFlag: false, closing: false,
+      ...(spec.cwd ? { startCwd: spec.cwd.path } : {})
     };
     this.sessions.set(id, s);
     this.watchBusy();
@@ -414,7 +438,11 @@ export class SessionManager {
     this.finish(s);
     s.info.state = 'exited';
     s.info.exit = { code };
-    this.deps.log?.('info', 'pty exited', { session: s.info.id, shell: s.info.shell, code });
+    // lifetime and folder tell a shell that died at once (a bad folder, a broken rc file) from one that was closed
+    this.deps.log?.('info', 'pty exited', {
+      session: s.info.id, shell: s.info.shell, code, lifetimeMs: Date.now() - s.info.createdAt, closing: s.closing,
+      ...(s.startCwd ? { cwd: s.startCwd } : {})
+    });
     // A tab the user is closing is already gone from the window; telling it about the exit would bring it back for a moment.
     if (!s.closing) this.emit(s);
     s.markExited();

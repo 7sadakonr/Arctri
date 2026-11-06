@@ -225,18 +225,27 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
   const fontSize = { fontSize: 'var(--ad-term-size, 13px)' } as const;
 
   return (
-    <div className="relative border-t border-border px-4 py-3">
+    <div
+      className="relative cursor-text border-t border-border px-4 py-3"
+      onClick={(e) => {
+        // a click anywhere on the bar types into the input, except on the input itself, the suggestions, or while selecting text
+        const target = e.target as HTMLElement;
+        if (target.closest('textarea, [role="listbox"]')) return;
+        if (window.getSelection()?.isCollapsed === false) return;
+        area.current?.focus();
+      }}
+    >
       {open && <AutocompleteOverlay items={items} selected={selected} onPick={(i) => items[i] && accept(items[i]!)} />}
       {head && (
         <div className="font-mono" style={fontSize}>
           <SnapshotView snapshot={head} dark={dark} />
         </div>
       )}
-      <div className="flex items-start gap-2">
-        <div className="max-w-[65%] shrink-0 overflow-hidden whitespace-pre font-mono leading-[1.45]" style={fontSize}>
+      <div className="flex flex-wrap items-start gap-x-2">
+        <div className="min-w-0 max-w-full overflow-hidden whitespace-pre font-mono leading-[1.45]" style={fontSize}>
           {tail ? <SnapshotView snapshot={tail} dark={dark} /> : <span className="text-fg-muted">›</span>}
         </div>
-        <div className="relative min-w-[8ch] flex-1">
+        <div className="relative min-w-0 grow basis-[24ch] font-mono" style={fontSize}>
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words font-mono leading-[1.45]"
