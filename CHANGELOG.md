@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1-beta
+
+- **Editor.** The Edit menu (copy, cut, paste, select all) acts on the file editor that has focus instead of falling through to the terminal, and the caret
+  in it is now easy to see. A middle click on a file in the explorer opens it. A click on the command bar puts the caret in the input, and a long prompt wraps onto its own line instead of squeezing the input.
+- **Projects.** Opening a recent project whose folder was moved or deleted no longer opens a tab that dies at once with "code 1" and no reason: no tab is opened, the message
+  names the folder, and the entry is removed from the recent projects. The log gets `folder missing` / `folder not accessible`, and the line written when a shell exits now says how long it lived,
+  where it started and whether the tab was being closed.
+- **CI.** The macOS jobs of CI and of the release workflow run on `macos-15`; GitHub no longer provides `macos-14`.
+
 ## 0.4.0-beta
 
 - **Split panes.** The window is a grid. Drag any tab (terminal, file or diff) onto the left, right, top or bottom edge of a pane to split there,
