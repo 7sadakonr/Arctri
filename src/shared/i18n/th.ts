@@ -97,6 +97,8 @@ export const th: Record<MessageKey, string> = {
   'session.restart': 'เริ่มใหม่',
   'session.close': 'ปิด',
   'session.cwdFallback': 'ไม่พบโฟลเดอร์เดิม จึงเริ่มที่โฟลเดอร์หลักของผู้ใช้',
+  'session.folderMissing': 'ไม่พบโฟลเดอร์ "{name}" แล้ว',
+  'session.folderMissingRemoved': 'ไม่พบโฟลเดอร์ "{name}" แล้ว จึงลบออกจากรายการโปรเจกต์ล่าสุด',
   'banner.noIntegration': 'เซสชันนี้ใช้บล็อกคำสั่งไม่ได้ จึงทำงานเป็นเทอร์มินัลปกติ',
   'banner.degraded': 'บล็อกคำสั่งเริ่มไม่แม่นยำ ผลลัพธ์อาจดูผิดเพี้ยน',
   'paste.confirm': 'วางข้อความ {lines} บรรทัดลงในเทอร์มินัล?',

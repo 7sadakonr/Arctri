@@ -1,12 +1,12 @@
 import type { EnvPath, ShellProfile } from '@shared/types/env';
-import type { AgentId, AgentLaunchOptions, SessionInfo } from '@shared/types/session';
+import { FOLDER_MISSING, type AgentId, type AgentLaunchOptions, type SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
 import { tNow } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { disposeHost } from '../terminal/xterm-host';
 import { useBlocks } from '@/stores/blocks';
-import { pushRecent, toRecent } from '../welcome/recent';
+import { projectName, pushRecent, removeRecent, toRecent } from '../welcome/recent';
 import { confirmPreWork } from './preWork';
 import { recoverHint } from './recover';
 import { confirmDiscard, dirtyTabsOf } from '../layout/actions';
@@ -62,7 +62,7 @@ function errText(e: unknown): string {
 
 export async function openShell(
   profile: ShellProfile | undefined,
-  opts: { cwd?: EnvPath; title?: string } = {}
+  opts: { cwd?: EnvPath; title?: string; onFolderMissing?: () => void } = {}
 ): Promise<SessionInfo | undefined> {
   if (!profile) return undefined;
   useSessions.getState().addPending(1);
@@ -79,7 +79,10 @@ export async function openShell(
     if (info.launchNote === 'cwd-unmapped') useUi.getState().toast(tNow('session.cwdFallback'));
     return info;
   } catch (e) {
-    useUi.getState().toast(withHint(tNow('session.failed', { reason: errText(e) }), errText(e)), 'error');
+    if (opts.cwd && errText(e).startsWith(FOLDER_MISSING)) {
+      useUi.getState().toast(tNow(opts.onFolderMissing ? 'session.folderMissingRemoved' : 'session.folderMissing', { name: projectName(opts.cwd.path) }), 'error');
+      opts.onFolderMissing?.();
+    } else useUi.getState().toast(withHint(tNow('session.failed', { reason: errText(e) }), errText(e)), 'error');
     return undefined;
   } finally {
     useSessions.getState().addPending(-1);
@@ -215,9 +218,19 @@ async function rememberProject(folder: EnvPath): Promise<void> {
   }
 }
 
+/** A folder that is gone is taken off the recent projects, so it is not offered again. */
+async function forgetProject(folder: EnvPath): Promise<void> {
+  const next = removeRecent(useUi.getState().prefs.recentProjects, toRecent(folder));
+  try {
+    useUi.getState().setPrefs(await api.prefs.set({ recentProjects: next }));
+  } catch {
+    /* the list is a convenience */
+  }
+}
+
 /** A new tab in the folder, which is also put on top of the recent projects. */
 export async function openProject(folder: EnvPath): Promise<SessionInfo | undefined> {
-  const info = await openShell(await profileForFolder(folder), { cwd: folder });
+  const info = await openShell(await profileForFolder(folder), { cwd: folder, onFolderMissing: () => void forgetProject(folder) });
   if (info) void rememberProject(folder);
   return info;
 }

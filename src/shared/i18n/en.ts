@@ -95,6 +95,8 @@ export const en = {
   'session.restart': 'Restart',
   'session.close': 'Close',
   'session.cwdFallback': 'The folder was not available, started in your home folder',
+  'session.folderMissing': 'The folder "{name}" no longer exists',
+  'session.folderMissingRemoved': 'The folder "{name}" no longer exists, so it was removed from recent projects',
   'banner.noIntegration': 'Command blocks are not available in this session. It works as a normal terminal.',
   'banner.degraded': 'Command blocks became unreliable. Output may look wrong.',
   'paste.confirm': 'Paste {lines} lines into the terminal?',
