@@ -73,6 +73,7 @@ export function SessionView({ info, active, focused }: { info: SessionInfo; acti
         {blockMode && <BlockList sessionId={info.id} active={active} />}
         <div
           ref={mountRef}
+          style={blockMode ? ({ '--ad-xterm-pad-l': '16px', '--ad-xterm-pad-r': '16px' } as React.CSSProperties) : undefined}
           // Block mode reserves the top 28px for the status bar for good, so the PTY keeps one size and a
           // full-screen program's first rows are never hidden behind the bar.
           className={cn(

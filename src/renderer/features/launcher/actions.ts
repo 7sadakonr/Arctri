@@ -1,5 +1,5 @@
 import type { EnvPath, ShellProfile } from '@shared/types/env';
-import { FOLDER_MISSING, type AgentId, type AgentLaunchOptions, type SessionInfo } from '@shared/types/session';
+import { FOLDER_MISSING, INITIAL_PTY_SIZE, type AgentId, type AgentLaunchOptions, type SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
 import { tNow } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
@@ -11,7 +11,7 @@ import { confirmPreWork } from './preWork';
 import { recoverHint } from './recover';
 import { confirmDiscard, dirtyTabsOf } from '../layout/actions';
 
-const INITIAL = { cols: 120, rows: 30 };
+const INITIAL = INITIAL_PTY_SIZE;
 
 /** The shell the user asked for: the one chosen in Settings, otherwise Windows Terminal's default. */
 function wantedDefaultId(): string | undefined {

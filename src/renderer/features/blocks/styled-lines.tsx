@@ -38,12 +38,13 @@ const Line = memo(function Line({ line, css }: { line: StyledLine; css: React.CS
 });
 
 /** Output of a finished command. Lines are grouped so off-screen groups are skipped by the browser. */
-export const SnapshotView = memo(function SnapshotView({ snapshot, dark }: { snapshot: BlockSnapshot; dark: boolean }) {
+/** `grid` draws the rows exactly as the terminal laid them out (same face, one cell per column, never wrapped): used for the live prompt. */
+export const SnapshotView = memo(function SnapshotView({ snapshot, dark, grid = false }: { snapshot: BlockSnapshot; dark: boolean; grid?: boolean }) {
   const css = snapshot.styles.map((s) => styleCss(s, dark));
   const groups: StyledLine[][] = [];
   for (let i = 0; i < snapshot.lines.length; i += CHUNK) groups.push(snapshot.lines.slice(i, i + CHUNK));
   return (
-    <div className="block-output">
+    <div className={grid ? 'block-output block-grid' : 'block-output'}>
       {groups.map((g, gi) => (
         <div key={gi} className={groups.length > 1 ? 'block-chunk' : undefined}>
           {g.map((line, li) => (

@@ -1,10 +1,11 @@
 import { AGENT_META } from '@shared/agents/meta';
-import { NotificationLedger, notificationFor } from '@shared/agents/notification';
+import { NotificationLedger, notificationFor, soundFor } from '@shared/agents/notification';
 import type { AgentStatus } from '@shared/types/agent-status';
 import { api } from '@/lib/api';
 import { tNow } from '@/lib/i18n';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
+import { playAlert } from './sound';
 
 const ledger = new NotificationLedger();
 
@@ -19,7 +20,10 @@ export const forgetNotified = (id: string): void => ledger.forget(id);
 export function notifyStatus(_prev: AgentStatus | undefined, next: AgentStatus): void {
   const n = notificationFor(next);
   if (!n || !ledger.claim(next.sessionId, n.key)) return;
-  if (!useUi.getState().prefs.agentNotifications) return;
+  const prefs = useUi.getState().prefs;
+  // the app's own sound and the system notification are separate choices
+  if (prefs.agentSound) playAlert(soundFor(n.kind), false, next.sessionId);
+  if (!prefs.agentNotifications) return;
   const info = useSessions.getState().infos[next.sessionId];
   const name = AGENT_META[next.agentId].name;
   const title =

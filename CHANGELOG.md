@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2-beta
+
+- **Alerts.** Arctri plays its own sound when an agent finishes or needs you and its tab is not in front: a soft pair of notes for a finished turn, a repeated note for an approval,
+  a question or an error. Several tabs finishing together make one sound. Settings has a switch (on by default) and a Test button; while it is on, the system notification stays silent.
+- **Quitting.** Closing the window or quitting while tabs run work now asks inside the app and lists those tabs; Cancel leaves them running. The system dialog is only used if the page cannot show the prompt.
+- **Agents.** New Claude Code and Codex tabs stay on the terminal's main screen, so the scrollbar and mouse wheel scroll back (Settings > turn it off to use the fullscreen screen).
+- **Terminal.** A cursor style setting (bar, block, underline). The command bar draws the shell's own prompt cell for cell, including a right-hand part such as Powerlevel10k's closing corner, and a bundled Nerd Font symbols font fills in prompt icons.
+- **Diagnostics.** `ARCTRI_DEBUG_PTY=<file>` records every PTY spawn, resize and chunk of output, so a layout problem can be replayed.
+
 ## 0.4.1-beta
 
 - **Editor.** The Edit menu (copy, cut, paste, select all) acts on the file editor that has focus instead of falling through to the terminal, and the caret

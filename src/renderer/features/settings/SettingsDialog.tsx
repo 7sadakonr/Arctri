@@ -11,6 +11,7 @@ import { tNow, useT } from '@/lib/i18n';
 import { isMac, isWindows } from '@/lib/platform';
 import { useUi } from '@/stores/ui';
 import { useUpdate } from '@/stores/update';
+import { playAlert } from '../attention/sound';
 import { updateSummary } from '../update/summary';
 import { blockProfiles } from '../launcher/actions';
 
@@ -98,8 +99,18 @@ export function SettingsDialog() {
           </select>
         </Row>
         <Row label={t('settings.fontSize')}>{num('fontSize', 9, 28)}</Row>
+        <Row label={t('settings.cursorStyle')}>
+          <select className={field} value={prefs.cursorStyle} onChange={(e) => void save({ cursorStyle: e.target.value as Prefs['cursorStyle'] })}>
+            <option value="bar">{t('settings.cursorStyle.bar')}</option>
+            <option value="block">{t('settings.cursorStyle.block')}</option>
+            <option value="underline">{t('settings.cursorStyle.underline')}</option>
+          </select>
+        </Row>
         <Row label={t('settings.scrollback')} hint={t('settings.restartNote')}>
           {num('scrollback', 1000, 200000)}
+        </Row>
+        <Row label={t('settings.agentNormalBuffer')} hint={t('settings.agentNormalBuffer.hint')}>
+          <Switch checked={prefs.agentNormalBuffer} onCheckedChange={(v) => void save({ agentNormalBuffer: v })} />
         </Row>
         <Row label={t('settings.defaultProfile')}>
           <select
@@ -128,6 +139,12 @@ export function SettingsDialog() {
         </Row>
         <Row label={t('settings.agentNotifications')}>
           <Switch checked={prefs.agentNotifications} onCheckedChange={(v) => void save({ agentNotifications: v })} />
+        </Row>
+        <Row label={t('settings.agentSound')}>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={!prefs.agentSound} onClick={() => playAlert('done', true)}>{t('settings.testSound')}</Button>
+            <Switch checked={prefs.agentSound} onCheckedChange={(v) => void save({ agentSound: v })} />
+          </div>
         </Row>
         <Row label={t('settings.gitAutoFetch')}>
           <Switch checked={prefs.gitAutoFetch} onCheckedChange={(v) => void save({ gitAutoFetch: v })} />

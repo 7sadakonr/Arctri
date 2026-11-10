@@ -17,7 +17,7 @@ export interface AgentInstallation {
 export interface AgentCapabilities {
   resumeLast: boolean;
   resumePicker: boolean;
-  launchFlags: { model: boolean; permissionMode: boolean; extraArgs: boolean };
+  launchFlags: { model: boolean; permissionMode: boolean; extraArgs: boolean; noAltScreen?: boolean };
   /** Permission/approval values the CLI accepts at launch and Arctri offers (never the "skip checks" ones). */
   permissionModes: string[];
   structuredStatus: 'none' | 'hooks';

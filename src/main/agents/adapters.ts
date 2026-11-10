@@ -13,6 +13,8 @@ export interface AgentAdapter {
   command: string;
   capabilities(help: string): AgentCapabilities;
   buildArgs(caps: AgentCapabilities, o: AgentLaunchOptions): string[];
+  /** Extra arguments that keep the TUI on the main screen (native scrollback). Claude Code uses an environment variable instead. */
+  normalBufferArgs?(caps: AgentCapabilities): string[];
 }
 
 /** Flags that switch permission or approval checks off. Arctri never sets them itself. */
@@ -64,7 +66,8 @@ export const codex: AgentAdapter = {
     launchFlags: {
       model: has(help, '--model'),
       permissionMode: has(help, '--ask-for-approval'),
-      extraArgs: true
+      extraArgs: true,
+      noAltScreen: has(help, '--no-alt-screen')
     },
     permissionModes: has(help, '--ask-for-approval')
       ? ['untrusted', 'on-request', 'on-failure'].filter((m) => help.includes(m))
@@ -72,6 +75,7 @@ export const codex: AgentAdapter = {
     structuredStatus: has(help, '--config') ? 'hooks' : 'none',
     nativeCommands: AGENT_META.codex.nativeCommands
   }),
+  normalBufferArgs: (caps) => (caps.launchFlags.noAltScreen ? ['--no-alt-screen'] : []),
   buildArgs(caps, o) {
     const args: string[] = [];
     // Flags come before the `resume` subcommand: `codex [flags] resume --last`.

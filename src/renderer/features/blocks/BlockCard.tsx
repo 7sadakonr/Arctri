@@ -31,9 +31,6 @@ export const BlockCard = memo(function BlockCard({
   const collapsible = hasOutput && block.output!.lines.length > COLLAPSIBLE_MIN_LINES;
   const collapsed = collapsible && block.collapsed;
   const failed = block.status === 'failed';
-  // The prompt as the shell drew it is the header, provided it really ends with this command (it may not for wrapped multi-line input).
-  const first = block.command.split('\n')[0]!.trim();
-  const showPrompt = !!block.prompt && blockText(block.prompt).includes(first);
 
   const act = (label: string, icon: React.ReactNode, fn: () => void) => (
     <Tip label={label} side="bottom">
@@ -73,14 +70,10 @@ export const BlockCard = memo(function BlockCard({
           </button>
         )}
         <div className="min-w-0 flex-1">
-          {showPrompt ? (
-            <SnapshotView snapshot={block.prompt!} dark={dark} />
-          ) : (
-            <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[13px] font-semibold leading-snug">
-              {block.cwd && <span className="mr-2 font-normal text-fg-muted">{leaf(block.cwd.path)}</span>}
-              {block.command}
-            </pre>
-          )}
+          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[13px] font-semibold leading-snug">
+            {block.cwd && <span className="mr-2 font-normal text-fg-muted">{leaf(block.cwd.path)}</span>}
+            {block.command}
+          </pre>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
           {block.status === 'running' && <Loader2 size={13} className="animate-spin text-warn" />}

@@ -8,13 +8,11 @@ let quitApproved = false;
 export const approveQuit = (): void => void (quitApproved = true);
 export const isQuitApproved = (): boolean => quitApproved;
 
-/**
- * Asks before running work is ended. Quitting by any route (window button, menu, Cmd+Q, an update) asks here before
- * anything is closed, so Cancel really leaves the sessions alone. Automated runs never wait for a person.
- */
-export function confirmEndRunning(win: BrowserWindow | undefined, busy: number): boolean {
-  if (quitApproved || busy === 0) return true;
-  if (process.env['ARCTRI_E2E'] || process.env['ARCTRI_SMOKE_OUT'] || process.env['ARCTRI_SMOKE_UPDATE_OUT']) return true;
+let quitPromptReady = false;
+/** The page has mounted (or lost) the listener that shows the quit prompt in the app's own style. */
+export const setQuitPromptReady = (v: boolean): void => void (quitPromptReady = v);
+
+function nativeConfirm(win: BrowserWindow | undefined, busy: number): boolean {
   const options = {
     type: 'warning' as const,
     buttons: ['Quit', 'Cancel'],
@@ -28,6 +26,27 @@ export function confirmEndRunning(win: BrowserWindow | undefined, busy: number):
   if (choice !== 0) return false;
   quitApproved = true;
   return true;
+}
+
+/**
+ * Asks before running work is ended. Quitting by any route (window button, menu, Cmd+Q, an update) asks here before
+ * anything is closed, so Cancel really leaves the sessions alone. Automated runs never wait for a person.
+ * Returns true when quitting may go on now. Otherwise the page is asked to show its own prompt (the answer comes back as
+ * `app:quitConfirmed`); a page that cannot show it falls back to the system dialog.
+ */
+export function confirmEndRunning(win: BrowserWindow | undefined, busyIds: string[]): boolean {
+  if (quitApproved || busyIds.length === 0) return true;
+  if ((process.env['ARCTRI_E2E'] && !process.env['ARCTRI_E2E_ASK_QUIT']) || process.env['ARCTRI_SMOKE_OUT'] || process.env['ARCTRI_SMOKE_UPDATE_OUT']) return true;
+  const wc = win && !win.isDestroyed() ? win.webContents : undefined;
+  if (win && wc && quitPromptReady && !wc.isDestroyed() && !wc.isCrashed() && !wc.isLoading()) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    // asking again (a second Cmd+Q) just re-sends the list; the page keeps one prompt
+    wc.send('app:confirm-quit', { sessionIds: busyIds });
+    return false;
+  }
+  return nativeConfirm(win, busyIds.length);
 }
 
 export const isDev = (): boolean => !!process.env['ELECTRON_RENDERER_URL'];
@@ -59,8 +78,8 @@ function boundsVisible(b: { x?: number | undefined; y?: number | undefined; widt
 }
 
 export interface WindowHooks {
-  /** Number of sessions running something that would be lost on close. */
-  busyCount: () => number;
+  /** Sessions running something that would be lost on close. */
+  busyIds: () => string[];
 }
 
 const TITLE_BAR_HEIGHT = 36;
@@ -105,6 +124,7 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      autoplayPolicy: 'no-user-gesture-required',
       spellcheck: false
     }
   });
@@ -143,13 +163,15 @@ export function createMainWindow(prefs: PrefsStore, hooks: WindowHooks): Browser
   });
 
   win.on('close', (e) => {
-    if (!confirmEndRunning(win, hooks.busyCount())) e.preventDefault();
+    if (!confirmEndRunning(win, hooks.busyIds())) e.preventDefault();
   });
 
   // The page crashed. The terminals live in the main process and keep running; a reloaded page picks them up again
   // (session:list re-attaches their ports). A page that keeps crashing is left alone instead of reloading in a loop.
   const crashes: number[] = [];
+  win.webContents.on('did-start-loading', () => (quitPromptReady = false));
   win.webContents.on('render-process-gone', (_e, details) => {
+    quitPromptReady = false;
     logger.error('renderer process gone', { reason: details.reason, exitCode: details.exitCode });
     if (details.reason === 'clean-exit' || details.reason === 'killed' || win.isDestroyed()) return;
     const now = Date.now();

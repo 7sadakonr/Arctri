@@ -17,6 +17,9 @@ export function notificationFor(next: AgentStatus): { key: string; kind: NotifyK
   return null;
 }
 
+/** Which of the app's two own sounds an event gets: a finished turn is good news, everything else wants the user. */
+export const soundFor = (kind: NotifyKind): 'done' | 'attention' => (kind === 'finished' ? 'done' : 'attention');
+
 /** Remembers the last event announced per tab. Reloading the window or hydrating the store never goes through it. */
 export class NotificationLedger {
   private last = new Map<string, string>();

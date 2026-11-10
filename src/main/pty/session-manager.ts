@@ -13,6 +13,7 @@ import { submitSteps } from '../shell/submit';
 import { gitBranchOf } from '../shell/git';
 import { mark } from '../timing';
 import { DataPump } from './data-pump';
+import { traceBlock } from './pty-trace';
 import { killRecorded, killTree, killTreeSync, snapshotTrees, type ProcRef } from './process-cleanup';
 import type { PtyBackend, PtyProcess } from './pty-backend';
 
@@ -48,6 +49,8 @@ export interface SessionManagerDeps {
   agentLaunch?: (spec: SessionSpec, ctx: { id: string; nonce: string }) => Promise<AgentLaunch>;
   /** Extra environment for a shell tab so agents typed into it can report their status (bash and zsh). */
   shellStatusEnv?: (c: { id: string; nonce: string; env: SessionInfo['env']; shell: string }) => Promise<Record<string, string> | null>;
+  /** Environment added to every shell tab (e.g. keeping Claude Code on the main screen so xterm keeps its scrollback). */
+  extraShellEnv?: () => Record<string, string>;
   wslBranch?: (cwd: Extract<EnvPath, { env: 'wsl' }>) => Promise<string | undefined>;
   onData: (id: SessionId, chunk: string) => void;
   onInfo: (info: SessionInfo) => void;
@@ -106,8 +109,12 @@ export class SessionManager {
     return s.info.integration === 'active' ? s.info.phase === 'executing' : !!s.hasChildren;
   }
 
+  busyIds(): SessionId[] {
+    return [...this.sessions.keys()].filter((id) => this.isBusy(id));
+  }
+
   busyCount(): number {
-    return [...this.sessions.keys()].filter((id) => this.isBusy(id)).length;
+    return this.busyIds().length;
   }
 
   private busyTimer: ReturnType<typeof setInterval> | undefined;
@@ -233,6 +240,13 @@ export class SessionManager {
       if (plan.note) info.launchNote = plan.note;
     }
 
+    // every session (shell tab or agent launch) keeps the agents on the main screen when the user wants it
+    const always = this.deps.extraShellEnv?.() ?? {};
+    if (Object.keys(always).length) {
+      Object.assign(plan.env, always);
+      if (info.env.kind === 'wsl') plan.env['WSLENV'] = [plan.env['WSLENV'], ...Object.keys(always)].filter(Boolean).join(':');
+    }
+
     mark('launchBuilt');
     let markExited!: () => void;
     const exited = new Promise<void>((r) => (markExited = r));
@@ -259,6 +273,7 @@ export class SessionManager {
       return { ...info };
     }
     s.pty = pty;
+    traceBlock(id, { k: 'spawn', cols: spec.cols, rows: spec.rows });
     s.pump = new DataPump((chunk) => this.deps.onData(id, chunk), () => pty.pause(), () => pty.resume());
     // The process may take seconds to appear (and spawning never blocks the main process), so the
     // session starts out as 'starting' and becomes 'running' when the PTY reports its pid.
@@ -301,6 +316,7 @@ export class SessionManager {
   }
 
   private handleData(s: Session, data: string): void {
+    traceBlock(s.info.id, { k: 'data', d: data });
     s.pump?.push(data);
     let changed = false;
     for (const tok of s.tokenizer.push(data)) {
@@ -490,6 +506,7 @@ export class SessionManager {
   }
 
   resize(id: SessionId, cols: number, rows: number): void {
+    traceBlock(id, { k: 'resize', cols, rows });
     this.sessions.get(id)?.pty?.resize(cols, rows);
   }
 

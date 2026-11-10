@@ -7,6 +7,7 @@ import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { tNow } from '@/lib/i18n';
 import { warnAgentStarted } from '@/features/launcher/preWork';
+import { QuitConfirmDialog } from '@/features/quit/QuitConfirmDialog';
 import { PreWorkCheckDialog } from '@/features/launcher/PreWorkCheckDialog';
 import { useAgentStatus } from '@/stores/agent-status';
 import { forgetNotified, notifyStatus } from '@/features/attention/notify';
@@ -22,6 +23,7 @@ import { SidebarDock } from '@/features/sidebar/SidebarDock';
 import { useReportUnsaved } from '@/features/layout/useReportUnsaved';
 import { useLayout } from '@/stores/layout';
 import { allHosts, peekHost, screenText } from '@/features/terminal/xterm-host';
+import { TERMINAL_FONT } from '@/features/terminal/theme';
 import { WelcomeScreen } from '@/features/welcome/WelcomeScreen';
 import { isHomeFolder, pushRecent, toRecent } from '@/features/welcome/recent';
 import { Toasts } from '@/features/toasts/Toasts';
@@ -146,9 +148,11 @@ export function App() {
     const root = document.documentElement;
     root.dataset['theme'] = prefs.theme;
     root.style.setProperty('--ad-term-size', `${prefs.fontSize}px`);
+    root.style.setProperty('--ad-term-font', TERMINAL_FONT);
+    root.style.setProperty('--ad-caret-shape', prefs.cursorStyle === 'bar' ? 'auto' : prefs.cursorStyle === 'underline' ? 'underscore' : 'block');
     root.lang = navigator.language.startsWith('th') && prefs.language === 'auto' ? 'th' : prefs.language === 'th' ? 'th' : 'en';
-    for (const h of allHosts()) h.applyPrefs(prefs.fontSize, prefs.theme === 'dark');
-  }, [prefs.theme, prefs.fontSize, prefs.language]);
+    for (const h of allHosts()) h.applyPrefs(prefs.fontSize, prefs.theme === 'dark', prefs.cursorStyle);
+  }, [prefs.theme, prefs.fontSize, prefs.language, prefs.cursorStyle]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -183,6 +187,7 @@ export function App() {
       </div>
       <SettingsDialog />
       <PreWorkCheckDialog />
+      <QuitConfirmDialog />
       <CloneDialog />
       <HelpDialogs />
       <UpdateDialog />

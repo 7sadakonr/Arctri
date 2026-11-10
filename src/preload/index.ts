@@ -221,7 +221,12 @@ const api = {
       ipcRenderer.invoke('app:notify', { sessionId, title, body }),
     /** macOS: the menus of the system menu bar (File ... Help). */
     setMenu: (menus: Array<{ label: string; items: NativeMenuItem[] }>): Promise<void> => ipcRenderer.invoke('app:setMenu', { menus }),
-    onMenu: (cb: (v: { id: string }) => void): Unsub => subscribe('app:menu', cb)
+    onMenu: (cb: (v: { id: string }) => void): Unsub => subscribe('app:menu', cb),
+    /** The main process asks whether to quit while these tabs still run something. */
+    onConfirmQuit: (cb: (v: { sessionIds: SessionId[] }) => void): Unsub => subscribe('app:confirm-quit', cb),
+    /** The page can show the quit prompt itself (its listener is mounted). */
+    quitPromptReady: (): Promise<void> => ipcRenderer.invoke('app:quitPromptReady'),
+    quitConfirmed: (): Promise<void> => ipcRenderer.invoke('app:quitConfirmed')
   }
 };
 

@@ -34,6 +34,16 @@
   unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC;
 }
 
+/* Powerline / Nerd Font icons (oh-my-zsh agnoster, powerlevel10k, ...). Private Use Area only, so normal text is never touched. */
+@font-face {
+  font-family: 'Arctri Symbols';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(../assets/fonts/SymbolsNerdFontMono-Regular.woff2) format('woff2');
+  unicode-range: U+E000-F8FF, U+F0000-FFFFD;
+}
+
 @custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
 
 @theme {
@@ -52,7 +62,7 @@
   --color-danger: var(--ad-danger);
   --color-warn: var(--ad-warn);
   --font-sans: 'Roboto', 'Arctri Thai', 'Segoe UI', -apple-system, system-ui, sans-serif;
-  --font-mono: 'Roboto Mono', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace;
+  --font-mono: 'Roboto Mono', 'Arctri Symbols', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace;
 }
 
 :root,
@@ -137,11 +147,26 @@ button {
 .xterm-host {
   position: absolute;
   inset: 0;
-  padding: 6px 0 0 8px;
+  padding: 6px var(--ad-xterm-pad-r, 0px) 0 var(--ad-xterm-pad-l, 8px);
   background: var(--ad-bg);
 }
 .xterm .xterm-viewport {
   background: transparent !important;
+  scrollbar-width: auto;
+  scrollbar-color: color-mix(in srgb, var(--ad-fg, currentColor) 35%, transparent) transparent;
+}
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ad-fg, currentColor) 30%, transparent);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ad-fg, currentColor) 50%, transparent);
+  background-clip: content-box;
 }
 
 /* Finished-command output: chunks use content-visibility so long blocks stay cheap. */
@@ -153,6 +178,16 @@ button {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
+}
+textarea[data-testid='command-editor'] {
+  caret-shape: var(--ad-caret-shape, auto);
+}
+.block-grid {
+  /* Same face and advance as the terminal the shell measured its prompt against, so N columns take N cells and a right-aligned prompt cannot wrap. */
+  font-family: var(--ad-term-font, var(--font-mono));
+  letter-spacing: 0;
+  white-space: pre;
+  overflow: hidden;
 }
 .block-chunk {
   content-visibility: auto;
