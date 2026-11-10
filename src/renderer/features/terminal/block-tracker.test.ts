@@ -147,4 +147,32 @@ describe('BlockTracker', () => {
     await write(hello + mark('A') + mark('B') + '> proj' + ' '.repeat(30) + '\r\x1b[7C');
     expect(blockText(tracker.promptSnapshot())).toBe('> proj');
   });
+  it('reads only the last drawn prompt when the shell redraws it (resize, transient prompt)', async () => {
+    const { write, tracker } = setup(40, 8);
+    // first draw, then the shell moves up and draws again: the old rows must not be captured with the new prompt
+    await write(hello + mark('A') + 'top-1\r\n> ' + mark('B'));
+    await write('\r\x1b[1A' + '\x1b[J' + mark('A') + 'top-2\r\n> ' + mark('B'));
+    expect(blockText(tracker.promptSnapshot())).toBe('top-2\n>');
+  });
+
+  it('does not take rows above the prompt start (leftovers of earlier redraws)', async () => {
+    const { write, tracker } = setup(40, 8);
+    await write(hello + 'stale-1\r\nstale-2\r\n' + mark('A') + 'real\r\n> ' + mark('B'));
+    expect(blockText(tracker.promptSnapshot())).toBe('real\n>');
+  });
+
+  it('keeps what the shell drew to the right of the caret apart, so the input can sit on the prompt row', async () => {
+    const { write, tracker } = setup(30, 6);
+    // p10k style last row: prefix, closing corner at the last column, caret moved back after the prefix
+    await write(hello + mark('A') + 'top\r\n' + '\u2570\u2500 ' + '\x1b[26C\u256f' + '\r\x1b[3C' + mark('B'));
+    const snap = tracker.promptSnapshot();
+    expect(blockText(snap)).toBe('top\n\u2570\u2500');
+    expect(blockText(snap!.tailSuffix)).toBe('\u256f');
+  });
+
+  it('has no suffix for a plain prompt', async () => {
+    const { write, tracker } = setup(30, 6);
+    await write(hello + mark('A') + '> ' + mark('B'));
+    expect(tracker.promptSnapshot()!.tailSuffix).toBeUndefined();
+  });
 });

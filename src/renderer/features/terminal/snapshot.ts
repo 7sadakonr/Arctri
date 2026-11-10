@@ -54,7 +54,7 @@ function styleOf(c: CellLike): CellStyle {
  * Converts buffer rows [start, end) into logical styled lines. Rows flagged `isWrapped`
  * continue the previous row, so the result reflows when the viewport is resized.
  */
-export function snapshotRange(buffer: BufferLike, start: number, end: number, truncated = false): BlockSnapshot {
+export function snapshotRange(buffer: BufferLike, start: number, end: number, truncated = false, cols?: { from: number; to: number }): BlockSnapshot {
   const styles: CellStyle[] = [];
   const styleIndex = new Map<string, number>();
   const idx = (s: CellStyle): number => {
@@ -91,7 +91,8 @@ export function snapshotRange(buffer: BufferLike, start: number, end: number, tr
     const next = buffer.getLine(y + 1);
     const continues = !!next && next.isWrapped && y + 1 < end;
     // Rows that continue onto the next one are full; otherwise trailing blanks are dropped.
-    let last = line.length - 1;
+    const range = y === end - 1 ? cols : undefined; // the column range applies to the last row only
+    let last = Math.min(line.length, range?.to ?? Infinity) - 1;
     if (!continues) {
       while (last >= 0) {
         const c = line.getCell(last, scratch);
@@ -99,7 +100,7 @@ export function snapshotRange(buffer: BufferLike, start: number, end: number, tr
         last--;
       }
     }
-    for (let x = 0; x <= last; x++) {
+    for (let x = range?.from ?? 0; x <= last; x++) {
       const c = line.getCell(x, scratch);
       if (!c || c.getWidth() === 0) continue;
       push(c.getChars() || ' ', idx(styleOf(c)));

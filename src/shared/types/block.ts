@@ -30,6 +30,8 @@ export interface BlockSnapshot {
   /** Earlier output scrolled out of the terminal scrollback and is not included. */
   truncated: boolean;
   charCount: number;
+  /** Prompt only: what the shell drew to the right of the caret on the last row (p10k's closing corner). The input goes between the last row and this. */
+  tailSuffix?: BlockSnapshot;
 }
 
 export type BlockStatus = 'running' | 'success' | 'failed' | 'interrupted' | 'unknown';

@@ -65,6 +65,8 @@ test('structured events drive the tab, the attention center and the palette; pla
     await expect(agentTab.locator('[data-status]')).toHaveAttribute('data-status', 'approval', { timeout: 10_000 });
     await expect(page.getByTestId('tab-approval')).toHaveCount(1);
     await expect(page.getByTestId('attention-badge')).toHaveText('1');
+    // the app's own sound was asked for, once, for the unseen approval
+    expect(await page.evaluate(() => (window as unknown as { __arctriSounds?: Array<{ kind: string }> }).__arctriSounds?.map((x) => x.kind))).toEqual(['attention']);
 
     // the bell lists it and a click goes to that terminal; nothing there approves or denies
     await page.getByTestId('attention-button').click();

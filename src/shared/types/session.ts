@@ -27,6 +27,9 @@ export interface AgentLaunchOptions {
   extraArgs?: string[];
 }
 
+/** Size a PTY is spawned at. The renderer's terminal starts at the same size, so nothing the shell draws before the first fit is laid out at another width. */
+export const INITIAL_PTY_SIZE = { cols: 120, rows: 30 } as const;
+
 export interface SessionInfo {
   id: SessionId;
   title: string;

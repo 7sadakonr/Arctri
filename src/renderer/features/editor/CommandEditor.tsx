@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CompletionItem } from '@shared/types/completion';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { FOCUS_SESSION_EVENT } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
@@ -238,14 +239,14 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
       {open && <AutocompleteOverlay items={items} selected={selected} onPick={(i) => items[i] && accept(items[i]!)} />}
       {head && (
         <div className="font-mono" style={fontSize}>
-          <SnapshotView snapshot={head} dark={dark} />
+          <SnapshotView snapshot={head} dark={dark} grid />
         </div>
       )}
-      <div className="flex flex-wrap items-start gap-x-2">
+      <div className={cn('grid items-start gap-x-2', prompt?.tailSuffix ? 'grid-cols-[auto_minmax(0,1fr)_auto]' : 'grid-cols-[auto_minmax(0,1fr)]')}>
         <div className="min-w-0 max-w-full overflow-hidden whitespace-pre font-mono leading-[1.45]" style={fontSize}>
-          {tail ? <SnapshotView snapshot={tail} dark={dark} /> : <span className="text-fg-muted">›</span>}
+          {tail ? <SnapshotView snapshot={tail} dark={dark} grid /> : <span className="text-fg-muted">›</span>}
         </div>
-        <div className="relative min-w-0 grow basis-[24ch] font-mono" style={fontSize}>
+        <div className="relative min-w-0 font-mono" style={fontSize}>
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words font-mono leading-[1.45]"
@@ -277,6 +278,11 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
             className="relative block max-h-[168px] w-full resize-none overflow-auto bg-transparent p-0 font-mono leading-[1.45] text-fg outline-none"
           />
         </div>
+        {prompt?.tailSuffix && (
+          <div className="min-w-0 overflow-hidden whitespace-pre font-mono leading-[1.45]" style={fontSize}>
+            <SnapshotView snapshot={prompt.tailSuffix} dark={dark} grid />
+          </div>
+        )}
       </div>
     </div>
   );

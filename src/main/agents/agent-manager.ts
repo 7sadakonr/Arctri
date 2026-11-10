@@ -37,7 +37,8 @@ export class AgentManager {
   constructor(
     private readonly wsl: WslManager,
     private readonly registry: ProfileRegistry,
-    private readonly overrides: () => Record<string, string>
+    private readonly overrides: () => Record<string, string>,
+    private readonly keepMainScreen: () => boolean = () => false
   ) {}
 
   /** Key used in Settings > agent paths: `<adapter>:windows` or `<adapter>:wsl:<distro>`. */
@@ -173,7 +174,8 @@ export class AgentManager {
         statusArgs = []; // no hooks is never a reason to fail the launch
       }
     }
-    const args = [...a.buildArgs(d.capabilities, o), ...statusArgs];
+    const screenArgs = this.keepMainScreen() ? (a.normalBufferArgs?.(d.capabilities) ?? []) : [];
+    const args = [...screenArgs, ...a.buildArgs(d.capabilities, o), ...statusArgs];
     const summary = a.buildArgs(d.capabilities, o).join(' ');
     const unsafe = isUnsafeArgs(o.extraArgs);
 

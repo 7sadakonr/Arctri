@@ -129,7 +129,7 @@ async function start(): Promise<void> {
   const hub = new PortHub(() => win);
 
   const startupSaved = sessionRepo.load().filter((x) => x.kind === 'shell');
-  const agents = new AgentManager(wsl, registry, () => prefs.get().agentPaths);
+  const agents = new AgentManager(wsl, registry, () => prefs.get().agentPaths, () => prefs.get().agentNormalBuffer);
   const envQuery = new EnvironmentQueryService();
   const fileWatcher = new FileWatcher((id, dirs) => {
     if (win && !win.isDestroyed()) win.webContents.send('fs:changed', { id, dirs });
@@ -184,6 +184,7 @@ async function start(): Promise<void> {
       }
       return env;
     },
+    extraShellEnv: (): Record<string, string> => (prefs.get().agentNormalBuffer ? { CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN: '1', ARCTRI_NO_ALT_SCREEN: '1' } : {}),
     wslBranch: (cwd) => envQuery.gitBranch({ kind: 'wsl', distro: cwd.distro }, cwd.path),
     backend: new WorkerPtyBackend(join(import.meta.dirname, 'pty-worker.js'), prefs.get().conptyMode === 'bundled'),
     getProfile: (id) => registry.get(id),
@@ -307,7 +308,7 @@ async function start(): Promise<void> {
 
   const create = () => {
     win = createMainWindow(prefs, {
-      busyCount
+      busyIds: () => sessions.busyIds()
     });
     win.on('closed', () => (win = undefined));
     win.on('focus', () => gitSync.setFocused(true));
@@ -334,7 +335,7 @@ async function start(): Promise<void> {
   app.on('before-quit', (e) => {
     if (quitting) return;
     // Ask first: by the time the window's own close prompt would run, the sessions would already be closed.
-    if (!confirmEndRunning(win, busyCount())) {
+    if (!confirmEndRunning(win, sessions.busyIds())) {
       e.preventDefault();
       return;
     }

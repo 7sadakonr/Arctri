@@ -70,6 +70,8 @@ export class BlockTracker {
   private current: CommandBlock | undefined;
   private altSeen = false;
   private pendingPrompt: BlockSnapshot | undefined;
+  /** Row where the shell last started drawing its prompt (OSC 133;A). Redraws of the prompt move it, so leftovers above it are never captured. */
+  private promptMarker: MarkerLike | undefined;
   private seq = 0;
   private disposables: Disposable[] = [];
 
@@ -97,6 +99,10 @@ export class BlockTracker {
     const ev = parseOsc(id, data, this.session.nonce);
     if (!ev) return false; // not ours (or forged): let xterm treat it as an ordinary OSC
     // The shell has echoed the command but has not wiped the screen yet: this is the one moment the prompt and the command are both on it.
+    if (ev.t === 'promptStart' && this.term.buffer.active.type === 'normal') {
+      this.promptMarker?.dispose();
+      this.promptMarker = this.term.registerMarker(0);
+    }
     if (ev.t === 'commandLine') this.pendingPrompt = this.promptSnapshot(MAX_COMMAND_ROWS, true);
     const tr = this.sm.apply(ev, this.now());
     if (ev.t === 'cwd') this.events.onCwd?.(this.sm.cwd ?? '');
@@ -181,10 +187,25 @@ export class BlockTracker {
   promptSnapshot(maxLines = MAX_PROMPT_LINES, dropTrailingEmpty = false): BlockSnapshot | undefined {
     const buf = this.term.buffer.normal;
     const end = buf.baseY + buf.cursorY + 1;
-    const snap = trimLineEnds(snapshotRange(buf, buf.baseY, end));
+    const pm = this.promptMarker;
+    const start = pm && !pm.isDisposed && pm.line >= 0 && pm.line < end ? pm.line : buf.baseY;
+    // The shell may draw something to the right of where the input starts (p10k's closing corner); keep it apart so the input can sit between the two.
+    let right: BlockSnapshot | undefined;
+    const y = end - 1;
+    if (!dropTrailingEmpty && buf.cursorX > 0 && !buf.getLine(y)?.isWrapped) {
+      const r = trimLineEnds(snapshotRange(buf, y, y + 1, false, { from: buf.cursorX, to: Infinity }));
+      // the blank cells between the caret and the corner are the room the input takes
+      const runs = r.lines[0]?.runs ?? [];
+      while (runs.length > 0 && !runs[0]!.text.trimStart()) runs.shift();
+      if (runs.length > 0) runs[0] = { ...runs[0]!, text: runs[0]!.text.trimStart() };
+      r.charCount = runs.reduce((n, x) => n + x.text.length, 0);
+      if (r.charCount > 0) right = r;
+    }
+    const snap = trimLineEnds(snapshotRange(buf, start, end, false, right ? { from: 0, to: buf.cursorX } : undefined));
     // After Enter the cursor has moved to the row below the command.
     if (dropTrailingEmpty) while (snap.lines.length > 1 && snap.lines[snap.lines.length - 1]!.runs.length === 0) snap.lines.pop();
-    if (snap.charCount === 0) return undefined;
+    if (snap.charCount === 0 && !right) return undefined;
+    if (right) snap.tailSuffix = right;
     if (snap.lines.length <= maxLines) return snap;
     return { ...snap, lines: snap.lines.slice(-maxLines) };
   }
@@ -197,6 +218,7 @@ export class BlockTracker {
 
   dispose(): void {
     this.marker?.dispose();
+    this.promptMarker?.dispose();
     for (const d of this.disposables) d.dispose();
     this.disposables = [];
   }

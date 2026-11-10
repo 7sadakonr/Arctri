@@ -43,6 +43,12 @@ if [[ -n "$ARCTRI_EVENTS_DIR" && -f "$ARCTRI_HOOK_SCRIPT" ]]; then
   fi
   case "$(whence -w codex 2>/dev/null)" in
     *": function"|*": alias") ;;
-    *) codex() { command codex -c "notify=[\"sh\",\"$ARCTRI_HOOK_SCRIPT\",\"codex\"]" "$@"; } ;;
+    *) codex() {
+         if [[ -n "$ARCTRI_NO_ALT_SCREEN" ]]; then
+           command codex -c "notify=[\"sh\",\"$ARCTRI_HOOK_SCRIPT\",\"codex\"]" -c 'tui.alternate_screen="never"' "$@"
+         else
+           command codex -c "notify=[\"sh\",\"$ARCTRI_HOOK_SCRIPT\",\"codex\"]" "$@"
+         fi
+       } ;;
   esac
 fi

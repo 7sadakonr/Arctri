@@ -1,7 +1,7 @@
 import type { ITheme } from '@xterm/xterm';
 
 /** Terminal-only face; the rest of the app keeps --font-mono (Roboto Mono) in styles/globals.css. */
-export const TERMINAL_FONT = "'Cascadia Mono', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace";
+export const TERMINAL_FONT = "'Cascadia Mono', 'Arctri Symbols', 'Arctri Thai', 'Leelawadee UI', Thonburi, Consolas, 'SF Mono', Menlo, monospace";
 
 /** Extra device pixels per cell. Kept at 0: tightening cells crowds the Thai fallback glyphs and stacked vowels/tone marks. */
 export const TERMINAL_LETTER_SPACING = 0;
@@ -14,7 +14,7 @@ export function terminalFontsReady(): Promise<void> {
     ['400', '600'].flatMap((w) => [
       document.fonts.load(`${w} 13px 'Cascadia Mono'`, 'Aa'),
       document.fonts.load(`${w} 13px 'Arctri Thai'`, 'กิ่ง')
-    ])
+    ]).concat(document.fonts.load("400 13px 'Arctri Symbols'", ''))
   ).then(
     () => undefined,
     () => undefined

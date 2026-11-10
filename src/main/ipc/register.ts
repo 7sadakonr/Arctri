@@ -1,4 +1,4 @@
-import { dialog, Notification, shell, type BrowserWindow } from 'electron';
+import { app, dialog, Notification, shell, type BrowserWindow } from 'electron';
 import type { SessionInfo, SessionSpec } from '@shared/types/session';
 import { envKeyOf } from '@shared/types/env';
 import type { CompletionResponse } from '@shared/types/completion';
@@ -24,7 +24,7 @@ import { PortHub } from './port-hub';
 
 export { PortHub };
 import { gitCommit, gitCreateBranch, gitFetch, gitPull, gitPush, gitStage, gitSwitch, gitUnstage, runGit, type GitResult } from '../git/actions';
-import { applyUiScale } from '../window';
+import { applyUiScale, approveQuit, setQuitPromptReady } from '../window';
 import { setAppMenus } from '../app-menu';
 import type { GitSyncService } from '../git/sync-service';
 import type { UpdateService } from '../update/update-service';
@@ -415,7 +415,8 @@ export function registerIpc(s: Services, hub: PortHub): void {
   r.handle('app:notify', ({ sessionId, title, body }) => {
     if (process.env['ARCTRI_E2E']) notified.push({ sessionId, title, body });
     if (!s.prefs.get().agentNotifications || !Notification.isSupported()) return;
-    const n = new Notification({ title, body, silent: false });
+    // the page plays the app's own sound; the system one only when that is off
+    const n = new Notification({ title, body, silent: s.prefs.get().agentSound });
     n.on('click', () => {
       const win = s.getWindow();
       if (!win) return;
@@ -425,6 +426,12 @@ export function registerIpc(s: Services, hub: PortHub): void {
       win.webContents.send('app:focus-session', sessionId);
     });
     n.show();
+  });
+
+  r.handle('app:quitPromptReady', () => setQuitPromptReady(true));
+  r.handle('app:quitConfirmed', () => {
+    approveQuit();
+    app.quit();
   });
 
   r.handle('app:diagnostics', () => (process.env['ARCTRI_E2E'] ? { ...s.diagnostics(), notifications: notified } : s.diagnostics()));

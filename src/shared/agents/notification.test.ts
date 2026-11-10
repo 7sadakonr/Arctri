@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentStatus } from '../types/agent-status';
-import { NotificationLedger, notificationFor } from './notification';
+import { NotificationLedger, notificationFor, soundFor } from './notification';
 
 const st = (o: Partial<AgentStatus>): AgentStatus => ({
   sessionId: 's', agentId: 'claude-code', state: 'finished', timestamp: 1, source: 'claude-hook', confidence: 'high', since: 1, unread: true, ...o
@@ -45,5 +45,12 @@ describe('notification identity', () => {
     expect(ledger.claim('b', k)).toBe(true);
     ledger.forget('a');
     expect(ledger.claim('a', k)).toBe(true);
+  });
+});
+
+describe('sound choice', () => {
+  it('a finished turn is the soft sound, everything that wants the user is the insistent one', () => {
+    expect(soundFor('finished')).toBe('done');
+    for (const k of ['needs-approval', 'waiting', 'hint', 'error'] as const) expect(soundFor(k)).toBe('attention');
   });
 });

@@ -6,7 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandBlock } from '@shared/types/block';
 import { AGENT_META } from '@shared/agents/meta';
-import type { SessionInfo } from '@shared/types/session';
+import { INITIAL_PTY_SIZE, type SessionInfo } from '@shared/types/session';
 import { api } from '@/lib/api';
 import { clipboardImageThumb, copyText, readClipboard } from '@/lib/clipboard';
 import { tNow } from '@/lib/i18n';
@@ -66,11 +66,17 @@ export class TerminalHost {
     this.element.className = 'xterm-host';
     this.term = new Terminal({
       allowProposedApi: true,
+      cols: INITIAL_PTY_SIZE.cols,
+      rows: INITIAL_PTY_SIZE.rows,
+      customGlyphs: true,
+      rescaleOverlappingGlyphs: true,
       fontFamily: TERMINAL_FONT,
       fontSize: ui.prefs.fontSize,
       letterSpacing: TERMINAL_LETTER_SPACING,
       scrollback: ui.prefs.scrollback,
       cursorBlink: true,
+      cursorStyle: ui.prefs.cursorStyle,
+      cursorInactiveStyle: ui.prefs.cursorStyle === 'block' ? 'outline' : ui.prefs.cursorStyle,
       theme: terminalTheme(dark),
       ...(isWindows ? { windowsPty: { backend: 'conpty' as const, buildNumber: ui.windowsBuild } } : {}),
       macOptionIsMeta: false,
@@ -123,6 +129,7 @@ export class TerminalHost {
     );
     // The shell draws its prompt after it has said where the prompt is, so it is read once the drawing has been parsed.
     this.term.onWriteParsed(() => {
+      if (this.awaitingRedraw) this.redrawArrived();
       if (this.tracker.sm.phase === 'editing') this.capturePromptSoon();
       this.trackAttachmentsSoon();
     });
@@ -150,7 +157,7 @@ export class TerminalHost {
       if ((st === 'needs-approval' || st === 'working') && interrupt) void api.agentStatus.input(this.info.id, 'interrupt');
       else if (st === 'finished' && e.key === 'Enter') void api.agentStatus.input(this.info.id, 'submit');
     });
-    this.term.onResize(({ cols, rows }) => void api.sessions.resize(info.id, cols, rows));
+    this.term.onResize(() => this.syncPtySize());
     this.term.onBell(() => this.agentSignal('', ''));
     // OSC 9 (message) and OSC 777 (notify;title;body): how agent CLIs ask for attention. OSC 9;4 is progress, not a message.
     this.term.parser.registerOscHandler(9, (data) => {
@@ -185,6 +192,8 @@ export class TerminalHost {
       const id = this.info.id;
       // Nothing typed yet: the command is reported as soon as it is submitted.
       if (this.tracker.sm.phase !== 'editing' || this.tracker.sm.current) return;
+      // While the size is settling the prompt rows may be mangled (see redrawPromptSoon); it is read after the clean redraw instead.
+      if (this.resizeSettling) return;
       useSessions.getState().setPrompt(id, this.tracker.promptSnapshot());
     }, 40);
   }
@@ -239,7 +248,8 @@ export class TerminalHost {
       this.webgl = gl;
       this.repaint();
       this.redrawWhenFontsReady();
-    } catch {
+    } catch (e) {
+      console.warn('[terminal] WebGL renderer unavailable, using the DOM renderer', e);
       this.webgl = undefined; // falls back to the DOM renderer
     }
   }
@@ -571,17 +581,96 @@ export class TerminalHost {
     const el = this.element;
     if (el.offsetWidth < 20 || el.offsetHeight < 20) return; // hidden tab
     try {
-      this.fit.fit();
+      const dims = this.fit.proposeDimensions();
+      if (dims && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)) {
+        const cols = Math.max(2, Math.min(dims.cols, this.promptCols(el.clientWidth)));
+        if (cols !== this.term.cols || dims.rows !== this.term.rows) this.term.resize(cols, dims.rows);
+      }
     } catch {
       /* not laid out yet */
     }
+    // onResize only fires when xterm's own size changes; the PTY may still be at its spawn size, so tell it after every fit.
+    this.syncPtySize();
+  }
+
+  private cellProbe: { key: string; width: number } | undefined;
+
+  /**
+   * Block mode draws the prompt as HTML (CommandEditor), 16px in from each side, in the terminal face. A prompt of N columns needs
+   * N advances of that face; asking for more than fits makes its right-aligned part run off the edge. Infinity outside block mode.
+   */
+  private promptCols(paneWidth: number): number {
+    const info = this.info;
+    if (info.kind !== 'shell' || info.presentation !== 'blocks' || info.integration !== 'active') return Infinity;
+    const font = `${this.term.options.fontSize ?? 14}px ${TERMINAL_FONT}`;
+    // measured again until the face is really loaded: a fallback face has another advance
+    if (this.cellProbe?.key !== font || !document.fonts.check(font)) {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return Infinity;
+      ctx.font = font;
+      this.cellProbe = { key: font, width: ctx.measureText('M').width };
+    }
+    const w = this.cellProbe.width;
+    return w > 0 ? Math.floor((paneWidth - 32 - 2) / w) : Infinity;
+  }
+
+  private lastSent = `${INITIAL_PTY_SIZE.cols}x${INITIAL_PTY_SIZE.rows}`;
+  private redrawTimer: ReturnType<typeof setTimeout> | undefined;
+  private resizeSettling = false;
+  private awaitingRedraw = false;
+
+  private redrawArrived(): void {
+    clearTimeout(this.redrawTimer);
+    this.awaitingRedraw = false;
+    this.resizeSettling = false;
+    this.capturePromptSoon();
+  }
+
+  /**
+   * A narrower terminal re-wraps the shell's prompt rows, but the shell redraws it by moving up a fixed number of rows, so rows of the
+   * old prompt stay behind (stacked prompts). Once the size has settled and the shell is only waiting for input, have it clear the screen
+   * and draw the prompt again (Ctrl-L); in block mode the screen holds nothing but the prompt, so nothing is lost.
+   */
+  private redrawPromptSoon(): void {
+    const info = this.info;
+    if (info.kind !== 'shell' || info.presentation !== 'blocks' || info.integration !== 'active') return;
+    clearTimeout(this.redrawTimer);
+    this.resizeSettling = true;
+    this.redrawTimer = setTimeout(() => {
+      this.resizeSettling = false;
+      const now = this.info;
+      if (this.disposed || now.runningAgent) return;
+      if (this.tracker.sm.phase !== 'editing' || this.tracker.sm.current || this.term.buffer.active.type !== 'normal') {
+        this.capturePromptSoon();
+        return;
+      }
+      // the clean redraw is on its way; the prompt is read as soon as the first of its output has been parsed (or after 400ms if none comes)
+      this.awaitingRedraw = true;
+      void api.sessions.write(now.id, '\x0c');
+      this.redrawTimer = setTimeout(() => this.redrawArrived(), 400);
+    }, 150);
+  }
+
+  /** Keeps the PTY (and the shell's $COLUMNS) at exactly the size xterm draws at; a mismatch wraps right-aligned prompts. */
+  private syncPtySize(): void {
+    if (this.disposed) return;
+    const { cols, rows } = this.term;
+    const key = `${cols}x${rows}`;
+    if (key === this.lastSent) return;
+    this.lastSent = key;
+    void api.sessions.resize(this.info.id, cols, rows);
+    this.redrawPromptSoon();
   }
 
   focus(): void {
     this.term.focus();
   }
 
-  applyPrefs(fontSize: number, dark: boolean): void {
+  applyPrefs(fontSize: number, dark: boolean, cursorStyle: 'bar' | 'block' | 'underline' = 'bar'): void {
+    if (this.term.options.cursorStyle !== cursorStyle) {
+      this.term.options.cursorStyle = cursorStyle;
+      this.term.options.cursorInactiveStyle = cursorStyle === 'block' ? 'outline' : cursorStyle;
+    }
     if (this.term.options.fontSize !== fontSize) this.term.options.fontSize = fontSize;
     this.term.options.theme = terminalTheme(dark);
     this.scheduleFit(0);
@@ -610,6 +699,7 @@ export class TerminalHost {
     this.disposed = true;
     clearTimeout(this.resizeTimer);
     clearTimeout(this.idleTimer);
+    clearTimeout(this.redrawTimer);
     clearTimeout(this.promptTimer);
     this.observer.disconnect();
     this.unsubData();
