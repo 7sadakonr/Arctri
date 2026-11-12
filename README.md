@@ -19,7 +19,7 @@
 
 Arctri is a desktop terminal for Windows and macOS built around the way developers use **Claude Code**, **OpenAI Codex CLI**, and traditional shells. It combines real PTY-backed execution with command blocks, context-aware autocomplete, project navigation, file editing, Git changes, and a contextual toolbar that appears when an AI agent is running.
 
-**Current release:** [`v0.4.2-beta`](https://github.com/7sadakonr/Arctri/releases/latest) · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
+**Current release:** [`v0.4.3-beta`](https://github.com/7sadakonr/Arctri/releases/latest) · **Windows 10 22H2 / Windows 11 (x64)** with optional WSL2 support · **macOS 12+ (Apple Silicon and Intel)** with your own zsh or bash.
 
 > [!IMPORTANT]
 > Arctri does **not** include its own AI model, API keys, or cloud inference service. It runs external AI coding CLIs installed and authenticated by the user. Their subscriptions, accounts, permissions, network requests, and usage limits are managed by their respective providers.

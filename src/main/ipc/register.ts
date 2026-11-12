@@ -13,7 +13,7 @@ import { Router } from './router';
 import type { EnvironmentQuery, GitHistoryQuery } from '../env-query/service';
 import { enableTuiNotifications, tuiNotificationsEnabled } from '../agents/codex-config';
 import { resolveWithin } from '../files/refs';
-import { attachmentsForPaths, clipboardAttachments, pastedImageThumb } from '../files/attachments';
+import { attachmentImage, attachmentsForPaths, clipboardAttachments, isHandedOut, pastedImageThumb } from '../files/attachments';
 import { copyMany, moveMany, type TransferResult } from '../files/transfer';
 import type { FileWatcher } from '../files/watcher';
 import { posix, win32 } from 'node:path';
@@ -248,6 +248,10 @@ export function registerIpc(s: Services, hub: PortHub): void {
     const info = s.sessions.get(sessionId);
     return (info && (await pastedImageThumb(info, agentSessionId, n))) || null;
   });
+
+  // The preview of an attachment, and opening one in its own app. Only files that were handed out as attachments.
+  r.handle('app:attachmentImage', ({ path }) => attachmentImage(path));
+  r.handle('app:openAttachment', async ({ path }) => (isHandedOut(path) ? (await shell.openPath(path)) === '' : false));
 
   // Files dropped on the terminal (absolute paths from the OS).
   r.handle('app:attachPaths', async ({ sessionId, paths }) => {

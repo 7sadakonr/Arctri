@@ -34,6 +34,29 @@ describe('HistoryRepo', () => {
 });
 
 describe('PrefsStore', () => {
+  it('moves a stored agentNormalBuffer=true to false once, then keeps what the user chooses', () => {
+    const b = new MemoryBackend();
+    b.set({ agentNormalBuffer: true, fontSize: 16 });
+    const first = new PrefsStore(b);
+    expect(first.get().agentNormalBuffer).toBe(false);
+    expect(first.get().fontSize).toBe(16);
+    expect(first.set({ agentNormalBuffer: true }).agentNormalBuffer).toBe(true);
+    // the next start does not undo the user's choice
+    const again = new PrefsStore(b);
+    expect(again.get().agentNormalBuffer).toBe(true);
+    expect(again.get().migrations).toContain('agent-fullscreen-default-v2');
+  });
+
+  it('records the migration on a fresh store too, with the main screen off', () => {
+    const p = new PrefsStore(new MemoryBackend());
+    expect(p.get().agentNormalBuffer).toBe(false);
+    expect(p.get().migrations).toEqual(['agent-fullscreen-default-v2']);
+  });
+
+  it('does not let the window write the migrations list', () => {
+    expect(prefsPatchSchema.safeParse({ migrations: [] }).data).toEqual({});
+  });
+
   it('applies defaults, validates and recovers from bad values', () => {
     const b = new MemoryBackend();
     b.set({ fontSize: 'big', language: 'th', scrollback: 50000 });

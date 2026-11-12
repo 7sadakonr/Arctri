@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.3-beta
+
+- **Autocomplete.** The grey text after the caret now comes from the best earlier command (by folder, frequency and recency, not just the newest), and falls back to the best suggestion that extends what you typed, such as `cd Des` -> `cd Desktop/`.
+- **Attachments.** Clicking an attachment chip opens a preview (images) or the file in its default app; a failed removal from the agent's message now says so.
+- **Agents.** The terminal main screen option for Claude Code and Codex is now off by default, so the input box stays at the bottom and the mouse wheel scrolls inside the agent; turning it on gives the terminal scrollbar. Existing settings are migrated once.
+- **Toolbar.** The agent bar has a More actions menu, and double-clicking the path button opens the folder.
+
 ## 0.4.2-beta
 
 - **Alerts.** Arctri plays its own sound when an agent finishes or needs you and its tab is not in front: a soft pair of notes for a finished turn, a repeated note for an approval,

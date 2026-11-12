@@ -10,7 +10,18 @@ import { formatRef, uncToPosix } from './refs';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const THUMB_WIDTH = 320;
+const PREVIEW_MAX = 2048;
+const MAX_PASTED_BYTES = 25 * 1024 * 1024;
 
+/** Files this app handed to the window as attachments: the only ones the window may ask to see or open. */
+const handedOut = new Set<string>();
+const MAX_HANDED_OUT = 500;
+function rememberSource(path: string): void {
+  handedOut.delete(path);
+  handedOut.add(path);
+  if (handedOut.size > MAX_HANDED_OUT) handedOut.delete(handedOut.values().next().value as string);
+}
+export const isHandedOut = (path: string): boolean => handedOut.has(path);
 
 function thumbOf(img: Electron.NativeImage): string | undefined {
   if (img.isEmpty()) return undefined;
@@ -33,7 +44,8 @@ export async function attachmentsForPaths(info: SessionInfo, wsl: WslManager, pa
     }
     if (!ref) continue;
     const image = IMAGE_EXT.test(f);
-    out.push({ ref, name: basename(f.replace(/\\/g, '/')), image, thumb: image ? thumbOf(nativeImage.createFromPath(f)) : undefined });
+    rememberSource(f);
+    out.push({ ref, name: basename(f.replace(/\\/g, '/')), image, src: f, thumb: image ? thumbOf(nativeImage.createFromPath(f)) : undefined });
   }
   return out;
 }
@@ -76,14 +88,30 @@ export async function clipboardAttachments(info: SessionInfo, wsl: WslManager): 
   return [];
 }
 
-const MAX_PASTED_BYTES = 25 * 1024 * 1024;
-
 /** Preview of `[Image #n]` from the file the agent saved when the image was pasted; undefined when there is none (yet). */
-export async function pastedImageThumb(info: SessionInfo, agentSessionId: string | undefined, n: number): Promise<string | undefined> {
+export async function pastedImageThumb(
+  info: SessionInfo, agentSessionId: string | undefined, n: number
+): Promise<{ thumb: string; src: string } | undefined> {
   if (!info.cwd) return undefined;
   const file = await findPastedImage(tempRoots(info.env), info.cwd.path, agentSessionId, n);
   if (!file) return undefined;
   const st = await stat(file).catch(() => null);
   if (!st || st.size > MAX_PASTED_BYTES) return undefined;
-  return thumbOf(nativeImage.createFromBuffer(await readFile(file)));
+  const thumb = thumbOf(nativeImage.createFromBuffer(await readFile(file)));
+  if (!thumb) return undefined;
+  rememberSource(file);
+  return { thumb, src: file };
+}
+
+/** A larger picture of an attachment for the preview; null when the file was not handed out, is too big or is not an image. */
+export async function attachmentImage(path: string): Promise<string | null> {
+  if (!isHandedOut(path)) return null;
+  const st = await stat(path).catch(() => null);
+  if (!st || !st.isFile() || st.size > MAX_PASTED_BYTES) return null;
+  const img = nativeImage.createFromBuffer(await readFile(path));
+  if (img.isEmpty()) return null;
+  const { width, height } = img.getSize();
+  const long = Math.max(width, height);
+  const fit = long > PREVIEW_MAX ? img.resize(width >= height ? { width: PREVIEW_MAX } : { height: PREVIEW_MAX }) : img;
+  return fit.toDataURL();
 }

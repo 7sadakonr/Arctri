@@ -6,10 +6,12 @@ import { FOCUS_SESSION_EVENT } from '@/lib/focus';
 import { tNow, useT } from '@/lib/i18n';
 import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
+import { getHost } from '../terminal/xterm-host';
 import { useUi } from '@/stores/ui';
 import { INSERT_EVENT } from '../agents/insert';
 import { SnapshotView } from '../blocks/styled-lines';
 import { AutocompleteOverlay } from './AutocompleteOverlay';
+import { visibleGhost } from './ghost';
 import { deleteBackward } from './thai';
 
 const drafts = new Map<string, string>();
@@ -28,7 +30,8 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
   const [text, setText] = useState(() => drafts.get(sessionId) ?? '');
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [selected, setSelected] = useState(-1);
-  const [ghost, setGhost] = useState('');
+  const [ghostFull, setGhostFull] = useState('');
+  const [caretAtEnd, setCaretAtEnd] = useState(true);
   const [open, setOpen] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -36,6 +39,11 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
   const latest = useRef(0);
   const history = useRef<{ list: string[] | undefined; index: number; draft: string }>({ list: undefined, index: -1, draft: '' });
   const caretAfter = useRef<number | undefined>(undefined);
+  const itemsRef = useRef<CompletionItem[]>([]);
+  itemsRef.current = items;
+  const selectedRef = useRef(-1);
+  selectedRef.current = selected;
+  const ghost = visibleGhost(text, ghostFull, caretAtEnd);
 
   useEffect(() => {
     drafts.set(sessionId, text);
@@ -80,12 +88,25 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
     }
   }, [text]);
 
+  const root = useRef<HTMLDivElement>(null);
+  // If the drawn prompt is wider than the room it has, its right edge (the closing corner of a framed theme) is cut off: tell the terminal.
+  useLayoutEffect(() => {
+    let cut = 0;
+    root.current?.querySelectorAll<HTMLElement>('.block-grid').forEach((el) => {
+      cut = Math.max(cut, el.scrollWidth - el.clientWidth);
+    });
+    if (cut > 0) {
+      const info = useSessions.getState().infos[sessionId];
+      if (info) getHost(info).reportPromptOverflow(cut);
+    }
+  }, [prompt, sessionId]);
+
   const query = useCallback(
     (line: string, cursor: number) => {
       clearTimeout(timer.current);
       if (!line.trim() || composing.current) {
         setItems([]);
-        setGhost('');
+        setGhostFull('');
         setOpen(false);
         return;
       }
@@ -95,13 +116,15 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
         try {
           const r = await api.completion.query({ requestId: id, sessionId, line, cursor });
           if (latest.current !== id) return; // a newer keystroke superseded this request
+          // Keep the highlighted row when it is still offered, so the list does not jump back while typing.
+          const keep = itemsRef.current[selectedRef.current]?.insertText;
+          setSelected(keep === undefined ? -1 : r.items.findIndex((x) => x.insertText === keep));
           setItems(r.items);
-          setSelected(-1);
           setOpen(r.items.length > 0);
-          setGhost(r.ghost && cursor === line.length && !line.includes('\n') && r.ghost.startsWith(line) ? r.ghost.slice(line.length) : '');
+          setGhostFull(r.ghost && cursor === line.length && !line.includes('\n') && r.ghost.startsWith(line) ? r.ghost : '');
         } catch {
           setItems([]);
-          setGhost('');
+          setGhostFull('');
         }
       }, 30);
     },
@@ -110,6 +133,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
 
   const change = (value: string, cursor: number) => {
     setText(value);
+    setCaretAtEnd(cursor === value.length);
     history.current.index = -1;
     query(value, cursor);
   };
@@ -121,7 +145,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
     setText(r.text);
     setOpen(false);
     setItems([]);
-    setGhost('');
+    setGhostFull('');
     // Paths keep suggesting inside the directory that was just completed. Done at once (not deferred)
     // so it can never overwrite the suggestions of text typed afterwards.
     if (item.kind === 'dir') query(r.text, r.caret);
@@ -135,7 +159,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
     if (res.ok) {
       setText('');
       setItems([]);
-      setGhost('');
+      setGhostFull('');
       setOpen(false);
       history.current = { list: undefined, index: -1, draft: '' };
     } else {
@@ -166,7 +190,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
       setText(v);
     }
     setOpen(false);
-    setGhost('');
+    setGhostFull('');
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -194,7 +218,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
       if (open || ghost) {
         e.preventDefault();
         setOpen(false);
-        setGhost('');
+        setGhostFull('');
       }
     } else if ((e.key === 'ArrowRight' || e.key === 'End') && ghost && atEnd) {
       e.preventDefault();
@@ -227,6 +251,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
 
   return (
     <div
+      ref={root}
       className="relative cursor-text border-t border-border px-4 py-3"
       onClick={(e) => {
         // a click anywhere on the bar types into the input, except on the input itself, the suggestions, or while selecting text
@@ -267,6 +292,7 @@ export function CommandEditor({ sessionId, focused }: { sessionId: string; focus
             style={fontSize}
             onChange={(e) => change(e.target.value, e.target.selectionStart)}
             onKeyDown={onKeyDown}
+            onSelect={(e) => setCaretAtEnd(e.currentTarget.selectionStart === e.currentTarget.value.length && e.currentTarget.selectionEnd === e.currentTarget.value.length)}
             onCompositionStart={() => {
               composing.current = true;
             }}

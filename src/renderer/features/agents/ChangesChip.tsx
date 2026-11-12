@@ -20,12 +20,13 @@ export function ChangesChip({ sessionId, data }: { sessionId: string; data: Chan
         <Chip title={t('agent.changes', { n: data.files.length })} aria-label={t('agent.changes', { n: data.files.length })}>
           <FileText size={12} />
           <span>{data.files.length}</span>
+          {/* line counts only where the bar has room (the AgentBar is a size container); the file count always shows */}
           {(data.added > 0 || data.deleted > 0) && (
-            <>
+            <span className="hidden items-center gap-1.5 @lg:inline-flex">
               <span className="opacity-50">•</span>
               <span className="text-ok">+{data.added}</span>
               {data.deleted > 0 && <span className="text-danger">-{data.deleted}</span>}
-            </>
+            </span>
           )}
         </Chip>
       </DropdownMenuTrigger>

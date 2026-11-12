@@ -56,7 +56,7 @@ export const prefsSchema = z.object({
   filePanelWidth: shape.filePanelWidth.default(280),
   viewerWidth: shape.viewerWidth.default(560),
   scrollback: shape.scrollback.default(10000),
-  agentNormalBuffer: shape.agentNormalBuffer.default(true),
+  agentNormalBuffer: shape.agentNormalBuffer.default(false),
   conptyMode: shape.conptyMode.default('bundled'),
   osc52: shape.osc52.default(false),
   historyLimit: shape.historyLimit.default(10000),
@@ -70,6 +70,8 @@ export const prefsSchema = z.object({
     .object({ autoCheck: shape.updates.shape.autoCheck.default(true), channel: shape.updates.shape.channel })
     .default({ autoCheck: true }),
   recentProjects: shape.recentProjects.default([]),
+  // One-time changes to stored values that were already applied (see PrefsStore). Not in `shape`: the window cannot write it.
+  migrations: z.array(z.string().max(60)).max(50).default([]),
   window: z
     .object({
       ...windowShape,

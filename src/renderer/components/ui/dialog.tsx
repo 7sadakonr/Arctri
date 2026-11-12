@@ -19,9 +19,9 @@ export function DialogContent({
           className
         )}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <DialogPrimitive.Title className="text-sm font-semibold">{title}</DialogPrimitive.Title>
-          <DialogPrimitive.Close className="rounded p-1 text-fg-muted hover:bg-hover hover:text-fg" aria-label={closeLabel}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <DialogPrimitive.Title className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</DialogPrimitive.Title>
+          <DialogPrimitive.Close className="shrink-0 rounded p-1 text-fg-muted hover:bg-hover hover:text-fg" aria-label={closeLabel}>
             <X size={14} />
           </DialogPrimitive.Close>
         </div>
