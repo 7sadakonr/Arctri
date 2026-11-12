@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { EnvPath, ShellProfile } from '@shared/types/env';
+import { SHELL_STATUS_VARS } from '../agents/status/shell-env';
 import { integrationDir } from '../paths';
 import { localCwd } from './local';
 
@@ -26,9 +27,18 @@ export interface LaunchPlan {
 
 const WSL_FORWARD = ['ARCTRI_NONCE', 'ARCTRI_BLOCKS', 'ARCTRI_SESSION', 'TERM_PROGRAM', 'COLORTERM'];
 
+/**
+ * Per-tab values Arctri itself puts into a shell. When Arctri is started from an Arctri tab (e.g. `npm run dev`) they arrive in
+ * process.env from the outer app and would override this app's own choices, so they are never inherited.
+ */
+const OWN_TAB_VARS = ['ARCTRI_NONCE', 'ARCTRI_BLOCKS', 'ARCTRI_NO_ALT_SCREEN', ...SHELL_STATUS_VARS];
+
 function baseEnv(ctx: LaunchContext, withIntegration: boolean): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  // the outer Arctri sets both together; on its own the variable is the user's
+  if (env['ARCTRI_NO_ALT_SCREEN'] !== undefined) delete env['CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN'];
+  for (const k of OWN_TAB_VARS) delete env[k];
   env['TERM_PROGRAM'] = 'Arctri';
   env['COLORTERM'] = 'truecolor';
   env['ARCTRI_SESSION'] = ctx.sessionId;

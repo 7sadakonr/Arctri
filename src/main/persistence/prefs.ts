@@ -1,5 +1,7 @@
 import { defaultPrefs, prefsSchema, type Prefs } from '@shared/prefs';
 
+const AGENT_FULLSCREEN = 'agent-fullscreen-default-v2';
+
 export interface KeyValueBackend {
   get(): unknown;
   set(value: unknown): void;
@@ -9,7 +11,19 @@ export interface KeyValueBackend {
 export class PrefsStore {
   private value: Prefs;
   constructor(private readonly backend: KeyValueBackend) {
-    this.value = this.load();
+    this.value = this.migrate(this.load());
+  }
+
+  /**
+   * Changes to stored values that a new default cannot reach. Each one runs once (its name is kept in `migrations`), so a user who
+   * later chooses otherwise keeps their choice.
+   */
+  private migrate(value: Prefs): Prefs {
+    if (value.migrations.includes(AGENT_FULLSCREEN)) return value;
+    // 0.4.2 stored `true` for everyone (and a build in between set it back to `true` once more): agents on the main screen repaint from the top on resize and on long output
+    const next: Prefs = { ...value, agentNormalBuffer: false, migrations: [...value.migrations, AGENT_FULLSCREEN] };
+    this.backend.set(next);
+    return next;
   }
 
   private load(): Prefs {

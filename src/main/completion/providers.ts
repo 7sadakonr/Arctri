@@ -36,6 +36,13 @@ function item(
   };
 }
 
+/** Same weighting for the popup list and the inline ghost: recency, frequency, and having been used in this folder. */
+export function historyScore(r: { count: number; inCwd: boolean; lastAt: number }, now = Date.now()): number {
+  return (70 + Math.min(r.count, 10) * 1.5 + (r.inCwd ? 8 : 0) + (now - r.lastAt < 86_400_000 ? 5 : 0)) * SOURCE_WEIGHT.history;
+}
+
+const DIR_ONLY_COMMANDS = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl']);
+
 export const historyProvider = (d: ProviderDeps): Provider => ({
   id: 'history',
   async provide(ctx) {
@@ -45,8 +52,7 @@ export const historyProvider = (d: ProviderDeps): Provider => ({
     return rows
       .filter((r) => r.command !== ctx.line)
       .map((r): CompletionItem => {
-        const score =
-          (70 + Math.min(r.count, 10) * 1.5 + (r.inCwd ? 8 : 0) + (now - r.lastAt < 86_400_000 ? 5 : 0)) * SOURCE_WEIGHT.history;
+        const score = historyScore(r, now);
         return {
           label: r.command.split('\n')[0]! + (r.command.includes('\n') ? ' …' : ''),
           insertText: r.command,
@@ -105,9 +111,12 @@ export const pathProvider = (d: ProviderDeps): Provider => ({
 
     const entries = await d.env.listDir(ctx.env, base);
     if (signal.aborted) return [];
+    // `cd` only ever takes a folder, so files would just push the folders out of the list.
+    const dirOnly = tok.index - tok.commandIndex === 1 && DIR_ONLY_COMMANDS.has((tok.words[0] ?? '').toLowerCase());
     const out: CompletionItem[] = [];
     for (const e of entries) {
       if (e.name.startsWith('.') && !prefix.startsWith('.')) continue;
+      if (dirOnly && !e.isDir) continue;
       const s = matchScore(e.name, prefix, ci(ctx));
       if (s === 0 || (prefix && s < 50)) continue; // paths are matched by prefix or word boundary only
       const full = dirPart + e.name + (e.isDir ? sep : '');

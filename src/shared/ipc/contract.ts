@@ -86,6 +86,8 @@ export const requestSchemas = {
   'app:clipboardAttachments': z.object({ sessionId: id }),
   'app:attachPaths': z.object({ sessionId: id, paths: z.array(z.string().min(1).max(4096)).min(1).max(100) }),
   'agent:pastedImage': z.object({ sessionId: id, n: z.number().int().min(1).max(100000), agentSessionId: z.string().regex(/^[\w.-]{1,200}$/).optional() }),
+  'app:attachmentImage': z.object({ path: z.string().min(1).max(4096) }),
+  'app:openAttachment': z.object({ path: z.string().min(1).max(4096) }),
   'app:pickFolder': z.undefined().or(z.null()),
   'git:headText': z.object({ sessionId: id, rel: z.string().min(1).max(4096) }),
   'git:refs': z.object({ sessionId: id }),

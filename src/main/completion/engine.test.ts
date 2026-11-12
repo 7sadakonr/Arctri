@@ -83,16 +83,16 @@ describe('CompletionEngine', () => {
   it('completes paths with spaces and quotes them for the shell', async () => {
     const env = new FakeEnv();
     env.files.set('C:\\proj', [
-      { name: 'My Documents', isDir: true }, { name: 'main.ts', isDir: false }, { name: '.hidden', isDir: false }, { name: 'งานใหม่', isDir: true }
+      { name: 'My Documents', isDir: true }, { name: 'main.ts', isDir: false }, { name: '.hidden', isDir: true }, { name: 'งานใหม่', isDir: true }
     ]);
     const { ask } = setup(winInfo(), env);
     const r = await ask('cd M');
     const my = r.items.find((i) => i.label.startsWith('My Documents'))!;
     expect(my.insertText).toBe("'My Documents\\'");
     expect(my.kind).toBe('dir');
-    expect(r.items.map((i) => i.label)).not.toContain('.hidden');
+    expect(r.items.map((i) => i.label)).not.toContain('.hidden\\');
     expect((await ask('cd ง')).items[0]!.label).toBe('งานใหม่\\');
-    expect((await ask('cd .')).items.map((i) => i.label)).toContain('.hidden');
+    expect((await ask('cd .')).items.map((i) => i.label)).toContain('.hidden\\');
 
     const bash = setup(wslInfo('/home/me/p'), env);
     env.files.set('/home/me/p', [{ name: 'my docs', isDir: true }]);
@@ -124,6 +124,25 @@ describe('CompletionEngine', () => {
     expect(r.items.filter((i) => i.kind === 'history').map((i) => i.insertText)).toEqual(['git status', 'git stash list']);
     expect(r.ghost).toBe('git status');
     expect(r.items.some((i) => i.insertText.includes('windows-only'))).toBe(false);
+  });
+
+  it('ghost prefers a frequent command from this folder over a merely newer one', async () => {
+    const { ask, history } = setup(wslInfo(), new FakeEnv());
+    const k = 'wsl:Ubuntu:bash';
+    for (let i = 0; i < 4; i++) history.record({ envKey: k, command: 'cd /home/me/proj/api', at: Date.now() - 60_000 * (i + 10), cwd: '/home/me/proj' });
+    history.record({ envKey: k, command: 'cd /tmp/other', at: Date.now() - 1000, cwd: '/elsewhere' });
+    expect((await ask('cd ')).ghost).toBe('cd /home/me/proj/api');
+  });
+
+  it('ghost completes a typed folder name, only for folders after cd, and never for a fuzzy match', async () => {
+    const env = new FakeEnv();
+    env.files.set('/home/me/proj', [{ name: 'Desktop', isDir: true }, { name: 'Design.md', isDir: false }]);
+    const { ask } = setup(wslInfo(), env);
+    const r = await ask('cd Des');
+    expect(r.ghost).toBe('cd Desktop/');
+    expect(r.items.map((i) => i.label)).toEqual(['Desktop/']);
+    expect((await ask('cd esk')).ghost).toBeUndefined();
+    expect((await ask('git ch')).ghost).toBe('git checkout ');
   });
 
   it('stays silent when the shell is busy, for agents, and for blank input', async () => {

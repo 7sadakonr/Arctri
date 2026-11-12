@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShellProfile } from '@shared/types/env';
-import { buildShellLaunch, type LaunchContext } from './launch';
+import { baseLaunchEnv, buildShellLaunch, type LaunchContext } from './launch';
 
 const toPosix: LaunchContext['toPosix'] = async (_d, p) => '/mnt/' + p[0]!.toLowerCase() + p.slice(2).replace(/\\/g, '/');
 const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({ sessionId: 's1', nonce: 'abc123', blocks: true, toPosix, ...over });
@@ -76,5 +76,24 @@ describe('buildShellLaunch', () => {
     expect((other.args as string[])[3]).toBe('~');
     const noMap = await buildShellLaunch(bash, ctx({ cwd: { env: 'windows', path: 'Z:\\gone' as never }, toPosix: async (d, p) => (p.endsWith('bash') ? '/mnt/z/rc' : null) }));
     expect(noMap.note).toBe('cwd-unmapped');
+  });
+});
+
+describe('baseLaunchEnv', () => {
+  it('drops what an outer Arctri put in the environment (Arctri started from an Arctri tab), keeps the user\'s own values', () => {
+    const keys = ['CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN', 'ARCTRI_NO_ALT_SCREEN', 'ARCTRI_NONCE', 'ARCTRI_BLOCKS', 'ARCTRI_EVENTS_DIR', 'ARCTRI_EVENT_TOKEN', 'ARCTRI_HOOK_SCRIPT', 'ARCTRI_CLAUDE_SETTINGS', 'MY_VAR'];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    try {
+      for (const k of keys) process.env[k] = 'outer';
+      const env = baseLaunchEnv('s1', '', false, false);
+      for (const k of keys.slice(0, -1)) expect(env[k], k).toBeUndefined();
+      expect(env['MY_VAR']).toBe('outer');
+
+      // set by the user (no outer Arctri marker): kept
+      delete process.env['ARCTRI_NO_ALT_SCREEN'];
+      expect(baseLaunchEnv('s1', '', false, false)['CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN']).toBe('outer');
+    } finally {
+      for (const k of keys) if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { AgentScroll, measureShift, scrollCue } from './agent-scroll';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -18,13 +19,16 @@ import { useBlocks } from '@/stores/blocks';
 import { useSessions } from '@/stores/sessions';
 import { useUi } from '@/stores/ui';
 import { isMac, isWindows, modKey } from '@/lib/platform';
-import { planRemoval, type RemovalPlan, type RowCell } from '../agents/attachment-remove';
+import { planRemovalRows, type MessageRow, type RemovalPlan, type RowCell } from '../agents/attachment-remove';
 import { inputRegion, numberOf, placeholdersIn, reconcile, type TrackedAttachment } from '../agents/attachment-tracker';
 import { insertAttachments } from '../agents/insert';
 import { refreshChanges } from '../agents/useChanges';
 import { BlockTracker } from './block-tracker';
 import { ThaiInputTracker } from './thai-input';
 import { TERMINAL_FONT, TERMINAL_LETTER_SPACING, terminalFontsReady, terminalTheme } from './theme';
+
+/** An unfocused pane must not look like the one receiving keys: hollow block, or no bar/underline at all. */
+const inactiveCursor = (s: 'bar' | 'block' | 'underline') => (s === 'block' ? ('outline' as const) : ('none' as const));
 
 /** `localStorage.arctriTraceAttach = '1'` in the DevTools console logs how an attachment is removed from the agent's message box. */
 function traceAttach(...args: unknown[]): void {
@@ -76,7 +80,7 @@ export class TerminalHost {
       scrollback: ui.prefs.scrollback,
       cursorBlink: true,
       cursorStyle: ui.prefs.cursorStyle,
-      cursorInactiveStyle: ui.prefs.cursorStyle === 'block' ? 'outline' : ui.prefs.cursorStyle,
+      cursorInactiveStyle: inactiveCursor(ui.prefs.cursorStyle),
       theme: terminalTheme(dark),
       ...(isWindows ? { windowsPty: { backend: 'conpty' as const, buildNumber: ui.windowsBuild } } : {}),
       macOptionIsMeta: false,
@@ -129,6 +133,8 @@ export class TerminalHost {
     );
     // The shell draws its prompt after it has said where the prompt is, so it is read once the drawing has been parsed.
     this.term.onWriteParsed(() => {
+      this.syncScrollbar();
+      this.scrollHintSoon();
       if (this.awaitingRedraw) this.redrawArrived();
       if (this.tracker.sm.phase === 'editing') this.capturePromptSoon();
       this.trackAttachmentsSoon();
@@ -142,6 +148,19 @@ export class TerminalHost {
       e.preventDefault();
       void api.files.fromDrop(info.id, files).then((atts) => insertAttachments(info.id, atts));
     });
+
+    // Claude Code's fullscreen screen scrolls itself: what is sent to it feeds an estimate that the scroll indicator draws.
+    this.element.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.scrollHintOn() || e.deltaY === 0) return;
+        this.agentScroll.wheel(Math.sign(e.deltaY));
+        this.scrollInput();
+        this.scrollHintSoon(60);
+      },
+      // capture: xterm handles the wheel itself and stops it from bubbling
+      { passive: true, capture: true }
+    );
 
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
     this.term.onData((d) => {
@@ -157,7 +176,10 @@ export class TerminalHost {
       if ((st === 'needs-approval' || st === 'working') && interrupt) void api.agentStatus.input(this.info.id, 'interrupt');
       else if (st === 'finished' && e.key === 'Enter') void api.agentStatus.input(this.info.id, 'submit');
     });
-    this.term.onResize(() => this.syncPtySize());
+    this.term.onResize(() => {
+      this.syncScrollbar();
+      this.syncPtySize();
+    });
     this.term.onBell(() => this.agentSignal('', ''));
     // OSC 9 (message) and OSC 777 (notify;title;body): how agent CLIs ask for attention. OSC 9;4 is progress, not a message.
     this.term.parser.registerOscHandler(9, (data) => {
@@ -288,8 +310,11 @@ export class TerminalHost {
   }
 
   update(info: SessionInfo): void {
+    const wasCapped = this.promptCapped();
     this.info = info;
     this.tracker.update({ env: info.env, shell: info.shell });
+    // an agent starting or ending in a shell tab lifts or restores the prompt's column cap: refit at once
+    if (this.promptCapped() !== wasCapped) this.scheduleFit(0);
   }
 
   /**
@@ -308,6 +333,11 @@ export class TerminalHost {
   private onKey(e: KeyboardEvent): boolean {
     if (isAppChord(e)) return false;
     if (e.type !== 'keydown') return true;
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && ['PageUp', 'PageDown'].includes(e.key) && this.scrollHintOn()) {
+      this.agentScroll.key(e.key);
+      this.scrollInput();
+      this.scrollHintSoon(80);
+    }
     if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       const agent = this.info.kind === 'agent' || !!this.info.runningAgent;
       const rest = agent ? this.thaiInput.backspace() : this.thaiBackspace();
@@ -383,8 +413,8 @@ export class TerminalHost {
     return cells;
   }
 
-  /** Where the caret stands relative to `needle` in the message box right now (see `planRemoval`); undefined when that is unclear. */
-  private locate(needle: string): RemovalPlan | undefined {
+  /** Where the caret stands relative to `needle` in the message box right now (see `planRemovalRows`); undefined when that is unclear. */
+  private locate(needle: string, occurrence = 0): RemovalPlan | undefined {
     const info = useSessions.getState().infos[this.info.id] ?? this.info;
     const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
     const input = agentId ? AGENT_META[agentId]?.input : undefined;
@@ -393,10 +423,38 @@ export class TerminalHost {
     const region = inputRegion(lines, input.prompt);
     if (region === undefined) return undefined;
     const buf = this.term.buffer.active;
+    // all rows of the message box: a long @path is wrapped over more than one
+    const rows: MessageRow[] = [];
     for (let y = lines.length - region.split('\n').length; y < lines.length; y++) {
-      if (lines[y]!.includes(needle)) return planRemoval(this.rowCells(y), needle, y === buf.cursorY ? buf.cursorX : undefined);
+      rows.push({ cells: this.rowCells(y), cursorX: y === buf.cursorY ? buf.cursorX : undefined });
     }
-    return undefined;
+    return planRemovalRows(rows, needle, occurrence);
+  }
+
+  /** How many times `text` is in the message box now; spaces and wraps are ignored. */
+  private countInMessage(text: string): number {
+    const info = useSessions.getState().infos[this.info.id] ?? this.info;
+    const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
+    const input = agentId ? AGENT_META[agentId]?.input : undefined;
+    const region = input ? inputRegion(this.screenLines(), input.prompt) : undefined;
+    if (region === undefined) return 0;
+    const flat = region.replace(/\s/g, '');
+    const needle = text.replace(/\s/g, '');
+    let n = 0;
+    for (let at = flat.indexOf(needle); at >= 0; at = flat.indexOf(needle, at + needle.length)) n++;
+    return n;
+  }
+
+  /** Reads `read()` until it gives the same caret distance twice in a row (the agent has drawn every key sent), at most 1.5s. */
+  private async settled(read: () => RemovalPlan | undefined): Promise<RemovalPlan | undefined> {
+    let last = read();
+    for (const end = Date.now() + 1500; Date.now() < end; ) {
+      await new Promise((r) => setTimeout(r, 60));
+      const now = read();
+      if (now?.moves === last?.moves) return now;
+      last = now;
+    }
+    return last;
   }
 
   private async until(cond: () => boolean, ms: number): Promise<boolean> {
@@ -408,9 +466,18 @@ export class TerminalHost {
   /**
    * Takes an attachment out of the agent's message box. The caret is moved one key at a time and looked at after each key, and
    * Backspace is pressed only once the caret is seen right behind the text. If anything is unclear (the caret does not move,
-   * the text is on another row, the screen does not answer) nothing is deleted and false is returned; the chip is dropped anyway.
+   * the screen does not answer) nothing is deleted and false is returned. `occurrence` picks one of several identical `@path`s
+   * (the same file attached twice), counted in reading order. Removals run one after another: two at once would mix their keys.
    */
-  async removeAttachment(att: TrackedAttachment): Promise<boolean> {
+  removeAttachment(att: TrackedAttachment, occurrence = 0): Promise<boolean> {
+    const run = this.removing.then(() => this.removeAttachmentNow(att, occurrence));
+    this.removing = run.catch(() => false);
+    return run;
+  }
+
+  private removing: Promise<unknown> = Promise.resolve();
+
+  private async removeAttachmentNow(att: TrackedAttachment, occurrence: number): Promise<boolean> {
     const info = useSessions.getState().infos[this.info.id] ?? this.info;
     if (info.state !== 'running') return false;
     const agentId = info.kind === 'agent' ? info.agentId : info.runningAgent?.agentId;
@@ -422,21 +489,46 @@ export class TerminalHost {
     };
     // a placeholder from the agent can be both the token and the ref of a chip: it is a token first
     for (const needle of new Set([att.token, att.ref].filter((n): n is string => !!n))) {
-      let plan = this.locate(needle);
-      traceAttach('start', needle, plan, 'cursor', this.term.buffer.active.cursorX, this.term.buffer.active.cursorY, 'rows', this.messageRows());
-      if (!plan) continue;
-      for (let i = 0; i < 40 && plan.moves !== 0; i++) {
-        const before = plan.moves;
-        write(before > 0 ? '\x1b[C' : '\x1b[D');
+      // placeholders are unique; only a path can be in the message more than once
+      const nth = needle === att.token ? 0 : occurrence;
+      const first = this.locate(needle, nth);
+      traceAttach('start', needle, first, 'cursor', this.term.buffer.active.cursorX, this.term.buffer.active.cursorY, 'rows', this.messageRows());
+      if (!first) continue;
+      let plan: RemovalPlan = first;
+      // a long path is many keys away when the caret is at the other end of the message
+      let stalls = 0;
+      for (let i = 0; i < 100 && plan.moves !== 0; i++) {
+        const before: number = plan.moves;
+        // far away: most of the way in one go (the distance across rows is only an estimate, so stop a little short and let
+        // the single keys after it settle the rest); close by: one key at a time
+        const keys: number = Math.abs(before) > 6 ? Math.abs(before) - 3 : 1;
+        write((before > 0 ? '\x1b[C' : '\x1b[D').repeat(keys));
         // an agent may jump over a whole placeholder with one key: only the screen tells where the caret is
-        await this.until(() => this.locate(needle)?.moves !== before, 400);
-        plan = this.locate(needle);
-        if (!plan || plan.moves === before) return false;
+        await this.until(() => this.locate(needle, nth)?.moves !== before, 400);
+        const next: RemovalPlan | undefined = keys > 1 ? await this.settled(() => this.locate(needle, nth)) : this.locate(needle, nth);
+        if (!next) {
+          traceAttach('lost', needle, 'rows', this.messageRows());
+          return false;
+        }
+        // the space a wrap swallowed is drawn where the next row starts, so one key over it shows no change on screen;
+        // only several keys in a row without a change mean the caret is really stuck
+        if (next.moves === before && ++stalls > 2) {
+          traceAttach('stuck', needle, { before }, 'cursor', this.term.buffer.active.cursorX, this.term.buffer.active.cursorY, 'rows', this.messageRows());
+          return false;
+        }
+        if (next.moves !== before) stalls = 0;
+        plan = next;
       }
-      if (plan.moves !== 0) return false;
+      if (plan.moves !== 0) {
+        traceAttach('too far', needle, plan);
+        return false;
+      }
       if (needle !== att.token) {
+        const had = this.countInMessage(needle);
         write('\x7f'.repeat(plan.width));
-        return true;
+        const gone = await this.until(() => this.countInMessage(needle) < had, 1000);
+        traceAttach('after', { gone }, 'rows', this.messageRows());
+        return gone;
       }
       // a placeholder is one unit for the agent: a single Backspace, never a second one (it would eat the text before it)
       const others = tokens().filter((t) => t !== needle);
@@ -483,11 +575,11 @@ export class TerminalHost {
       const token = a.token;
       const agentSessionId = useAgentStatus.getState().byId[this.info.id]?.agentSessionId;
       void api.files.pastedImage(this.info.id, n, agentSessionId).then(
-        (thumb) => {
-          if (!thumb) return;
+        (img) => {
+          if (!img) return;
           this.thumbTries.set(token, { tries: 17, at: Date.now(), done: true });
           const cur = useAttachments.getState().bySession[this.info.id] ?? [];
-          useAttachments.getState().set(this.info.id, cur.map((x) => (x.token === token ? { ...x, thumb } : x)));
+          useAttachments.getState().set(this.info.id, cur.map((x) => (x.token === token ? { ...x, thumb: img.thumb, src: img.src } : x)));
         },
         () => undefined
       );
@@ -600,8 +692,7 @@ export class TerminalHost {
    * N advances of that face; asking for more than fits makes its right-aligned part run off the edge. Infinity outside block mode.
    */
   private promptCols(paneWidth: number): number {
-    const info = this.info;
-    if (info.kind !== 'shell' || info.presentation !== 'blocks' || info.integration !== 'active') return Infinity;
+    if (!this.promptCapped()) return Infinity;
     const font = `${this.term.options.fontSize ?? 14}px ${TERMINAL_FONT}`;
     // measured again until the face is really loaded: a fallback face has another advance
     if (this.cellProbe?.key !== font || !document.fonts.check(font)) {
@@ -609,9 +700,178 @@ export class TerminalHost {
       if (!ctx) return Infinity;
       ctx.font = font;
       this.cellProbe = { key: font, width: ctx.measureText('M').width };
+      this.overflowCols = 0;
+    }
+    // the overflow was measured at one width; at another the prompt is redrawn and the editor measures it again
+    if (paneWidth !== this.overflowAt) {
+      this.overflowAt = paneWidth;
+      this.overflowCols = 0;
     }
     const w = this.cellProbe.width;
-    return w > 0 ? Math.floor((paneWidth - 32 - 2) / w) : Infinity;
+    return w > 0 ? Math.floor((paneWidth - 32 - 2) / w) - this.overflowCols : Infinity;
+  }
+
+  /**
+   * xterm 6 draws its own overlay scrollbar and fades it out until the wheel or the pointer touches it, so it looks missing. While
+   * there is scrollback to scroll through it is kept visible (CSS on `has-scrollback`); the alternate screen has none.
+   */
+  private syncScrollbar(): void {
+    const b = this.term.buffer.active;
+    this.element.classList.toggle('has-scrollback', b.type === 'normal' && b.baseY > 0);
+  }
+
+  private readonly agentScroll = new AgentScroll();
+  private scrollBar: { root: HTMLDivElement; thumb: HTMLDivElement } | undefined;
+  private scrollHintTimer: ReturnType<typeof setTimeout> | undefined;
+  private scrollDrag: { grab: number; targetTop: number; timer: ReturnType<typeof setInterval> } | undefined;
+
+  /** The bar is for an agent on the fullscreen (alternate) screen, which has no scrollback and so no xterm scrollbar. */
+  private scrollHintOn(): boolean {
+    return this.isAgent() && this.term.buffer.active.type === 'alternate';
+  }
+
+  /** Reads the screen after `delay`: Claude draws what a wheel turn did a moment later, so it is not read at once. */
+  private scrollHintSoon(delay = 100): void {
+    if (this.scrollHintTimer) return;
+    this.scrollHintTimer = setTimeout(() => {
+      this.scrollHintTimer = undefined;
+      if (!this.disposed) this.updateScrollHint();
+    }, delay);
+  }
+
+  private trackHeight(): number {
+    return Math.max(0, this.element.clientHeight - 6);
+  }
+
+  /** What a click or drag on the bar does: the agent only understands paging keys, so the bar sends those. */
+  private sendPages(pages: number): void {
+    const up = pages > 0;
+    for (let i = 0; i < Math.min(3, Math.abs(pages)); i++) {
+      api.sessions.write(this.info.id, up ? '\x1b[5~' : '\x1b[6~');
+      this.agentScroll.key(up ? 'PageUp' : 'PageDown');
+    }
+    this.scrollInput();
+  }
+
+  private buildScrollBar(): { root: HTMLDivElement; thumb: HTMLDivElement } {
+    const root = document.createElement('div');
+    root.className = 'agent-scroll';
+    const thumb = document.createElement('div');
+    thumb.className = 'agent-scroll-thumb';
+    root.appendChild(thumb);
+    this.element.appendChild(root);
+
+    const trackTop = () => root.getBoundingClientRect().top;
+    root.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !this.scrollHintOn()) return;
+      e.preventDefault();
+      const t = this.agentScroll.thumb(this.trackHeight(), this.term.rows);
+      const y = e.clientY - trackTop();
+      if (y >= t.top && y <= t.top + t.height) {
+        // dragging: the thumb follows the pointer, and the pages that would take the transcript there are sent
+        root.setPointerCapture(e.pointerId);
+        root.classList.add('dragging');
+        const drag = {
+          grab: y - t.top,
+          targetTop: t.top,
+          timer: setInterval(() => this.dragTick(), 70)
+        };
+        this.scrollDrag = drag;
+      } else {
+        this.sendPages(y < t.top ? 1 : -1);
+        this.scrollHintSoon(80);
+      }
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (this.scrollDrag) this.scrollDrag.targetTop = e.clientY - trackTop() - this.scrollDrag.grab;
+    });
+    const end = () => {
+      if (!this.scrollDrag) return;
+      clearInterval(this.scrollDrag.timer);
+      this.scrollDrag = undefined;
+      root.classList.remove('dragging');
+      this.scrollHintSoon(250);
+    };
+    root.addEventListener('pointerup', end);
+    root.addEventListener('pointercancel', end);
+    return { root, thumb };
+  }
+
+  private dragTick(): void {
+    const drag = this.scrollDrag;
+    if (!drag || !this.scrollHintOn()) return;
+    const track = this.trackHeight();
+    const t = this.agentScroll.thumb(track, this.term.rows);
+    let pages = this.agentScroll.pagesTo(drag.targetTop, track, this.term.rows);
+    // held at the very bottom: go on until the agent itself says it is there
+    if (pages === 0 && drag.targetTop >= track - t.height - 2 && this.agentScroll.isScrolledUp) pages = -1;
+    if (pages !== 0) this.sendPages(pages);
+    this.readCue();
+    this.updateScrollHint(false);
+  }
+
+  private lastScrollInput = 0;
+  private scrollRegion: string[] | undefined;
+
+  /** Notes that something was sent to scroll the agent: its answer (and the cue) is drawn a moment later. */
+  private scrollInput(): void {
+    this.lastScrollInput = Date.now();
+  }
+
+  /** Looks at the screen: the cue near the bottom, and how far the transcript text moved since the last look. */
+  private readCue(): void {
+    const buf = this.term.buffer.active;
+    const all: string[] = [];
+    for (let i = 0; i < this.term.rows; i++) all.push(buf.getLine(buf.viewportY + i)?.translateToString(true) ?? '');
+    // the cue ends its row; transcript text that merely mentions it does not count
+    const cues = all.slice(-14).map(scrollCue).filter((c): c is string => !!c);
+    // the transcript area: above the input box and the lines under it
+    const region = all.slice(0, Math.max(0, all.length - 10));
+    const shift = this.scrollRegion ? measureShift(this.scrollRegion, region) : undefined;
+    this.scrollRegion = region;
+    const fresh = Date.now() - this.lastScrollInput < 600;
+    this.agentScroll.screen(cues.join('\n'), shift, fresh);
+    // a look that had to wait for the cue is made again once the agent has had time to draw it
+    if (fresh && cues.length === 0) this.scrollHintSoon(350);
+  }
+
+  private updateScrollHint(readScreen = true): void {
+    if (!this.scrollHintOn()) {
+      this.agentScroll.reset();
+      this.scrollBar?.root.remove();
+      this.scrollBar = undefined;
+      return;
+    }
+    if (readScreen) this.readCue();
+    const bar = (this.scrollBar ??= this.buildScrollBar());
+    const t = this.agentScroll.thumb(this.trackHeight(), this.term.rows);
+    bar.root.classList.toggle('scrolled', t.scrolled);
+    // while dragging, the thumb is under the pointer
+    const top = this.scrollDrag ? Math.min(Math.max(0, this.scrollDrag.targetTop), Math.max(0, this.trackHeight() - t.height)) : t.top;
+    bar.thumb.style.top = `${top}px`;
+    bar.thumb.style.height = `${t.height}px`;
+  }
+
+  /** Only the HTML prompt of block mode limits the columns; an agent running in the tab owns the whole screen. */
+  private promptCapped(): boolean {
+    const info = this.info;
+    return info.kind === 'shell' && !info.runningAgent && info.presentation === 'blocks' && info.integration === 'active';
+  }
+
+  private overflowCols = 0;
+  private overflowAt = -1;
+
+  /**
+   * The HTML prompt can come out wider than N canvas-measured cells (symbol glyphs from a fallback face, rounding), which clips its
+   * right edge. The editor reports how far it is cut off; the terminal then asks the shell for that many columns fewer.
+   */
+  reportPromptOverflow(px: number): void {
+    const w = this.cellProbe?.width ?? 0;
+    if (this.disposed || w <= 0 || px < 1) return;
+    const extra = Math.min(40, Math.ceil(px / w));
+    if (extra <= this.overflowCols) return;
+    this.overflowCols = extra;
+    this.scheduleFit(0);
   }
 
   private lastSent = `${INITIAL_PTY_SIZE.cols}x${INITIAL_PTY_SIZE.rows}`;
@@ -669,7 +929,7 @@ export class TerminalHost {
   applyPrefs(fontSize: number, dark: boolean, cursorStyle: 'bar' | 'block' | 'underline' = 'bar'): void {
     if (this.term.options.cursorStyle !== cursorStyle) {
       this.term.options.cursorStyle = cursorStyle;
-      this.term.options.cursorInactiveStyle = cursorStyle === 'block' ? 'outline' : cursorStyle;
+      this.term.options.cursorInactiveStyle = inactiveCursor(cursorStyle);
     }
     if (this.term.options.fontSize !== fontSize) this.term.options.fontSize = fontSize;
     this.term.options.theme = terminalTheme(dark);
@@ -701,6 +961,8 @@ export class TerminalHost {
     clearTimeout(this.idleTimer);
     clearTimeout(this.redrawTimer);
     clearTimeout(this.promptTimer);
+    clearTimeout(this.scrollHintTimer);
+    if (this.scrollDrag) clearInterval(this.scrollDrag.timer);
     this.observer.disconnect();
     this.unsubData();
     this.tracker.dispose();

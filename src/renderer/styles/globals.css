@@ -147,6 +147,9 @@ button {
 .xterm-host {
   position: absolute;
   inset: 0;
+  /* FitAddon takes the parent's computed width as the room for the grid; border-box would count the padding (the gutter) as room and
+     let the grid run 16px into it, under the scrollbar */
+  box-sizing: content-box;
   padding: 6px var(--ad-xterm-pad-r, 0px) 0 var(--ad-xterm-pad-l, 8px);
   background: var(--ad-bg);
 }
@@ -155,18 +158,52 @@ button {
   scrollbar-width: auto;
   scrollbar-color: color-mix(in srgb, var(--ad-fg, currentColor) 35%, transparent) transparent;
 }
-.xterm .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
+.xterm-host.has-scrollback .xterm-scrollable-element > .scrollbar.vertical {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  /* xterm only raises it above the screen while it is `.visible` */
+  z-index: 11 !important;
 }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--ad-fg, currentColor) 30%, transparent);
+.xterm .xterm-scrollable-element > .scrollbar > .slider {
   border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: content-box;
+  background: color-mix(in srgb, var(--ad-fg, currentColor) 30%, transparent) !important;
 }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+.xterm .xterm-scrollable-element > .scrollbar > .slider:hover {
+  background: color-mix(in srgb, var(--ad-fg, currentColor) 50%, transparent) !important;
+}
+
+/* A scroll bar for Claude Code's fullscreen screen. The agent scrolls itself and does not report where it is, so the thumb is an
+   estimate; clicking and dragging are sent to it as paging keys. It sits in the gutter, beside the text grid. */
+.agent-scroll {
+  position: absolute;
+  top: 6px;
+  bottom: 0;
+  right: var(--ad-xterm-pad-r, 0px);
+  width: 14px;
+  z-index: 11;
+  touch-action: none;
+}
+.agent-scroll-thumb {
+  position: absolute;
+  right: 3px;
+  width: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ad-fg, currentColor) 30%, transparent);
+  opacity: 0;
+  transition: opacity 150ms ease-out, background-color 120ms, top 120ms ease-out, height 120ms ease-out;
+}
+.agent-scroll.scrolled .agent-scroll-thumb,
+.agent-scroll:hover .agent-scroll-thumb,
+.agent-scroll.dragging .agent-scroll-thumb {
+  opacity: 1;
+}
+.agent-scroll-thumb:hover,
+.agent-scroll.dragging .agent-scroll-thumb {
   background: color-mix(in srgb, var(--ad-fg, currentColor) 50%, transparent);
-  background-clip: content-box;
+}
+.agent-scroll.dragging .agent-scroll-thumb {
+  transition: opacity 150ms ease-out, background-color 120ms;
 }
 
 /* Finished-command output: chunks use content-visibility so long blocks stay cheap. */
